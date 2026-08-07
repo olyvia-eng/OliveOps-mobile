@@ -1,0 +1,662 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+
+import { createStorageHandler } from '../api/storage.js';
+import { validateUploadPayload as validateStorageUploadPayload } from '../api/_lib/storage.js';
+
+function createMockRes() {
+  return {
+    statusCode: 200,
+    headers: {},
+    body: undefined,
+    status(code) {
+      this.statusCode = code;
+      return this;
+    },
+    setHeader(name, value) {
+      this.headers[name] = value;
+      return this;
+    },
+    json(payload) {
+      this.body = payload;
+      return this;
+    },
+  };
+}
+
+function baseDeps(overrides = {}) {
+  return {
+    requireSession: () => ({
+      id: 'user-1',
+      role: 'admin',
+      businessId: 'biz-1',
+      employeeId: 'emp-1',
+    }),
+    createPendingUploadPlan: () => ({ fileId: 'file-1', key: 'biz-1/file-1/photo.jpg', objectKey: 'biz-1/file-1/photo.jpg', fileName: 'photo.jpg', mimeType: 'image/jpeg', sizeBytes: 100, expiresAt: '2026-08-06T10:10:00.000Z' }),
+    createPresignedUploadUrl: async ({ plan }) => ({ ok: true, uploadUrl: `https://signed.example/upload/${plan.fileId}`, plan }),
+    createPresignedDownloadUrl: async () => ({ ok: true, downloadUrl: 'https://signed.example/download' }),
+    headStoredFile: async () => ({ ok: true, contentLength: 1024, contentType: 'image/jpeg', etag: 'etag-1' }),
+    removeStoredFile: async () => ({ ok: true }),
+    validateUploadPayload: (payload) => {
+      const result = validateStorageUploadPayload(payload);
+      return result.ok ? result : { ok: false, error: result.error };
+    },
+    createAuditEventForBusiness: async () => ({ ok: true }),
+    createPendingFileForBusiness: async () => ({ ok: true }),
+    updateFileForBusiness: async () => ({ ok: true }),
+    deleteFileForBusiness: async () => ({ ok: true }),
+    getCustomerForBusiness: async () => null,
+    getExpenseForBusiness: async () => ({ id: 'expense-1', vendor: 'Acme', description: 'd', category: 'other', expenseDate: '2026-01-01', amount: 10, status: 'pending', notes: '' }),
+    getFileForBusiness: async () => null,
+    getEstimateForBusiness: async () => null,
+    getJobForBusiness: async () => null,
+    getEmployeeForBusiness: async () => null,
+    getFeedbackForBusiness: async () => null,
+    getTimeEntryForBusiness: async () => ({ id: 'time-1', employeeId: 'emp-1', status: 'clocked_in' }),
+    listFilesForBusiness: async () => [],
+    updateFeedbackForBusiness: async () => ({ ok: true }),
+    updateExpenseForBusiness: async () => ({ ok: true }),
+    updateTimeEntryForBusiness: async () => ({ ok: true }),
+    ...overrides,
+  };
+}
+
+test('missing AWS_S3_BUCKET_NAME failure returns JSON from prepare-upload', async () => {
+  const handler = createStorageHandler(baseDeps({
+    createPresignedUploadUrl: async () => {
+      const error = new Error('Missing required environment variable AWS_S3_BUCKET_NAME');
+      error.name = 'MissingEnvironmentVariableError';
+      throw error;
+    },
+  }));
+
+  const req = {
+    method: 'POST',
+    body: {
+      action: 'prepare-upload',
+      fileName: 'photo.jpg',
+      mimeType: 'image/jpeg',
+      sizeBytes: 1024,
+      entityType: 'time-entry',
+      entityId: 'time-1',
+      category: 'clock-out-photo',
+    },
+  };
+  const res = createMockRes();
+
+  await handler(req, res);
+
+  assert.equal(res.statusCode, 503);
+  assert.deepEqual(res.body, {
+    ok: false,
+    error: 'Storage service is temporarily unavailable.',
+  });
+});
+
+test('prepare-upload unexpected failure returns JSON', async () => {
+  const handler = createStorageHandler(baseDeps({
+    createPresignedUploadUrl: async () => {
+      const error = new Error('AWS SDK failed');
+      error.name = 'ServiceError';
+      error.$metadata = { httpStatusCode: 500 };
+      throw error;
+    },
+  }));
+
+  const req = {
+    method: 'POST',
+    body: {
+      action: 'prepare-upload',
+      fileName: 'photo.jpg',
+      mimeType: 'image/jpeg',
+      sizeBytes: 1024,
+      entityType: 'time-entry',
+      entityId: 'time-1',
+      category: 'clock-out-photo',
+    },
+  };
+  const res = createMockRes();
+
+  await handler(req, res);
+
+  assert.equal(res.statusCode, 500);
+  assert.deepEqual(res.body, {
+    ok: false,
+    error: 'Storage service is temporarily unavailable.',
+  });
+});
+
+test('complete-upload unexpected failure returns JSON', async () => {
+  const handler = createStorageHandler(baseDeps({
+    getFileForBusiness: async () => ({
+      id: 'file-1',
+      businessId: 'biz-1',
+      entityType: 'expense',
+      entityId: 'expense-1',
+      category: 'receipt',
+      fileName: 'photo.jpg',
+      originalFileName: 'photo.jpg',
+      sanitizedFileName: 'photo.jpg',
+      mimeType: 'image/jpeg',
+      sizeBytes: 1024,
+      expectedContentType: 'image/jpeg',
+      expectedFileSize: 1024,
+      objectKey: 'biz-1/file-1/photo.jpg',
+      key: 'biz-1/file-1/photo.jpg',
+      uploadStatus: 'pending',
+    }),
+    headStoredFile: async () => ({ ok: true, contentLength: 1024, contentType: 'image/jpeg', etag: 'etag-1' }),
+    updateFileForBusiness: async () => {
+      const error = new Error('DynamoDB write failure');
+      error.name = 'ProvisionedThroughputExceededException';
+      error.$metadata = { httpStatusCode: 503 };
+      throw error;
+    },
+  }));
+
+  const req = {
+    method: 'POST',
+    body: {
+      action: 'complete-upload',
+      fileId: 'file-1',
+    },
+  };
+  const res = createMockRes();
+
+  await handler(req, res);
+
+  assert.equal(res.statusCode, 503);
+  assert.deepEqual(res.body, {
+    ok: false,
+    error: 'Storage service is temporarily unavailable.',
+  });
+});
+
+test('successful prepare-upload returns presigned URL payload', async () => {
+  let pendingFile;
+  const handler = createStorageHandler(baseDeps({
+    createPendingFileForBusiness: async ({ file }) => {
+      pendingFile = file;
+      return { ok: true };
+    },
+  }));
+
+  const req = {
+    method: 'POST',
+    body: {
+      action: 'prepare-upload',
+      fileName: 'photo.jpg',
+      mimeType: 'image/jpeg',
+      sizeBytes: 1024,
+      entityType: 'time-entry',
+      entityId: 'time-1',
+      category: 'clock-out-photo',
+    },
+  };
+  const res = createMockRes();
+
+  await handler(req, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.ok, true);
+  assert.equal(res.body.fileId, 'file-1');
+  assert.equal(res.body.uploadUrl, 'https://signed.example/upload/file-1');
+  assert.deepEqual(res.body.requiredHeaders, { 'Content-Type': 'image/jpeg' });
+  assert.equal(res.body.expiresAt, '2026-08-06T10:10:00.000Z');
+  assert.equal(pendingFile.uploadStatus, 'pending');
+  assert.equal(pendingFile.objectKey, 'biz-1/file-1/photo.jpg');
+});
+
+test('prepare-upload for expense stores trusted entityType, normalized category, and authoritative entityId', async () => {
+  let pendingFile;
+  const handler = createStorageHandler(baseDeps({
+    getExpenseForBusiness: async () => ({ id: 'expense-1', vendor: 'Acme', description: 'd', category: 'other', expenseDate: '2026-01-01', amount: 10, status: 'pending', notes: '' }),
+    createPendingFileForBusiness: async ({ file }) => {
+      pendingFile = file;
+      return { ok: true };
+    },
+  }));
+
+  const req = {
+    method: 'POST',
+    body: {
+      action: 'prepare-upload',
+      fileName: 'receipt.pdf',
+      mimeType: 'application/pdf',
+      sizeBytes: 1024,
+      entityType: 'expense',
+      entityId: 'client-sent-expense-id',
+      category: 'RECEIPT',
+    },
+  };
+  const res = createMockRes();
+
+  await handler(req, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(pendingFile.entityType, 'expense');
+  assert.equal(pendingFile.category, 'receipt');
+  assert.equal(pendingFile.entityId, 'expense-1');
+});
+
+test('prepare-upload rejects unsupported expense categories', async () => {
+  const handler = createStorageHandler(baseDeps());
+
+  const req = {
+    method: 'POST',
+    body: {
+      action: 'prepare-upload',
+      fileName: 'receipt.pdf',
+      mimeType: 'application/pdf',
+      sizeBytes: 1024,
+      entityType: 'expense',
+      entityId: 'expense-1',
+      category: 'receipts',
+    },
+  };
+  const res = createMockRes();
+
+  await handler(req, res);
+
+  assert.equal(res.statusCode, 400);
+  assert.equal(res.body.ok, false);
+  assert.equal(res.body.error, 'Unsupported attachment category.');
+});
+
+test('prepare-upload rejects unsupported entity type', async () => {
+  const handler = createStorageHandler(baseDeps());
+
+  const req = {
+    method: 'POST',
+    body: {
+      action: 'prepare-upload',
+      fileName: 'photo.jpg',
+      mimeType: 'image/jpeg',
+      sizeBytes: 1024,
+      entityType: 'unsupported',
+      entityId: 'time-1',
+      category: 'clock-out-photo',
+    },
+  };
+  const res = createMockRes();
+
+  await handler(req, res);
+
+  assert.equal(res.statusCode, 400);
+  assert.equal(res.body.ok, false);
+});
+
+test('successful complete-upload returns file metadata', async () => {
+  let updatedFile;
+  const handler = createStorageHandler(baseDeps({
+    getFileForBusiness: async () => ({
+      id: 'file-1',
+      businessId: 'biz-1',
+      entityType: 'expense',
+      entityId: 'expense-1',
+      category: 'receipt',
+      fileName: 'photo.jpg',
+      originalFileName: 'photo.jpg',
+      sanitizedFileName: 'photo.jpg',
+      mimeType: 'image/jpeg',
+      sizeBytes: 1024,
+      expectedContentType: 'image/jpeg',
+      expectedFileSize: 1024,
+      objectKey: 'biz-1/file-1/photo.jpg',
+      key: 'biz-1/file-1/photo.jpg',
+      uploadStatus: 'pending',
+    }),
+    updateFileForBusiness: async ({ updates }) => {
+      updatedFile = updates;
+      return { ok: true };
+    },
+  }));
+
+  const req = {
+    method: 'POST',
+    body: {
+      action: 'complete-upload',
+      fileId: 'file-1',
+    },
+  };
+  const res = createMockRes();
+
+  await handler(req, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.body, { ok: true, fileId: 'file-1' });
+  assert.equal(updatedFile.uploadStatus, 'uploaded');
+  assert.equal(updatedFile.objectKey, 'biz-1/file-1/photo.jpg');
+});
+
+test('complete-upload maps expense receipt to receiptFileId and persists on expense', async () => {
+  let updatedExpense;
+  const handler = createStorageHandler(baseDeps({
+    getFileForBusiness: async () => ({
+      id: 'file-1',
+      businessId: 'biz-1',
+      entityType: 'expense',
+      entityId: 'expense-1',
+      category: 'receipt',
+      fileName: 'receipt.pdf',
+      originalFileName: 'receipt.pdf',
+      sanitizedFileName: 'receipt.pdf',
+      mimeType: 'application/pdf',
+      sizeBytes: 1024,
+      expectedContentType: 'application/pdf',
+      expectedFileSize: 1024,
+      objectKey: 'biz-1/file-1/receipt.pdf',
+      key: 'biz-1/file-1/receipt.pdf',
+      uploadStatus: 'pending',
+    }),
+    headStoredFile: async () => ({ ok: true, contentLength: 1024, contentType: 'application/pdf', etag: 'etag-1' }),
+    getExpenseForBusiness: async () => ({
+      id: 'expense-1',
+      vendor: 'Acme',
+      description: 'Materials',
+      category: 'materials',
+      expenseDate: '2026-01-01',
+      amount: 100,
+      status: 'pending',
+      notes: '',
+      receiptUrl: 'https://legacy.example/receipt.pdf',
+    }),
+    updateExpenseForBusiness: async ({ expense }) => {
+      updatedExpense = expense;
+      return { ok: true };
+    },
+  }));
+
+  const req = {
+    method: 'POST',
+    body: {
+      action: 'complete-upload',
+      fileId: 'file-1',
+    },
+  };
+  const res = createMockRes();
+
+  await handler(req, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(updatedExpense.id, 'expense-1');
+  assert.equal(updatedExpense.receiptFileId, 'file-1');
+  assert.equal(updatedExpense.receiptUrl, undefined);
+});
+
+test('complete-upload rejects browser-supplied objectKey fields', async () => {
+  const handler = createStorageHandler(baseDeps());
+
+  const req = {
+    method: 'POST',
+    body: {
+      action: 'complete-upload',
+      fileId: 'file-1',
+      key: 'biz-1/file-1/photo.jpg',
+    },
+  };
+  const res = createMockRes();
+
+  await handler(req, res);
+
+  assert.equal(res.statusCode, 400);
+  assert.equal(res.body.ok, false);
+});
+
+test('complete-upload rejects legacy browser metadata fields', async () => {
+  const handler = createStorageHandler(baseDeps());
+
+  const req = {
+    method: 'POST',
+    body: {
+      action: 'complete-upload',
+      fileId: 'file-1',
+      fileName: 'receipt.pdf',
+      mimeType: 'application/pdf',
+      sizeBytes: 1024,
+      entityType: 'expense',
+      entityId: 'expense-1',
+      category: 'receipt',
+      businessId: 'biz-1',
+    },
+  };
+  const res = createMockRes();
+
+  await handler(req, res);
+
+  assert.equal(res.statusCode, 400);
+  assert.equal(res.body.ok, false);
+  assert.equal(res.body.error, 'Invalid upload completion payload.');
+});
+
+test('prepare-upload for new expense without persisted entity is forbidden', async () => {
+  const handler = createStorageHandler(baseDeps({
+    getExpenseForBusiness: async () => null,
+  }));
+
+  const req = {
+    method: 'POST',
+    body: {
+      action: 'prepare-upload',
+      fileName: 'receipt.pdf',
+      mimeType: 'application/pdf',
+      sizeBytes: 1024,
+      entityType: 'expense',
+      entityId: '',
+      category: 'receipt',
+    },
+  };
+  const res = createMockRes();
+
+  await handler(req, res);
+
+  assert.equal(res.statusCode, 403);
+  assert.equal(res.body.ok, false);
+  assert.equal(res.body.error, 'Forbidden');
+});
+
+test('prepare-upload accepts feedback screenshot attachments for existing feedback records', async () => {
+  let pendingFile;
+  const handler = createStorageHandler(baseDeps({
+    getFeedbackForBusiness: async () => ({
+      id: 'feedback-1',
+      businessId: 'biz-1',
+      type: 'bug',
+      message: 'Issue details',
+      status: 'new',
+      priority: 'normal',
+      createdAt: '2026-08-06T10:00:00.000Z',
+      updatedAt: '2026-08-06T10:00:00.000Z',
+    }),
+    createPendingFileForBusiness: async ({ file }) => {
+      pendingFile = file;
+      return { ok: true };
+    },
+  }));
+
+  const req = {
+    method: 'POST',
+    body: {
+      action: 'prepare-upload',
+      fileName: 'feedback.png',
+      mimeType: 'image/png',
+      sizeBytes: 1024,
+      entityType: 'feedback',
+      entityId: 'feedback-1',
+      category: 'screenshot',
+    },
+  };
+  const res = createMockRes();
+
+  await handler(req, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.ok, true);
+  assert.equal(pendingFile.entityType, 'feedback');
+  assert.equal(pendingFile.entityId, 'feedback-1');
+  assert.equal(pendingFile.category, 'screenshot');
+});
+
+test('complete-upload links feedback screenshot by fileId only', async () => {
+  let updatedFeedback;
+  const handler = createStorageHandler(baseDeps({
+    getFileForBusiness: async () => ({
+      id: 'file-1',
+      businessId: 'biz-1',
+      entityType: 'feedback',
+      entityId: 'feedback-1',
+      category: 'screenshot',
+      fileName: 'feedback.png',
+      originalFileName: 'feedback.png',
+      sanitizedFileName: 'feedback.png',
+      mimeType: 'image/png',
+      sizeBytes: 1024,
+      expectedContentType: 'image/png',
+      expectedFileSize: 1024,
+      objectKey: 'biz-1/file-1/feedback.png',
+      key: 'biz-1/file-1/feedback.png',
+      uploadStatus: 'pending',
+    }),
+    getFeedbackForBusiness: async () => ({
+      id: 'feedback-1',
+      businessId: 'biz-1',
+      submittedByUserId: 'user-1',
+      submittedByRole: 'admin',
+      type: 'bug',
+      message: 'Issue details',
+      status: 'new',
+      priority: 'normal',
+      createdAt: '2026-08-06T10:00:00.000Z',
+      updatedAt: '2026-08-06T10:00:00.000Z',
+    }),
+    headStoredFile: async () => ({ ok: true, contentLength: 1024, contentType: 'image/png', etag: 'etag-1' }),
+    updateFeedbackForBusiness: async ({ feedback }) => {
+      updatedFeedback = feedback;
+      return { ok: true };
+    },
+  }));
+
+  const req = {
+    method: 'POST',
+    body: {
+      action: 'complete-upload',
+      fileId: 'file-1',
+    },
+  };
+  const res = createMockRes();
+
+  await handler(req, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.ok, true);
+  assert.equal(updatedFeedback.id, 'feedback-1');
+  assert.equal(updatedFeedback.screenshotFileId, 'file-1');
+});
+
+test('prepare-download accepts fileId only', async () => {
+  const handler = createStorageHandler(baseDeps({
+    getFileForBusiness: async () => ({
+      id: 'file-1',
+      businessId: 'biz-1',
+      entityType: 'document',
+      entityId: 'library',
+      uploadStatus: 'uploaded',
+      key: 'biz-1/file-1/photo.jpg',
+    }),
+  }));
+
+  const req = {
+    method: 'POST',
+    body: {
+      action: 'prepare-download',
+      fileId: 'file-1',
+    },
+  };
+  const res = createMockRes();
+
+  await handler(req, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.ok, true);
+  assert.equal(res.body.downloadUrl, 'https://signed.example/download');
+  assert.equal(res.body.fileId, 'file-1');
+});
+
+test('delete accepts fileId only', async () => {
+  let deletedFileId;
+  const handler = createStorageHandler(baseDeps({
+    getFileForBusiness: async () => ({
+      id: 'file-1',
+      businessId: 'biz-1',
+      entityType: 'expense',
+      entityId: 'expense-1',
+      uploadStatus: 'uploaded',
+      key: 'biz-1/file-1/photo.jpg',
+    }),
+    deleteFileForBusiness: async (_businessId, fileId) => {
+      deletedFileId = fileId;
+      return { ok: true };
+    },
+  }));
+
+  const req = {
+    method: 'POST',
+    body: {
+      action: 'delete',
+      fileId: 'file-1',
+    },
+  };
+  const res = createMockRes();
+
+  await handler(req, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.ok, true);
+  assert.equal(deletedFileId, 'file-1');
+});
+
+test('list files view supports entityType filter for restored documents page', async () => {
+  const handler = createStorageHandler(baseDeps({
+    listFilesForBusiness: async () => ([
+      {
+        id: 'doc-1',
+        fileName: 'Master Contract.pdf',
+        mimeType: 'application/pdf',
+        sizeBytes: 1200,
+        key: 'biz-1/doc-1/master-contract.pdf',
+        uploadedAt: '2026-08-05T10:00:00.000Z',
+        entityType: 'document',
+        entityId: 'library',
+        category: 'contracts',
+      },
+      {
+        id: 'photo-1',
+        fileName: 'Clock Out.jpg',
+        mimeType: 'image/jpeg',
+        sizeBytes: 2000,
+        key: 'biz-1/photo-1/clock-out.jpg',
+        uploadedAt: '2026-08-05T11:00:00.000Z',
+        entityType: 'time-entry',
+        entityId: 'time-1',
+        category: 'clock-out-photo',
+      },
+    ]),
+  }));
+
+  const req = {
+    method: 'GET',
+    query: {
+      view: 'files',
+      entityType: 'document',
+    },
+  };
+  const res = createMockRes();
+
+  await handler(req, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.ok, true);
+  assert.equal(res.body.files.length, 1);
+  assert.equal(res.body.files[0].entityType, 'document');
+  assert.equal(res.body.files[0].fileName, 'Master Contract.pdf');
+});
