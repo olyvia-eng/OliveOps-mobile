@@ -2,6 +2,7 @@ import React, { createContext, useCallback, useContext, useMemo, useState } from
 import * as authApi from '@/api/authApi';
 import { clearStoredSession, readStoredSession, writeStoredSession } from '@/services/sessionStorage';
 import type { SessionUser } from '@/types/domain';
+import { ApiError } from '@/types/errors';
 
 type SessionStatus = 'checking' | 'authenticated' | 'unauthenticated';
 
@@ -21,6 +22,19 @@ function isUnauthorizedError(error: unknown) {
   if (!(error instanceof Error)) return false;
   const normalized = error.message.toLowerCase();
   return normalized.includes('401') || normalized.includes('unauthorized');
+}
+
+function mapLoginError(error: unknown) {
+  if (error instanceof ApiError) {
+    if (error.status === 401 || /invalid email or password/i.test(error.message)) {
+      return 'Email or password is incorrect.';
+    }
+    if (error.code === 'MOBILE_AUTH_UNAVAILABLE') {
+      return "We couldn't sign you in. Please try again.";
+    }
+  }
+
+  return "We couldn't sign you in. Please try again.";
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -90,11 +104,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setStatus('authenticated');
       return { ok: true };
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Login failed.';
+      if (__DEV__) {
+        console.error('[auth:login]', error);
+      }
       setUser(null);
       setAccessToken(undefined);
       setStatus('unauthenticated');
-      return { ok: false, error: message };
+      return { ok: false, error: mapLoginError(error) };
     }
   }, []);
 
