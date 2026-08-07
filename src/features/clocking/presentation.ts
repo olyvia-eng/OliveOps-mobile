@@ -1,9 +1,19 @@
-import type { Job, TimeEntry } from '@/types/domain';
+import type { Job, TimeCorrectionRequest, TimeCorrectionRequestType, TimeEntry } from '@/types/domain';
 
 export function getWorkTypeLabel(workType: TimeEntry['workType']) {
   if (workType === 'drive_time') return 'Drive Time';
   if (workType === 'non_billable') return 'Unbillable Time';
   return 'Job Work';
+}
+
+export function getCorrectionTypeLabel(type: TimeCorrectionRequestType) {
+  if (type === 'forgot_clock_in') return 'Forgot to clock in';
+  if (type === 'forgot_clock_out') return 'Forgot to clock out';
+  if (type === 'wrong_time') return 'Wrong time';
+  if (type === 'wrong_job') return 'Wrong job';
+  if (type === 'wrong_activity') return 'Wrong activity';
+  if (type === 'split_activity') return 'Split activity';
+  return 'Other';
 }
 
 export function resolveCurrentActiveEntry(
@@ -82,6 +92,51 @@ export function formatDurationForEntry(entry: TimeEntry, nowMs = Date.now()) {
   const rawMinutes = (endedAt - startedAt) / (1000 * 60);
   const minutes = Math.max(0, rawMinutes - (entry.breakMinutes || 0));
   return formatDurationMinutes(minutes);
+}
+
+export function buildEffectiveTimeEntries(entries: TimeEntry[], corrections: TimeCorrectionRequest[]) {
+  if (!Array.isArray(entries) || entries.length === 0) return [];
+
+  const approvedByEntryId = new Map<string, TimeCorrectionRequest>();
+
+  for (const correction of corrections ?? []) {
+    if (correction?.status !== 'approved' || typeof correction?.timeEntryId !== 'string') continue;
+
+    const existing = approvedByEntryId.get(correction.timeEntryId);
+    const existingTs = Date.parse(existing?.reviewedAt ?? existing?.updatedAt ?? existing?.createdAt ?? '') || 0;
+    const candidateTs = Date.parse(correction.reviewedAt ?? correction.updatedAt ?? correction.createdAt ?? '') || 0;
+    if (!existing || candidateTs >= existingTs) {
+      approvedByEntryId.set(correction.timeEntryId, correction);
+    }
+  }
+
+  return entries.map((entry) => {
+    const correction = approvedByEntryId.get(entry.id);
+    if (!correction) return entry;
+    const nextJobIds = correction.requestedJobId
+      ? [correction.requestedJobId]
+      : (Array.isArray(entry.jobIds) ? entry.jobIds : (entry.jobId ? [entry.jobId] : []));
+    return {
+      ...entry,
+      clockIn: correction.requestedClockInAt ?? entry.clockIn,
+      clockOut: correction.requestedClockOutAt ?? entry.clockOut,
+      jobId: correction.requestedJobId ?? entry.jobId,
+      jobIds: nextJobIds,
+      workType: correction.requestedActivityType ?? entry.workType,
+    };
+  });
+}
+
+export function hasPendingCorrectionForEntry(entryId: string, corrections: TimeCorrectionRequest[]) {
+  return corrections.some((item) => item.timeEntryId === entryId && item.status === 'pending');
+}
+
+export function hasApprovedCorrectionForEntry(entryId: string, corrections: TimeCorrectionRequest[]) {
+  return corrections.some((item) => item.timeEntryId === entryId && item.status === 'approved');
+}
+
+export function formatLongShiftWarning(clockIn: string, nowMs = Date.now()) {
+  return `You've been clocked in for ${formatElapsedShort(clockIn, nowMs)}. Did you forget to clock out?`;
 }
 
 export function formatEntryTimeRange(entry: TimeEntry, isAuthoritativeActive = false) {

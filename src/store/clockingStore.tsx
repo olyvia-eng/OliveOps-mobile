@@ -1,15 +1,24 @@
 import React, { createContext, useContext, useMemo, useState } from 'react';
 import type { ActivityConfig } from '@/types/api';
-import type { Job, TimeEntry } from '@/types/domain';
+import type { Job, TimeCorrectionRequest, TimeEntry } from '@/types/domain';
+
+export type ActiveShiftWarnings = {
+  possibleForgottenClockOut: boolean;
+  thresholdHours: number;
+};
 
 type ClockingState = {
   jobs: Job[];
   timeEntries: TimeEntry[];
+  timeCorrections: TimeCorrectionRequest[];
   currentActiveEntryId: string | null;
+  activeShiftWarnings: ActiveShiftWarnings;
   activityConfigs?: ActivityConfig[];
   setJobs: (jobs: Job[]) => void;
   setTimeEntries: (entries: TimeEntry[]) => void;
+  setTimeCorrections: (items: TimeCorrectionRequest[]) => void;
   setCurrentActiveEntryId: (entryId: string | null) => void;
+  setActiveShiftWarnings: (warnings?: Partial<ActiveShiftWarnings>) => void;
   setActivityConfigs: (configs?: ActivityConfig[]) => void;
   upsertTimeEntry: (entry: TimeEntry) => void;
 };
@@ -19,8 +28,20 @@ const ClockingContext = createContext<ClockingState | undefined>(undefined);
 export function ClockingProvider({ children }: { children: React.ReactNode }) {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [timeEntries, setTimeEntries] = useState<TimeEntry[]>([]);
+  const [timeCorrections, setTimeCorrections] = useState<TimeCorrectionRequest[]>([]);
   const [currentActiveEntryId, setCurrentActiveEntryId] = useState<string | null>(null);
+  const [activeShiftWarnings, setActiveShiftWarningsState] = useState<ActiveShiftWarnings>({
+    possibleForgottenClockOut: false,
+    thresholdHours: 12,
+  });
   const [activityConfigs, setActivityConfigs] = useState<ActivityConfig[] | undefined>(undefined);
+
+  function setActiveShiftWarnings(next?: Partial<ActiveShiftWarnings>) {
+    setActiveShiftWarningsState({
+      possibleForgottenClockOut: next?.possibleForgottenClockOut === true,
+      thresholdHours: Number.isFinite(next?.thresholdHours) ? Math.max(1, Number(next?.thresholdHours)) : 12,
+    });
+  }
 
   function upsertTimeEntry(entry: TimeEntry) {
     setTimeEntries((current) => {
@@ -36,15 +57,19 @@ export function ClockingProvider({ children }: { children: React.ReactNode }) {
     () => ({
       jobs,
       timeEntries,
+      timeCorrections,
       currentActiveEntryId,
+      activeShiftWarnings,
       activityConfigs,
       setJobs,
       setTimeEntries,
+      setTimeCorrections,
       setCurrentActiveEntryId,
+      setActiveShiftWarnings,
       setActivityConfigs,
       upsertTimeEntry,
     }),
-    [activityConfigs, currentActiveEntryId, jobs, timeEntries]
+    [activeShiftWarnings, activityConfigs, currentActiveEntryId, jobs, timeCorrections, timeEntries]
   );
 
   return <ClockingContext.Provider value={value}>{children}</ClockingContext.Provider>;

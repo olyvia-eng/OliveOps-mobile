@@ -1,0 +1,453 @@
+import { useMemo, useState } from 'react';
+import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { router, useLocalSearchParams } from 'expo-router';
+import { PrimaryActionButton } from '@/components/PrimaryActionButton';
+import { Screen } from '@/components/Screen';
+import { StatusBanner } from '@/components/StatusBanner';
+import { createRequestMeta } from '@/services/requestGuards';
+import {
+  formatEntryTimeRange,
+  getCorrectionTypeLabel,
+  getWorkTypeLabel,
+  resolveCurrentActiveEntry,
+  resolveJobTitle,
+} from '@/features/clocking/presentation';
+import { useClockingActions } from '@/hooks/useClockingActions';
+import { useTimeCorrectionActions } from '@/hooks/useTimeCorrectionActions';
+import { useAuthStore } from '@/store/authStore';
+import { useClockingStore } from '@/store/clockingStore';
+import { colors } from '@/theme/colors';
+import type { CreateTimeCorrectionRequest } from '@/types/api';
+import type { TimeCorrectionRequestType, TimeEntryWorkType } from '@/types/domain';
+
+const REQUEST_TYPE_OPTIONS: Array<{ id: TimeCorrectionRequestType; label: string }> = [
+  { id: 'forgot_clock_in', label: 'Forgot to clock in' },
+  { id: 'forgot_clock_out', label: 'Forgot to clock out' },
+  { id: 'wrong_time', label: 'Wrong time' },
+  { id: 'wrong_job', label: 'Wrong job' },
+  { id: 'wrong_activity', label: 'Wrong activity' },
+  { id: 'other', label: 'Other' },
+];
+
+export default function RequestTimeCorrectionScreen() {
+  const params = useLocalSearchParams<{ timeEntryId?: string; requestType?: TimeCorrectionRequestType; postClockOut?: string }>();
+  const { user, capabilities } = useAuthStore();
+  const { jobs, timeEntries, currentActiveEntryId } = useClockingStore();
+  const { clockOut, loading: clockingLoading } = useClockingActions();
+  const { submitCorrection, loading } = useTimeCorrectionActions();
+
+  const entryId = typeof params.timeEntryId === 'string' ? params.timeEntryId : undefined;
+  const defaultRequestType = typeof params.requestType === 'string'
+    ? params.requestType
+    : (entryId ? 'wrong_time' : 'forgot_clock_in');
+
+  const [requestType, setRequestType] = useState<TimeCorrectionRequestType>(defaultRequestType);
+  const [requestedDate, setRequestedDate] = useState(new Date().toISOString().slice(0, 10));
+  const [requestedStartTime, setRequestedStartTime] = useState('08:00');
+  const [requestedEndTime, setRequestedEndTime] = useState('17:00');
+  const [requestedActivity, setRequestedActivity] = useState<TimeEntryWorkType>('job');
+  const [requestedJobId, setRequestedJobId] = useState<string>('');
+  const [reason, setReason] = useState('');
+  const [status, setStatus] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const targetEntry = useMemo(() => {
+    if (!entryId) return null;
+    return timeEntries.find((entry) => entry.id === entryId) ?? null;
+  }, [entryId, timeEntries]);
+
+  const activeEntry = useMemo(
+    () => resolveCurrentActiveEntry(timeEntries, user?.employeeId, currentActiveEntryId),
+    [currentActiveEntryId, timeEntries, user?.employeeId],
+  );
+
+  const canShowDriveTime = capabilities?.paidDriveTime === true;
+
+  function combineDateAndTime(dateValue: string, timeValue: string) {
+    if (!dateValue || !timeValue) return undefined;
+    const normalized = `${dateValue}T${timeValue}:00`;
+    const parsed = new Date(normalized);
+    if (Number.isNaN(parsed.getTime())) return undefined;
+    return parsed.toISOString();
+  }
+
+  const submitting = loading || clockingLoading;
+
+  function getPayload(): CreateTimeCorrectionRequest | null {
+    const payload: CreateTimeCorrectionRequest = {
+      requestType,
+      reason: reason.trim(),
+    };
+
+    if (targetEntry) {
+      payload.timeEntryId = targetEntry.id;
+    }
+
+    if (requestType === 'forgot_clock_in') {
+      payload.requestedClockInAt = combineDateAndTime(requestedDate, requestedStartTime);
+      payload.requestedClockOutAt = combineDateAndTime(requestedDate, requestedEndTime);
+      payload.requestedActivityType = requestedActivity;
+      if (requestedActivity === 'job') {
+        payload.requestedJobId = requestedJobId || undefined;
+      }
+    }
+
+    if (requestType === 'forgot_clock_out') {
+      const sourceDate = targetEntry?.clockIn.slice(0, 10) ?? requestedDate;
+      payload.requestedClockOutAt = combineDateAndTime(sourceDate, requestedEndTime);
+    }
+
+    if (requestType === 'wrong_time') {
+      const sourceDate = targetEntry?.clockIn.slice(0, 10) ?? requestedDate;
+      payload.requestedClockInAt = combineDateAndTime(sourceDate, requestedStartTime);
+      payload.requestedClockOutAt = combineDateAndTime(sourceDate, requestedEndTime);
+    }
+
+    if (requestType === 'wrong_job') {
+      payload.requestedActivityType = 'job';
+      payload.requestedJobId = requestedJobId || undefined;
+    }
+
+    if (requestType === 'wrong_activity') {
+      payload.requestedActivityType = requestedActivity;
+      if (requestedActivity === 'job') {
+        payload.requestedJobId = requestedJobId || undefined;
+      }
+    }
+
+    return payload;
+  }
+
+  async function submitRequest() {
+    setError(null);
+    setStatus(null);
+
+    if (!reason.trim()) {
+      setError('Tell your manager what happened before submitting.');
+      return;
+    }
+
+    if (requestType !== 'forgot_clock_in' && !targetEntry) {
+      setError('A historical entry is required for this correction type.');
+      return;
+    }
+
+    if (requestType !== 'forgot_clock_in' && targetEntry?.status !== 'clocked_out' && !requiresClockOutFirst) {
+      setError('You are still clocked in. Clock out first, then submit this correction.');
+      return;
+    }
+
+    if (requestType === 'forgot_clock_in' || requestType === 'wrong_time') {
+      const inAt = combineDateAndTime(requestedDate, requestedStartTime);
+      const outAt = combineDateAndTime(requestedDate, requestedEndTime);
+      if (!inAt || !outAt) {
+        setError('Enter valid start and end times.');
+        return;
+      }
+      if (Date.parse(inAt) >= Date.parse(outAt)) {
+        setError('Requested clock-out must be after requested clock-in.');
+        return;
+      }
+    }
+
+    if (requestType === 'wrong_job' && !requestedJobId) {
+      setError('Choose a correct job before submitting.');
+      return;
+    }
+
+    if ((requestType === 'wrong_activity' || requestType === 'forgot_clock_in')
+      && requestedActivity === 'job'
+      && !requestedJobId) {
+      setError('Choose a correct job before submitting.');
+      return;
+    }
+
+    const payload = getPayload();
+    if (!payload) {
+      setError('Could not build correction request payload.');
+      return;
+    }
+
+    const result = await submitCorrection(payload);
+    if (!result.ok) {
+      setError(result.error || 'Could not submit correction request.');
+      return;
+    }
+
+    setStatus('Correction request submitted');
+    setTimeout(() => {
+      router.replace('/time-history');
+    }, 500);
+  }
+
+  async function onClockOutAndRequestCorrection() {
+    if (!activeEntry) {
+      setError('No active shift found.');
+      return;
+    }
+
+    const meta = createRequestMeta(activeEntry.id);
+    const clockOutResult = await clockOut(activeEntry.id, '', undefined, meta);
+    if (!clockOutResult.ok) {
+      setError(clockOutResult.error || 'Clock-out failed. Correction was not created.');
+      return;
+    }
+
+    router.replace({ pathname: '/request-time-correction', params: { timeEntryId: activeEntry.id, requestType: 'forgot_clock_out', postClockOut: '1' } });
+  }
+
+  const requiresClockOutFirst = Boolean(
+    requestType === 'forgot_clock_out'
+    && activeEntry
+    && (!targetEntry || targetEntry.id === activeEntry.id),
+  );
+
+  return (
+    <Screen>
+      <View style={styles.section}>
+        <Text style={styles.title}>Request Time Correction</Text>
+        {targetEntry ? (
+          <View style={styles.summaryCard}>
+            <Text style={styles.summaryTitle}>{resolveJobTitle(targetEntry, jobs)}</Text>
+            <Text style={styles.summaryType}>{getWorkTypeLabel(targetEntry.workType)}</Text>
+            <Text style={styles.summaryMeta}>Original</Text>
+            <Text style={styles.summaryRange}>{formatEntryTimeRange(targetEntry, false)}</Text>
+          </View>
+        ) : null}
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.label}>Correction type</Text>
+        {REQUEST_TYPE_OPTIONS.map((option) => (
+          <Pressable
+            key={option.id}
+            style={[styles.option, requestType === option.id ? styles.optionSelected : null]}
+            onPress={() => setRequestType(option.id)}
+            testID={`correction-type-${option.id}`}
+          >
+            <Text style={styles.optionLabel}>{option.label}</Text>
+          </Pressable>
+        ))}
+      </View>
+
+      {requiresClockOutFirst ? (
+        <View style={styles.section}>
+          <StatusBanner tone="info" message="You are still clocked in." />
+          <Text style={styles.helperText}>Did you forget to clock out earlier?</Text>
+          <PrimaryActionButton label="Clock Out Now" onPress={() => router.push('/clock-out')} />
+          <PrimaryActionButton
+            label={submitting ? 'Submitting...' : 'Clock Out & Request Correction'}
+            disabled={submitting}
+            onPress={() => { void onClockOutAndRequestCorrection(); }}
+          />
+        </View>
+      ) : null}
+
+      {(requestType === 'forgot_clock_in' || requestType === 'wrong_time') ? (
+        <View style={styles.section}>
+          {requestType === 'forgot_clock_in' ? <Text style={styles.label}>What time did you actually start?</Text> : <Text style={styles.label}>Requested start</Text>}
+          <TextInput
+            style={styles.input}
+            value={requestedDate}
+            onChangeText={setRequestedDate}
+            placeholder="YYYY-MM-DD"
+            placeholderTextColor={colors.inputPlaceholder}
+            testID="correction-date-input"
+          />
+          <TextInput
+            style={styles.input}
+            value={requestedStartTime}
+            onChangeText={setRequestedStartTime}
+            placeholder="HH:MM"
+            placeholderTextColor={colors.inputPlaceholder}
+            testID="correction-start-input"
+          />
+          <Text style={styles.label}>{requestType === 'forgot_clock_in' ? 'What time did you actually finish?' : 'Requested end'}</Text>
+          <TextInput
+            style={styles.input}
+            value={requestedEndTime}
+            onChangeText={setRequestedEndTime}
+            placeholder="HH:MM"
+            placeholderTextColor={colors.inputPlaceholder}
+            testID="correction-end-input"
+          />
+        </View>
+      ) : null}
+
+      {requestType === 'forgot_clock_out' ? (
+        <View style={styles.section}>
+          <Text style={styles.label}>What time did you actually finish?</Text>
+          <TextInput
+            style={styles.input}
+            value={requestedEndTime}
+            onChangeText={setRequestedEndTime}
+            placeholder="HH:MM"
+            placeholderTextColor={colors.inputPlaceholder}
+            testID="correction-end-input"
+          />
+        </View>
+      ) : null}
+
+      {(requestType === 'wrong_activity' || requestType === 'forgot_clock_in') ? (
+        <View style={styles.section}>
+          <Text style={styles.label}>Choose correct activity</Text>
+          <Pressable
+            style={[styles.option, requestedActivity === 'job' ? styles.optionSelected : null]}
+            onPress={() => setRequestedActivity('job')}
+            testID="activity-option-job"
+          >
+            <Text style={styles.optionLabel}>Job Work</Text>
+          </Pressable>
+          {canShowDriveTime ? (
+            <Pressable
+              style={[styles.option, requestedActivity === 'drive_time' ? styles.optionSelected : null]}
+              onPress={() => setRequestedActivity('drive_time')}
+              testID="activity-option-drive_time"
+            >
+              <Text style={styles.optionLabel}>Drive Time</Text>
+            </Pressable>
+          ) : null}
+          <Pressable
+            style={[styles.option, requestedActivity === 'non_billable' ? styles.optionSelected : null]}
+            onPress={() => setRequestedActivity('non_billable')}
+            testID="activity-option-non_billable"
+          >
+            <Text style={styles.optionLabel}>Unbillable Time</Text>
+          </Pressable>
+        </View>
+      ) : null}
+
+      {(requestType === 'wrong_job' || ((requestType === 'wrong_activity' || requestType === 'forgot_clock_in') && requestedActivity === 'job')) ? (
+        <View style={styles.section}>
+          <Text style={styles.label}>Choose correct job</Text>
+          {jobs.map((job) => (
+            <Pressable
+              key={job.id}
+              style={[styles.option, requestedJobId === job.id ? styles.optionSelected : null]}
+              onPress={() => setRequestedJobId(job.id)}
+              testID={`job-option-${job.id}`}
+            >
+              <Text style={styles.optionLabel}>{job.title || 'Untitled job'}</Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
+
+      <View style={styles.section}>
+        <Text style={styles.label}>Tell your manager what happened</Text>
+        <TextInput
+          style={[styles.input, styles.notes]}
+          value={reason}
+          onChangeText={setReason}
+          placeholder="Add details for your manager"
+          placeholderTextColor={colors.inputPlaceholder}
+          multiline
+          numberOfLines={4}
+          testID="correction-reason-input"
+        />
+      </View>
+
+      {status ? (
+        <View style={styles.section}>
+          <StatusBanner tone="success" message={status} />
+          <Text style={styles.helperText}>Your original time entry will remain unchanged until the request is approved.</Text>
+        </View>
+      ) : null}
+      {error ? <StatusBanner tone="error" message={error} /> : null}
+      {params.postClockOut === '1' ? <StatusBanner tone="info" message="Clock-out completed. Please submit your correction request." /> : null}
+
+      <PrimaryActionButton
+        label={submitting ? 'Submitting...' : 'Submit Request'}
+        disabled={submitting || requiresClockOutFirst}
+        onPress={() => { void submitRequest(); }}
+      />
+      {submitting ? <ActivityIndicator size="small" color={colors.primary} /> : null}
+      <Text style={styles.footerHint}>Request type: {getCorrectionTypeLabel(requestType)}</Text>
+    </Screen>
+  );
+}
+
+const styles = StyleSheet.create({
+  section: {
+    gap: 10,
+  },
+  title: {
+    color: colors.textPrimary,
+    fontSize: 24,
+    fontWeight: '700',
+    letterSpacing: -0.2,
+  },
+  summaryCard: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    backgroundColor: colors.surface,
+    padding: 12,
+    gap: 4,
+  },
+  summaryTitle: {
+    color: colors.textPrimary,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  summaryType: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  summaryMeta: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  summaryRange: {
+    color: colors.textPrimary,
+    fontSize: 15,
+  },
+  label: {
+    color: colors.textPrimary,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  option: {
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+  },
+  optionSelected: {
+    borderColor: colors.primary,
+    backgroundColor: colors.surfaceMuted,
+  },
+  optionLabel: {
+    color: colors.textPrimary,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  input: {
+    minHeight: 48,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    paddingHorizontal: 12,
+    fontSize: 15,
+    color: colors.textPrimary,
+  },
+  notes: {
+    minHeight: 108,
+    paddingTop: 10,
+    textAlignVertical: 'top',
+  },
+  helperText: {
+    color: colors.textSecondary,
+    fontSize: 14,
+  },
+  footerHint: {
+    color: colors.textSecondary,
+    fontSize: 13,
+  },
+});

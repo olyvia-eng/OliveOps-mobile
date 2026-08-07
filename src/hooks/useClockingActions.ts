@@ -11,9 +11,11 @@ export function useClockingActions() {
   const { accessToken, user, syncCapabilities } = useAuthStore();
   const {
     upsertTimeEntry,
+    setActiveShiftWarnings,
     setActivityConfigs,
     setCurrentActiveEntryId,
     setJobs,
+    setTimeCorrections,
     setTimeEntries,
   } = useClockingStore();
   const [loading, setLoading] = useState(false);
@@ -24,7 +26,9 @@ export function useClockingActions() {
     const payload = await clockingApi.loadBootstrap(accessToken);
     setJobs(scopeJobsForSession(payload.jobs ?? [], user));
     setTimeEntries(scopeTimeEntriesForSession(payload.timeEntries ?? [], user));
+    setTimeCorrections(payload.timeCorrections ?? []);
     setCurrentActiveEntryId(payload.currentActiveEntryId ?? null);
+    setActiveShiftWarnings(payload.activeShiftWarnings);
     setActivityConfigs(payload.activityConfigs);
     if (payload.capabilities) {
       syncCapabilities(payload.capabilities);
@@ -189,8 +193,10 @@ export function useClockingActions() {
   }), [
     accessToken,
     setActivityConfigs,
+    setActiveShiftWarnings,
     setCurrentActiveEntryId,
     setJobs,
+    setTimeCorrections,
     setTimeEntries,
     syncCapabilities,
     upsertTimeEntry,

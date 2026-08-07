@@ -1,4 +1,11 @@
-import type { Job, SessionUser, TimeEntry, TimeEntryWorkType } from '@/types/domain';
+import type {
+  Job,
+  SessionUser,
+  TimeCorrectionRequest,
+  TimeCorrectionRequestType,
+  TimeEntry,
+  TimeEntryWorkType,
+} from '@/types/domain';
 
 export interface MobileCapabilities {
   paidDriveTime: boolean;
@@ -33,11 +40,42 @@ export interface BootstrapResponse {
   ok: boolean;
   jobs?: Job[];
   timeEntries?: TimeEntry[];
+  timeCorrections?: TimeCorrectionRequest[];
   employees?: Array<{ id: string }>;
   currentActiveEntryId?: string | null;
+  activeShiftWarnings?: {
+    possibleForgottenClockOut: boolean;
+    thresholdHours: number;
+  };
   capabilities?: MobileCapabilities;
   activityConfigs?: ActivityConfig[];
   error?: string;
+}
+
+export interface CreateTimeCorrectionRequest {
+  timeEntryId?: string;
+  employeeId?: string;
+  requestType: TimeCorrectionRequestType;
+  requestedClockInAt?: string;
+  requestedClockOutAt?: string;
+  requestedJobId?: string;
+  requestedActivityType?: TimeEntryWorkType;
+  reason: string;
+}
+
+export interface CreateTimeCorrectionResponse {
+  ok: boolean;
+  correction: TimeCorrectionRequest;
+}
+
+export interface ListTimeCorrectionsResponse {
+  ok: boolean;
+  items: TimeCorrectionRequest[];
+}
+
+export interface EffectiveTimeEntriesResponse {
+  ok: boolean;
+  items: TimeEntry[];
 }
 
 export interface ClockInRequest {

@@ -22,6 +22,11 @@ const mockUseAuthStore = jest.fn(() => ({
 
 const mockClockingState = {
   currentActiveEntryId: 'entry-1',
+  activeShiftWarnings: {
+    possibleForgottenClockOut: false,
+    thresholdHours: 12,
+  },
+  timeCorrections: [],
   jobs: [
     { id: 'job-1', title: 'Front Walkway', status: 'scheduled', assignedEmployeeIds: ['emp-1'] },
     { id: 'job-2', title: 'Warehouse', status: 'scheduled', assignedEmployeeIds: ['emp-1'] },
@@ -102,6 +107,7 @@ import HomeScreen from '../../app/home';
 describe('HomeScreen', () => {
   beforeEach(() => {
     mockRefresh.mockClear();
+    mockClockingState.activeShiftWarnings.possibleForgottenClockOut = false;
   });
 
   it('uses authoritative active entry id for current status card', async () => {
@@ -113,5 +119,23 @@ describe('HomeScreen', () => {
     const renderedText = tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ');
     expect(renderedText).toContain('Front Walkway');
     expect(renderedText).not.toContain('Current job: Warehouse');
+  });
+
+  it('shows long-shift warning actions when possible forgotten clock-out is flagged', async () => {
+    mockClockingState.activeShiftWarnings.possibleForgottenClockOut = true;
+
+    let tree: any;
+    await act(async () => {
+      tree = create(React.createElement(HomeScreen));
+    });
+
+    const labels = tree.root.findAllByType('primary-button').map((node: any) => node.props.label);
+    expect(labels).toContain('Clock Out Now');
+
+    const banners = tree.root.findAllByType('status-banner');
+    expect(banners[0].props.message).toContain('Did you forget to clock out?');
+
+    const renderedText = tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ');
+    expect(renderedText).toContain('Clock Out & Request Correction');
   });
 });

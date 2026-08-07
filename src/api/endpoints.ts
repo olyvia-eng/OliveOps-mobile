@@ -7,5 +7,8 @@ export const ENDPOINTS = {
   clockIn: '/api/clocking?action=clock-in',
   clockOut: '/api/clocking?action=clock-out',
   switchActivity: '/api/clocking?action=switch-activity',
+  timeCorrectionsCreate: '/api/time-corrections?action=create',
+  timeCorrectionsList: '/api/time-corrections?action=list&mine=true',
+  timeCorrectionsEffectiveTimeEntries: '/api/time-corrections?action=effective-time-entries',
   storage: '/api/storage',
 } as const;

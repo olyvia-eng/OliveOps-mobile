@@ -24,6 +24,8 @@ export default function RootLayout() {
           <Stack.Screen name="active-shift" options={{ title: 'Active Shift' }} />
           <Stack.Screen name="clock-out" options={{ title: 'Clock Out' }} />
           <Stack.Screen name="time-history" options={{ title: 'Time History' }} />
+          <Stack.Screen name="request-time-correction" options={{ title: 'Request Time Correction' }} />
+          <Stack.Screen name="my-correction-requests" options={{ title: 'My Correction Requests' }} />
           <Stack.Screen name="settings" options={{ title: 'Settings' }} />
         </Stack>
       </ClockingProvider>

@@ -1,16 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { PrimaryActionButton } from '@/components/PrimaryActionButton';
 import { Screen } from '@/components/Screen';
-import { formatElapsedClock, getWorkTypeLabel, resolveCurrentActiveEntry, resolveJobTitle } from '@/features/clocking/presentation';
+import { StatusBanner } from '@/components/StatusBanner';
+import { formatElapsedClock, formatLongShiftWarning, getWorkTypeLabel, resolveCurrentActiveEntry, resolveJobTitle } from '@/features/clocking/presentation';
 import { useAuthStore } from '@/store/authStore';
 import { useClockingStore } from '@/store/clockingStore';
 import { colors } from '@/theme/colors';
 
 export default function ActiveShiftScreen() {
   const { user } = useAuthStore();
-  const { currentActiveEntryId, timeEntries, jobs } = useClockingStore();
+  const { activeShiftWarnings, currentActiveEntryId, timeEntries, jobs } = useClockingStore();
   const [now, setNow] = useState(Date.now());
 
   const entry = useMemo(() => {
@@ -33,6 +34,12 @@ export default function ActiveShiftScreen() {
     if (!entry) return 'No active activity';
     return getWorkTypeLabel(entry.workType);
   }, [entry]);
+
+  const showLongShiftWarning = Boolean(entry && activeShiftWarnings.possibleForgottenClockOut);
+  const longShiftWarning = useMemo(() => {
+    if (!entry) return '';
+    return formatLongShiftWarning(entry.clockIn, now);
+  }, [entry, now]);
 
   return (
     <Screen>
@@ -59,6 +66,16 @@ export default function ActiveShiftScreen() {
           </>
         )}
       </View>
+
+      {showLongShiftWarning ? (
+        <View style={styles.warningBlock}>
+          <StatusBanner tone="info" message={longShiftWarning} />
+          <PrimaryActionButton label="Clock Out Now" onPress={() => router.push('/clock-out')} />
+          <Pressable style={styles.warningSecondary} onPress={() => router.push({ pathname: '/request-time-correction', params: { requestType: 'forgot_clock_out' } })}>
+            <Text style={styles.warningSecondaryText}>Clock Out & Request Correction</Text>
+          </Pressable>
+        </View>
+      ) : null}
 
       {entry ? (
         <>
@@ -138,5 +155,23 @@ const styles = StyleSheet.create({
   metaLabel: {
     color: colors.textSecondary,
     fontSize: 15,
+  },
+  warningBlock: {
+    gap: 8,
+  },
+  warningSecondary: {
+    minHeight: 48,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+  },
+  warningSecondaryText: {
+    color: colors.textPrimary,
+    fontSize: 15,
+    fontWeight: '600',
   },
 });

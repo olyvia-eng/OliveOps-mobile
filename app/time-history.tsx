@@ -1,11 +1,15 @@
 import { useMemo } from 'react';
-import { FlatList, StyleSheet, Text, View } from 'react-native';
+import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { router } from 'expo-router';
 import {
+  buildEffectiveTimeEntries,
   formatDurationForEntry,
   formatDurationMinutes,
   formatEntryTimeRange,
   getWorkTypeLabel,
+  hasApprovedCorrectionForEntry,
+  hasPendingCorrectionForEntry,
   isAuthoritativeActiveEntry,
   resolveCurrentActiveEntry,
   resolveJobTitle,
@@ -17,17 +21,21 @@ import { colors } from '@/theme/colors';
 
 export default function TimeHistoryScreen() {
   const { user } = useAuthStore();
-  const { currentActiveEntryId, timeEntries, jobs } = useClockingStore();
-  const todayEntries = useMemo(() => getTodayEntries(timeEntries), [timeEntries]);
+  const { currentActiveEntryId, timeEntries, timeCorrections, jobs } = useClockingStore();
+  const effectiveTimeEntries = useMemo(
+    () => buildEffectiveTimeEntries(timeEntries, timeCorrections),
+    [timeCorrections, timeEntries],
+  );
+  const todayEntries = useMemo(() => getTodayEntries(effectiveTimeEntries), [effectiveTimeEntries]);
   const orderedEntries = useMemo(
     () => [...todayEntries].sort((a, b) => new Date(b.clockIn).getTime() - new Date(a.clockIn).getTime()),
     [todayEntries]
   );
-  const weekTotal = useMemo(() => getWeekTotalHours(timeEntries), [timeEntries]);
+  const weekTotal = useMemo(() => getWeekTotalHours(effectiveTimeEntries), [effectiveTimeEntries]);
   const weekTotalLabel = useMemo(() => formatDurationMinutes(weekTotal * 60), [weekTotal]);
   const activeEntry = useMemo(
     () => resolveCurrentActiveEntry(timeEntries, user?.employeeId, currentActiveEntryId),
-    [currentActiveEntryId, timeEntries, user?.employeeId]
+    [currentActiveEntryId, timeEntries, user?.employeeId],
   );
   const authoritativeActiveEntryId = activeEntry?.id ?? null;
 
@@ -42,6 +50,17 @@ export default function TimeHistoryScreen() {
             <Text style={styles.title}>Today's entries</Text>
             <Text style={styles.meta}>Today entries: {todayEntries.length}</Text>
             <Text style={styles.meta}>This week total: {weekTotalLabel}</Text>
+            <View style={styles.headerActionsRow}>
+              <Pressable
+                style={styles.headerAction}
+                onPress={() => router.push({ pathname: '/request-time-correction', params: { requestType: 'forgot_clock_in' } })}
+              >
+                <Text style={styles.headerActionLabel}>Missing time?</Text>
+              </Pressable>
+              <Pressable style={styles.headerAction} onPress={() => router.push('/my-correction-requests')}>
+                <Text style={styles.headerActionLabel}>My Correction Requests</Text>
+              </Pressable>
+            </View>
           </View>
         )}
         renderItem={({ item }) => (
@@ -61,9 +80,33 @@ export default function TimeHistoryScreen() {
                 </View>
               )}
             </View>
+            <View style={styles.badgeRow}>
+              {hasPendingCorrectionForEntry(item.id, timeCorrections) ? (
+                <View style={styles.pendingBadge}>
+                  <Text style={styles.pendingLabel}>Correction pending</Text>
+                </View>
+              ) : null}
+              {hasApprovedCorrectionForEntry(item.id, timeCorrections) ? (
+                <View style={styles.correctedBadge}>
+                  <Text style={styles.correctedLabel}>Corrected</Text>
+                </View>
+              ) : null}
+            </View>
             <Text style={styles.entryType}>{getWorkTypeLabel(item.workType)}</Text>
             <Text style={styles.entryDateLabel}>Today</Text>
             <Text style={styles.entryRange}>{formatEntryTimeRange(item, isAuthoritativeActiveEntry(item.id, authoritativeActiveEntryId))}</Text>
+            <Pressable
+              style={styles.requestAction}
+              onPress={() => router.push({
+                pathname: '/request-time-correction',
+                params: {
+                  timeEntryId: item.id,
+                  requestType: item.clockOut ? 'wrong_time' : 'forgot_clock_out',
+                },
+              })}
+            >
+              <Text style={styles.requestActionLabel}>Request Time Correction</Text>
+            </Pressable>
           </View>
         )}
         ListEmptyComponent={<Text style={styles.empty}>No time entries for today.</Text>}
@@ -101,6 +144,24 @@ const styles = StyleSheet.create({
   meta: {
     color: colors.textSecondary,
     fontSize: 15,
+  },
+  headerActionsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 8,
+  },
+  headerAction: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceMuted,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  headerActionLabel: {
+    color: colors.textPrimary,
+    fontSize: 12,
+    fontWeight: '700',
   },
   entryCard: {
     borderRadius: 12,
@@ -160,6 +221,36 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
   },
+  badgeRow: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  pendingBadge: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceMuted,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  pendingLabel: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  correctedBadge: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.successBorder,
+    backgroundColor: colors.successBackground,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  correctedLabel: {
+    color: colors.success,
+    fontSize: 12,
+    fontWeight: '700',
+  },
   entryDateLabel: {
     color: colors.textSecondary,
     fontSize: 13,
@@ -180,5 +271,20 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 15,
     marginTop: 12,
+  },
+  requestAction: {
+    marginTop: 6,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    alignSelf: 'flex-start',
+  },
+  requestActionLabel: {
+    color: colors.textPrimary,
+    fontSize: 13,
+    fontWeight: '600',
   },
 });

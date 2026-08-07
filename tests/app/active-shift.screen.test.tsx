@@ -16,6 +16,11 @@ const mockUseAuthStore = jest.fn(() => ({
 
 const mockClockingState = {
   currentActiveEntryId: null as string | null,
+  activeShiftWarnings: {
+    possibleForgottenClockOut: false,
+    thresholdHours: 12,
+  },
+  timeCorrections: [],
   timeEntries: [] as any[],
   jobs: [
     { id: 'job-1', title: 'Front Walkway', status: 'scheduled', assignedEmployeeIds: ['emp-1'] },
@@ -54,6 +59,7 @@ jest.mock('react-native', () => {
     StyleSheet: { create: (value: unknown) => value },
     View: ({ children }: any) => React.createElement('view', {}, children),
     Text: ({ children }: any) => React.createElement('text', {}, children),
+    Pressable: ({ children, onPress }: any) => React.createElement('pressable', { onPress }, children),
   };
 });
 
@@ -62,6 +68,7 @@ import ActiveShiftScreen from '../../app/active-shift';
 describe('ActiveShiftScreen', () => {
   beforeEach(() => {
     mockClockingState.currentActiveEntryId = null;
+    mockClockingState.activeShiftWarnings.possibleForgottenClockOut = false;
     mockClockingState.timeEntries = [];
   });
 
@@ -120,5 +127,32 @@ describe('ActiveShiftScreen', () => {
     expect(labels).toContain('Clock Out');
     expect(labels).toContain('Switch Activity');
     expect(labels).not.toContain('Clock In');
+  });
+
+  it('shows long-shift warning actions when backend warning flag is true', async () => {
+    mockClockingState.currentActiveEntryId = 'entry-1';
+    mockClockingState.activeShiftWarnings.possibleForgottenClockOut = true;
+    mockClockingState.timeEntries = [
+      {
+        id: 'entry-1',
+        employeeId: 'emp-1',
+        jobId: 'job-1',
+        workType: 'job',
+        clockIn: '2026-08-07T10:00:00.000Z',
+        breakMinutes: 0,
+        notes: '',
+        status: 'clocked_in',
+      },
+    ];
+
+    let tree: any;
+    await act(async () => {
+      tree = create(React.createElement(ActiveShiftScreen));
+    });
+
+    const labels = tree.root.findAllByType('primary-button').map((node: any) => node.props.label);
+    expect(labels).toContain('Clock Out Now');
+    const renderedText = tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ');
+    expect(renderedText).toContain('Clock Out & Request Correction');
   });
 });

@@ -6,6 +6,7 @@ import { Screen } from '@/components/Screen';
 import { OfflineNotice } from '@/components/OfflineNotice';
 import { StatusBanner } from '@/components/StatusBanner';
 import {
+  formatLongShiftWarning,
   formatElapsedShort,
   getGreetingForTime,
   getWorkTypeLabel,
@@ -19,7 +20,7 @@ import { colors } from '@/theme/colors';
 
 export default function HomeScreen() {
   const { user } = useAuthStore();
-  const { currentActiveEntryId, timeEntries, jobs } = useClockingStore();
+  const { activeShiftWarnings, currentActiveEntryId, timeEntries, jobs } = useClockingStore();
   const { refreshWorkContext } = useClockingActions();
   const [loadError, setLoadError] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
@@ -65,6 +66,12 @@ export default function HomeScreen() {
   const runningDuration = useMemo(() => {
     if (!activeShift) return '0h 0m';
     return formatElapsedShort(activeShift.clockIn, now);
+  }, [activeShift, now]);
+
+  const showLongShiftWarning = Boolean(activeShift && activeShiftWarnings.possibleForgottenClockOut);
+  const longShiftWarning = useMemo(() => {
+    if (!activeShift) return '';
+    return formatLongShiftWarning(activeShift.clockIn, now);
   }, [activeShift, now]);
 
   const greeting = useMemo(() => getGreetingForTime(user?.name || 'Crew Member'), [user?.name]);
@@ -120,6 +127,16 @@ export default function HomeScreen() {
       </View>
 
       {loadError ? <StatusBanner tone="error" message={loadError} /> : null}
+
+      {showLongShiftWarning ? (
+        <View style={styles.warningBlock}>
+          <StatusBanner tone="info" message={longShiftWarning} />
+          <PrimaryActionButton label="Clock Out Now" onPress={() => router.push('/clock-out')} />
+          <Pressable style={styles.warningSecondary} onPress={() => router.push({ pathname: '/request-time-correction', params: { requestType: 'forgot_clock_out' } })}>
+            <Text style={styles.warningSecondaryText}>Clock Out & Request Correction</Text>
+          </Pressable>
+        </View>
+      ) : null}
 
       <PrimaryActionButton label={dominantLabel} onPress={onDominantPress} />
 
@@ -225,6 +242,24 @@ const styles = StyleSheet.create({
   },
   sectionBlock: {
     gap: 10,
+  },
+  warningBlock: {
+    gap: 8,
+  },
+  warningSecondary: {
+    minHeight: 48,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+  },
+  warningSecondaryText: {
+    color: colors.textPrimary,
+    fontSize: 15,
+    fontWeight: '600',
   },
   sectionTitle: {
     color: colors.textPrimary,
