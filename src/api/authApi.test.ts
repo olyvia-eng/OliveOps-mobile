@@ -15,43 +15,54 @@ function mockResponse(status: number, body: unknown) {
 }
 
 describe('authApi', () => {
+  const fetchMock = vi.fn();
+
   beforeEach(() => {
     vi.restoreAllMocks();
+    fetchMock.mockReset();
+    vi.stubGlobal('fetch', fetchMock);
   });
 
   it('handles successful login', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(mockResponse(200, {
+    fetchMock.mockResolvedValue(mockResponse(200, {
       ok: true,
+      accessToken: 'token-1',
+      expiresAt: '2026-01-01T00:00:00.000Z',
       user: { id: 'u1', businessId: 'biz-1', name: 'Alex', email: 'a@x.com', role: 'crew_member', businessName: 'OliveOps', employeeId: 'emp-1' },
-    })));
+    }));
 
     const result = await login('a@x.com', 'pw');
     expect(result.ok).toBe(true);
     expect(result.user?.id).toBe('u1');
+    expect(result.accessToken).toBe('token-1');
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:3000/api/auth?action=mobile-login',
+      expect.objectContaining({ method: 'POST' })
+    );
   });
 
   it('returns invalid login as ApiError', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(mockResponse(401, { ok: false, error: 'Invalid email or password.' })));
+    fetchMock.mockResolvedValue(mockResponse(401, { ok: false, error: 'Invalid email or password.' }));
     await expect(login('a@x.com', 'bad')).rejects.toBeInstanceOf(ApiError);
   });
 
   it('supports session restoration when endpoint is valid', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(mockResponse(200, {
+    fetchMock.mockResolvedValue(mockResponse(200, {
       ok: true,
       user: { id: 'u1', businessId: 'biz-1', name: 'Alex', email: 'a@x.com', role: 'crew_member', businessName: 'OliveOps', employeeId: 'emp-1' },
-    })));
+    }));
 
     const result = await getSession('token-1');
     expect(result.user?.employeeId).toBe('emp-1');
   });
 
   it('treats expired session as unauthorized', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(mockResponse(401, { ok: false, error: 'Unauthorized' })));
+    fetchMock.mockResolvedValue(mockResponse(401, { ok: false, error: 'Unauthorized' }));
     await expect(getSession('expired')).rejects.toBeInstanceOf(ApiError);
   });
 
   it('supports logout success', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(mockResponse(200, { ok: true })));
+    fetchMock.mockResolvedValue(mockResponse(200, { ok: true }));
     await expect(logout('token-1')).resolves.toEqual({ ok: true });
   });
 });

@@ -21,9 +21,34 @@ export function createSessionToken(user) {
   );
 }
 
+function extractBearerToken(authorizationHeader) {
+  if (typeof authorizationHeader !== 'string') return null;
+  const trimmed = authorizationHeader.trim();
+  if (!trimmed.toLowerCase().startsWith('bearer ')) return null;
+  const token = trimmed.slice(7).trim();
+  return token || null;
+}
+
+function getAuthHeader(req) {
+  const value = req?.headers?.authorization;
+  if (Array.isArray(value)) {
+    return typeof value[0] === 'string' ? value[0] : '';
+  }
+  return typeof value === 'string' ? value : '';
+}
+
+export function getAccessTokenFromRequest(req) {
+  const cookies = parseCookies(req?.headers?.cookie);
+  const cookieToken = cookies[SESSION_COOKIE];
+  if (typeof cookieToken === 'string' && cookieToken.trim()) {
+    return cookieToken;
+  }
+
+  return extractBearerToken(getAuthHeader(req));
+}
+
 export function getSessionFromRequest(req) {
-  const cookies = parseCookies(req.headers.cookie);
-  const token = cookies[SESSION_COOKIE];
+  const token = getAccessTokenFromRequest(req);
   if (!token) return null;
 
   try {

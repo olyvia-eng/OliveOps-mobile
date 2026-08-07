@@ -17,6 +17,12 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
+function isUnauthorizedError(error: unknown) {
+  if (!(error instanceof Error)) return false;
+  const normalized = error.message.toLowerCase();
+  return normalized.includes('401') || normalized.includes('unauthorized');
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [status, setStatus] = useState<SessionStatus>('checking');
   const [user, setUser] = useState<SessionUser | null>(null);
@@ -38,16 +44,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const session = await authApi.getSession(stored.accessToken);
       if (!session.user) {
+        await clearStoredSession();
+        setUser(null);
+        setAccessToken(undefined);
         setStatus('unauthenticated');
         return;
       }
 
       setUser(session.user);
       setStatus('authenticated');
-    } catch {
+    } catch (error) {
       await clearStoredSession();
       setUser(null);
       setAccessToken(undefined);
+      if (isUnauthorizedError(error)) {
+        setWarning('Session expired. Please log in again.');
+      }
       setStatus('unauthenticated');
     }
   }, []);
@@ -70,14 +82,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         });
         setWarning(undefined);
       } else {
-        // Current web backend is cookie-session based; mobile token endpoint is still needed.
-        setWarning('Authenticated via cookie session. Mobile secure token persistence requires backend token endpoint.');
+        await clearStoredSession();
+        setAccessToken(undefined);
+        setWarning('Login succeeded but no mobile access token was returned.');
       }
 
       setStatus('authenticated');
       return { ok: true };
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Login failed.';
+      setUser(null);
+      setAccessToken(undefined);
       setStatus('unauthenticated');
       return { ok: false, error: message };
     }

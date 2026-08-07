@@ -4,6 +4,7 @@ import { router } from 'expo-router';
 import { PrimaryActionButton } from '@/components/PrimaryActionButton';
 import { Screen } from '@/components/Screen';
 import { StatusBanner } from '@/components/StatusBanner';
+import { ENV } from '@/config/env';
 import { useAuthStore } from '@/store/authStore';
 
 export default function LoginScreen() {
@@ -34,6 +35,7 @@ export default function LoginScreen() {
         <Text style={styles.subtitle}>Sign in to clock in and clock out.</Text>
 
         {warning ? <StatusBanner tone="info" message={warning} /> : null}
+        {__DEV__ ? <StatusBanner tone="info" message={`API: ${ENV.apiBaseUrl}`} /> : null}
 
         <TextInput
           autoCapitalize="none"

@@ -3,7 +3,7 @@ import { apiRequest } from '@/api/client';
 import type { AuthSessionResponse } from '@/types/api';
 
 export async function login(email: string, password: string): Promise<AuthSessionResponse> {
-  return apiRequest<AuthSessionResponse>(ENDPOINTS.authLogin, {
+  return apiRequest<AuthSessionResponse>(ENDPOINTS.authMobileLogin, {
     method: 'POST',
     body: JSON.stringify({ email, password }),
   });
