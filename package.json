@@ -31,7 +31,7 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "test": "vitest run",
-    "test:fast": "vitest run --exclude src/**/*.screen.test.tsx",
+    "test:fast": "vitest run --exclude **/*.screen.test.tsx",
     "test:ui": "vitest run screen.test.tsx",
     "test:full": "npm run test:fast && npm run test:ui && node --max-old-space-size=4096 ./node_modules/typescript/bin/tsc --noEmit",
     "ci:test": "npm run test:full"

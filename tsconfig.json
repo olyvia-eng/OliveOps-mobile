@@ -15,6 +15,9 @@
     "src"
   ],
   "exclude": [
-    "OliveOps-web"
+    "tests",
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "vitest.config.ts"
   ]
 }
