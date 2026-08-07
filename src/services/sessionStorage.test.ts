@@ -1,14 +1,14 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 
-const store = new Map<string, string>();
+const mockStore = new Map<string, string>();
 
-vi.mock('expo-secure-store', () => ({
-  getItemAsync: vi.fn(async (key: string) => store.get(key) ?? null),
-  setItemAsync: vi.fn(async (key: string, value: string) => {
-    store.set(key, value);
+jest.mock('expo-secure-store', () => ({
+  getItemAsync: jest.fn(async (key: string) => mockStore.get(key) ?? null),
+  setItemAsync: jest.fn(async (key: string, value: string) => {
+    mockStore.set(key, value);
   }),
-  deleteItemAsync: vi.fn(async (key: string) => {
-    store.delete(key);
+  deleteItemAsync: jest.fn(async (key: string) => {
+    mockStore.delete(key);
   }),
 }));
 
@@ -16,7 +16,7 @@ import { clearStoredSession, readStoredSession, writeStoredSession } from '@/ser
 
 describe('sessionStorage', () => {
   beforeEach(() => {
-    store.clear();
+    mockStore.clear();
   });
 
   it('writes and restores persisted secure session', async () => {

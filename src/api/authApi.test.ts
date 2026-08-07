@@ -1,8 +1,8 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { getSession, login, logout } from '@/api/authApi';
 import { ApiError } from '@/types/errors';
 
-vi.mock('@/config/env', () => ({
+jest.mock('@/config/env', () => ({
   ENV: { apiBaseUrl: 'http://localhost:3000' },
 }));
 
@@ -10,17 +10,17 @@ function mockResponse(status: number, body: unknown) {
   return {
     ok: status >= 200 && status < 300,
     status,
-    json: vi.fn().mockResolvedValue(body),
+    json: jest.fn().mockResolvedValue(body),
   } as any;
 }
 
 describe('authApi', () => {
-  const fetchMock = vi.fn();
+  const fetchMock = jest.fn();
 
   beforeEach(() => {
-    vi.restoreAllMocks();
+    jest.restoreAllMocks();
     fetchMock.mockReset();
-    vi.stubGlobal('fetch', fetchMock);
+    (global as any).fetch = fetchMock;
   });
 
   it('handles successful login', async () => {

@@ -1,21 +1,17 @@
 import React from 'react';
 import { act, create } from 'react-test-renderer';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 
-const hoisted = vi.hoisted(() => ({
-  alertMock: vi.fn(),
-  replaceMock: vi.fn(),
-  mockClockOut: vi.fn(),
-  mockRefresh: vi.fn().mockResolvedValue({ ok: true }),
-}));
+const mockClockOut = jest.fn();
+const mockRefresh = jest.fn().mockResolvedValue({ ok: true });
 
-const mockUseClockingActions = vi.fn(() => ({
-  clockOut: hoisted.mockClockOut,
+const mockUseClockingActions = jest.fn(() => ({
+  clockOut: mockClockOut,
   loading: false,
-  refreshWorkContext: hoisted.mockRefresh,
+  refreshWorkContext: mockRefresh,
 }));
 
-const mockUseAuthStore = vi.fn(() => ({
+const mockUseAuthStore = jest.fn(() => ({
   user: {
     id: 'u-1',
     businessId: 'biz-1',
@@ -28,7 +24,7 @@ const mockUseAuthStore = vi.fn(() => ({
   accessToken: 'token-1',
 }));
 
-const mockUseClockingStore = vi.fn(() => ({
+const mockUseClockingStore = jest.fn(() => ({
   timeEntries: [
     {
       id: 'entry-1',
@@ -43,66 +39,66 @@ const mockUseClockingStore = vi.fn(() => ({
   ],
 }));
 
-vi.mock('expo-router', () => ({
+jest.mock('expo-router', () => ({
   router: {
-    replace: hoisted.replaceMock,
+    replace: jest.fn(),
   },
 }));
 
-vi.mock('expo-image-picker', () => ({
-  requestCameraPermissionsAsync: vi.fn().mockResolvedValue({ granted: true }),
-  launchCameraAsync: vi.fn().mockResolvedValue({ canceled: true, assets: [] }),
+jest.mock('expo-image-picker', () => ({
+  requestCameraPermissionsAsync: jest.fn().mockResolvedValue({ granted: true }),
+  launchCameraAsync: jest.fn().mockResolvedValue({ canceled: true, assets: [] }),
   MediaTypeOptions: { Images: 'Images' },
 }));
 
-vi.mock('@/hooks/useClockingActions', () => ({
+jest.mock('@/hooks/useClockingActions', () => ({
   useClockingActions: () => mockUseClockingActions(),
 }));
 
-vi.mock('@/store/authStore', () => ({
+jest.mock('@/store/authStore', () => ({
   useAuthStore: () => mockUseAuthStore(),
 }));
 
-vi.mock('@/store/clockingStore', () => ({
+jest.mock('@/store/clockingStore', () => ({
   useClockingStore: () => mockUseClockingStore(),
 }));
 
-vi.mock('@/services/requestGuards', () => ({
+jest.mock('@/services/requestGuards', () => ({
   createRequestMeta: () => ({ requestId: 'req-2', idempotencyKey: 'key-2' }),
 }));
 
-vi.mock('@/services/connectivity', () => ({
-  isOnline: vi.fn().mockResolvedValue(true),
+jest.mock('@/services/connectivity', () => ({
+  isOnline: jest.fn().mockResolvedValue(true),
 }));
 
-vi.mock('@/api/storageApi', () => ({
-  prepareUpload: vi.fn(),
-  uploadUriToS3: vi.fn(),
-  completeUpload: vi.fn(),
+jest.mock('@/api/storageApi', () => ({
+  prepareUpload: jest.fn(),
+  uploadUriToS3: jest.fn(),
+  completeUpload: jest.fn(),
 }));
 
-vi.mock('@/components/Screen', () => ({
-  Screen: ({ children }: { children: React.ReactNode }) => React.createElement('screen', {}, children),
+jest.mock('@/components/Screen', () => ({
+  Screen: ({ children }: any) => require('react').createElement('screen', {}, children),
 }));
 
-vi.mock('@/components/OfflineNotice', () => ({
-  OfflineNotice: () => React.createElement('offline-notice', {}),
+jest.mock('@/components/OfflineNotice', () => ({
+  OfflineNotice: () => require('react').createElement('offline-notice', {}),
 }));
 
-vi.mock('@/components/StatusBanner', () => ({
-  StatusBanner: ({ message }: { message: string }) => React.createElement('status-banner', { message }),
+jest.mock('@/components/StatusBanner', () => ({
+  StatusBanner: ({ message }: any) => require('react').createElement('status-banner', { message }),
 }));
 
-vi.mock('@/components/PrimaryActionButton', () => ({
-  PrimaryActionButton: ({ label, disabled, onPress }: { label: string; disabled?: boolean; onPress: () => void }) =>
-    React.createElement('primary-button', { label, disabled: !!disabled, onPress }),
+jest.mock('@/components/PrimaryActionButton', () => ({
+  PrimaryActionButton: ({ label, disabled, onPress }: any) =>
+    require('react').createElement('primary-button', { label, disabled: !!disabled, onPress }),
 }));
 
-vi.mock('react-native', () => {
+jest.mock('react-native', () => {
   const React = require('react');
   return {
     StyleSheet: { create: (value: unknown) => value },
-    Alert: { alert: hoisted.alertMock },
+    Alert: { alert: jest.fn() },
     View: ({ children }: any) => React.createElement('view', {}, children),
     Text: ({ children }: any) => React.createElement('text', {}, children),
     TextInput: ({ onChangeText, value, placeholder }: any) => React.createElement('textinput', { onChangeText, value, placeholder }),
@@ -110,13 +106,15 @@ vi.mock('react-native', () => {
 });
 
 import ClockOutScreen from '../../app/clock-out';
+import { router } from 'expo-router';
+import { Alert } from 'react-native';
 
 describe('ClockOutScreen', () => {
   beforeEach(() => {
-    hoisted.alertMock.mockReset();
-    hoisted.replaceMock.mockReset();
-    hoisted.mockClockOut.mockReset();
-    hoisted.mockClockOut.mockResolvedValue({ ok: true });
+    (Alert.alert as jest.Mock).mockReset();
+    (router.replace as jest.Mock).mockReset();
+    mockClockOut.mockReset();
+    mockClockOut.mockResolvedValue({ ok: true });
   });
 
   it('shows offline notice and disables confirm until notes entered', async () => {
@@ -155,14 +153,14 @@ describe('ClockOutScreen', () => {
       confirm.props.onPress();
     });
 
-    expect(hoisted.alertMock).toHaveBeenCalledTimes(1);
-    expect(hoisted.alertMock.mock.calls[0]?.[0]).toBe('Confirm Clock Out');
+    expect(Alert.alert).toHaveBeenCalledTimes(1);
+    expect((Alert.alert as jest.Mock).mock.calls[0]?.[0]).toBe('Confirm Clock Out');
   });
 
   it('shows retry button after failed clock-out submission', async () => {
-    hoisted.mockClockOut.mockResolvedValue({ ok: false, error: 'Offline. Reconnect and retry clock-out.' });
+    mockClockOut.mockResolvedValue({ ok: false, error: 'Offline. Reconnect and retry clock-out.' });
 
-    hoisted.alertMock.mockImplementation((_title: string, _message: string, actions: Array<{ onPress?: () => void }>) => {
+    (Alert.alert as jest.Mock).mockImplementation((_title: string, _message: string, actions: Array<{ onPress?: () => void }>) => {
       const confirmAction = actions?.[1];
       if (confirmAction?.onPress) {
         confirmAction.onPress();

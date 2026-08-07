@@ -1,8 +1,8 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { clockIn, clockOut, loadBootstrap } from '@/api/clockingApi';
 import { ApiError } from '@/types/errors';
 
-vi.mock('@/config/env', () => ({
+jest.mock('@/config/env', () => ({
   ENV: { apiBaseUrl: 'http://localhost:3000' },
 }));
 
@@ -10,21 +10,23 @@ function mockResponse(status: number, body: unknown) {
   return {
     ok: status >= 200 && status < 300,
     status,
-    json: vi.fn().mockResolvedValue(body),
+    json: jest.fn().mockResolvedValue(body),
   } as any;
 }
 
 describe('clockingApi', () => {
   beforeEach(() => {
-    vi.restoreAllMocks();
+    jest.restoreAllMocks();
   });
 
   it('loads assigned jobs and scoped entries', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(mockResponse(200, {
-      ok: true,
-      jobs: [{ id: 'j1', title: 'Job 1', status: 'scheduled', assignedEmployeeIds: ['emp-1'] }],
-      timeEntries: [{ id: 't1', employeeId: 'emp-1', workType: 'job', clockIn: '2026-08-06T10:00:00.000Z', breakMinutes: 0, notes: '', status: 'clocked_in' }],
-    })));
+    (global as any).fetch = jest.fn().mockResolvedValue(
+      mockResponse(200, {
+        ok: true,
+        jobs: [{ id: 'j1', title: 'Job 1', status: 'scheduled', assignedEmployeeIds: ['emp-1'] }],
+        timeEntries: [{ id: 't1', employeeId: 'emp-1', workType: 'job', clockIn: '2026-08-06T10:00:00.000Z', breakMinutes: 0, notes: '', status: 'clocked_in' }],
+      })
+    );
 
     const payload = await loadBootstrap('token-1');
     expect(payload.jobs?.length).toBe(1);
@@ -32,19 +34,21 @@ describe('clockingApi', () => {
   });
 
   it('submits clock-in successfully', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(mockResponse(200, {
-      ok: true,
-      timeEntry: {
-        id: 'entry-1',
-        employeeId: 'emp-1',
-        workType: 'job',
-        jobIds: ['j1'],
-        clockIn: '2026-08-06T10:00:00.000Z',
-        breakMinutes: 0,
-        notes: '',
-        status: 'clocked_in',
-      },
-    })));
+    (global as any).fetch = jest.fn().mockResolvedValue(
+      mockResponse(200, {
+        ok: true,
+        timeEntry: {
+          id: 'entry-1',
+          employeeId: 'emp-1',
+          workType: 'job',
+          jobIds: ['j1'],
+          clockIn: '2026-08-06T10:00:00.000Z',
+          breakMinutes: 0,
+          notes: '',
+          status: 'clocked_in',
+        },
+      })
+    );
 
     const payload = await clockIn({
       employeeId: 'emp-1',
@@ -59,20 +63,22 @@ describe('clockingApi', () => {
   });
 
   it('submits clock-out successfully', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(mockResponse(200, {
-      ok: true,
-      timeEntry: {
-        id: 'entry-1',
-        employeeId: 'emp-1',
-        workType: 'job',
-        jobIds: ['j1'],
-        clockIn: '2026-08-06T10:00:00.000Z',
-        clockOut: '2026-08-06T14:00:00.000Z',
-        breakMinutes: 0,
-        notes: 'done',
-        status: 'clocked_out',
-      },
-    })));
+    (global as any).fetch = jest.fn().mockResolvedValue(
+      mockResponse(200, {
+        ok: true,
+        timeEntry: {
+          id: 'entry-1',
+          employeeId: 'emp-1',
+          workType: 'job',
+          jobIds: ['j1'],
+          clockIn: '2026-08-06T10:00:00.000Z',
+          clockOut: '2026-08-06T14:00:00.000Z',
+          breakMinutes: 0,
+          notes: 'done',
+          status: 'clocked_out',
+        },
+      })
+    );
 
     const payload = await clockOut({
       entryId: 'entry-1',
@@ -87,12 +93,12 @@ describe('clockingApi', () => {
   });
 
   it('throws unauthorized/forbidden API errors', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(mockResponse(403, { ok: false, error: 'Forbidden' })));
+    (global as any).fetch = jest.fn().mockResolvedValue(mockResponse(403, { ok: false, error: 'Forbidden' }));
     await expect(loadBootstrap('token-1')).rejects.toBeInstanceOf(ApiError);
   });
 
   it('throws API failure for clock-in', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(mockResponse(500, { ok: false, error: 'Clock-in failed' })));
+    (global as any).fetch = jest.fn().mockResolvedValue(mockResponse(500, { ok: false, error: 'Clock-in failed' }));
 
     await expect(clockIn({
       employeeId: 'emp-1',

@@ -1,7 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { completeUpload, prepareUpload, prepareDownload, uploadToS3, uploadUriToS3 } from '@/api/storageApi';
 
-vi.mock('@/config/env', () => ({
+jest.mock('@/config/env', () => ({
   ENV: { apiBaseUrl: 'http://localhost:3000' },
 }));
 
@@ -9,17 +9,17 @@ function mockJsonResponse(status: number, body: unknown) {
   return {
     ok: status >= 200 && status < 300,
     status,
-    json: vi.fn().mockResolvedValue(body),
+    json: jest.fn().mockResolvedValue(body),
   } as any;
 }
 
 describe('storageApi', () => {
   beforeEach(() => {
-    vi.restoreAllMocks();
+    jest.restoreAllMocks();
   });
 
   it('runs photo upload lifecycle: prepare -> put -> complete', async () => {
-    const fetchMock = vi.fn();
+    const fetchMock = jest.fn();
 
     fetchMock
       .mockResolvedValueOnce(
@@ -33,7 +33,7 @@ describe('storageApi', () => {
       .mockResolvedValueOnce({ ok: true, status: 200 } as any)
       .mockResolvedValueOnce(mockJsonResponse(200, { ok: true, fileId: 'file-1' }));
 
-    vi.stubGlobal('fetch', fetchMock);
+    (global as any).fetch = fetchMock;
 
     const prepared = await prepareUpload({
       action: 'prepare-upload',
@@ -52,27 +52,25 @@ describe('storageApi', () => {
   });
 
   it('fails when direct S3 upload fails', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 403 }));
+    (global as any).fetch = jest.fn().mockResolvedValue({ ok: false, status: 403 });
     await expect(uploadToS3('https://upload.example/bad', new Blob(['x']), {})).rejects.toThrow('Direct S3 upload failed.');
   });
 
   it('resolves signed attachment URL request', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue(
+    (global as any).fetch =
+      jest.fn().mockResolvedValue(
         mockJsonResponse(200, { ok: true, fileId: 'file-1', downloadUrl: 'https://download.example/file-1' })
-      )
-    );
+      );
 
     const payload = await prepareDownload('file-1');
     expect(payload.downloadUrl).toContain('download.example');
   });
 
   it('uploads URI by converting it to blob first', async () => {
-    const fetchMock = vi.fn();
-    fetchMock.mockResolvedValueOnce({ ok: true, blob: vi.fn().mockResolvedValue(new Blob(['img'], { type: 'image/jpeg' })) });
+    const fetchMock = jest.fn();
+    fetchMock.mockResolvedValueOnce({ ok: true, blob: jest.fn().mockResolvedValue(new Blob(['img'], { type: 'image/jpeg' })) });
     fetchMock.mockResolvedValueOnce({ ok: true, status: 200 });
-    vi.stubGlobal('fetch', fetchMock);
+    (global as any).fetch = fetchMock;
 
     await uploadUriToS3('https://upload.example/file-1', 'file:///tmp/photo.jpg', 'image/jpeg');
     expect(fetchMock).toHaveBeenCalledTimes(2);

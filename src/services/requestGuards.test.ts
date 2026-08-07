@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from '@jest/globals';
 import { beginRequest, createRequestMeta, endRequest } from '@/services/requestGuards';
 
 describe('requestGuards', () => {

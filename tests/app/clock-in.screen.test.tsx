@@ -1,20 +1,17 @@
 import React from 'react';
 import { act, create } from 'react-test-renderer';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 
-const hoisted = vi.hoisted(() => ({
-  replaceMock: vi.fn(),
-  mockClockIn: vi.fn(),
-  mockRefresh: vi.fn().mockResolvedValue({ ok: true }),
-}));
+const mockClockIn = jest.fn();
+const mockRefresh = jest.fn().mockResolvedValue({ ok: true });
 
-const mockUseClockingActions = vi.fn(() => ({
-  clockIn: hoisted.mockClockIn,
+const mockUseClockingActions = jest.fn(() => ({
+  clockIn: mockClockIn,
   loading: false,
-  refreshWorkContext: hoisted.mockRefresh,
+  refreshWorkContext: mockRefresh,
 }));
 
-const mockUseAuthStore = vi.fn(() => ({
+const mockUseAuthStore = jest.fn(() => ({
   user: {
     id: 'u-1',
     businessId: 'biz-1',
@@ -26,52 +23,52 @@ const mockUseAuthStore = vi.fn(() => ({
   },
 }));
 
-const mockUseClockingStore = vi.fn(() => ({
+const mockUseClockingStore = jest.fn(() => ({
   jobs: [
     { id: 'job-1', title: 'Site A', status: 'scheduled', assignedEmployeeIds: ['emp-1'] },
   ],
 }));
 
-vi.mock('expo-router', () => ({
+jest.mock('expo-router', () => ({
   router: {
-    replace: hoisted.replaceMock,
+    replace: jest.fn(),
   },
 }));
 
-vi.mock('@/hooks/useClockingActions', () => ({
+jest.mock('@/hooks/useClockingActions', () => ({
   useClockingActions: () => mockUseClockingActions(),
 }));
 
-vi.mock('@/store/authStore', () => ({
+jest.mock('@/store/authStore', () => ({
   useAuthStore: () => mockUseAuthStore(),
 }));
 
-vi.mock('@/store/clockingStore', () => ({
+jest.mock('@/store/clockingStore', () => ({
   useClockingStore: () => mockUseClockingStore(),
 }));
 
-vi.mock('@/services/requestGuards', () => ({
+jest.mock('@/services/requestGuards', () => ({
   createRequestMeta: () => ({ requestId: 'req-1', idempotencyKey: 'key-1' }),
 }));
 
-vi.mock('@/components/Screen', () => ({
-  Screen: ({ children }: { children: React.ReactNode }) => React.createElement('screen', {}, children),
+jest.mock('@/components/Screen', () => ({
+  Screen: ({ children }: any) => require('react').createElement('screen', {}, children),
 }));
 
-vi.mock('@/components/OfflineNotice', () => ({
-  OfflineNotice: () => React.createElement('offline-notice', {}),
+jest.mock('@/components/OfflineNotice', () => ({
+  OfflineNotice: () => require('react').createElement('offline-notice', {}),
 }));
 
-vi.mock('@/components/StatusBanner', () => ({
-  StatusBanner: ({ message }: { message: string }) => React.createElement('status-banner', { message }),
+jest.mock('@/components/StatusBanner', () => ({
+  StatusBanner: ({ message }: any) => require('react').createElement('status-banner', { message }),
 }));
 
-vi.mock('@/components/PrimaryActionButton', () => ({
-  PrimaryActionButton: ({ label, disabled, onPress }: { label: string; disabled?: boolean; onPress: () => void }) =>
-    React.createElement('primary-button', { label, disabled: !!disabled, onPress }),
+jest.mock('@/components/PrimaryActionButton', () => ({
+  PrimaryActionButton: ({ label, disabled, onPress }: any) =>
+    require('react').createElement('primary-button', { label, disabled: !!disabled, onPress }),
 }));
 
-vi.mock('react-native', () => {
+jest.mock('react-native', () => {
   const React = require('react');
   return {
     StyleSheet: { create: (value: unknown) => value },
@@ -83,13 +80,14 @@ vi.mock('react-native', () => {
 });
 
 import ClockInScreen from '../../app/clock-in';
+import { router } from 'expo-router';
 
 describe('ClockInScreen', () => {
   beforeEach(() => {
-    hoisted.replaceMock.mockReset();
-    hoisted.mockClockIn.mockReset();
-    hoisted.mockRefresh.mockClear();
-    hoisted.mockClockIn.mockResolvedValue({ ok: true });
+    (router.replace as jest.Mock).mockReset();
+    mockClockIn.mockReset();
+    mockRefresh.mockClear();
+    mockClockIn.mockResolvedValue({ ok: true });
   });
 
   it('shows offline notice and disables submit until a job is selected', async () => {
@@ -128,12 +126,12 @@ describe('ClockInScreen', () => {
       await submitButton.props.onPress();
     });
 
-    expect(hoisted.mockClockIn).toHaveBeenCalledWith('emp-1', ['job-1'], { requestId: 'req-1', idempotencyKey: 'key-1' });
-    expect(hoisted.replaceMock).toHaveBeenCalledWith('/active-shift');
+    expect(mockClockIn).toHaveBeenCalledWith('emp-1', ['job-1'], { requestId: 'req-1', idempotencyKey: 'key-1' });
+    expect(router.replace).toHaveBeenCalledWith('/active-shift');
   });
 
   it('shows retry action when clock-in fails', async () => {
-    hoisted.mockClockIn.mockResolvedValue({ ok: false, error: 'Offline. Reconnect and retry clock-in.' });
+    mockClockIn.mockResolvedValue({ ok: false, error: 'Offline. Reconnect and retry clock-in.' });
 
     let tree: any;
     await act(async () => {

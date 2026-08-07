@@ -1,8 +1,9 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, jest } from '@jest/globals';
 
-vi.mock('@react-native-community/netinfo', () => ({
+jest.mock('@react-native-community/netinfo', () => ({
+  __esModule: true,
   default: {
-    fetch: vi.fn(),
+    fetch: jest.fn(),
   },
 }));
 
