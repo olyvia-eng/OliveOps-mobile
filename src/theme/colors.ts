@@ -1,12 +1,16 @@
 export const colors = {
-  background: '#F7F9F8',
+  background: '#F8FAF8',
   surface: '#FFFFFF',
   textPrimary: '#0F172A',
   textSecondary: '#475569',
   border: '#DDE3E1',
+  inputPlaceholder: '#94A3B8',
+  inputFocusBorder: '#179A55',
+  inputFocusBackground: '#F4FAF6',
   primary: '#179A55',
   primaryPressed: '#128246',
   error: '#B42318',
   errorBackground: '#FEE4E2',
+  errorBorder: '#F9B7AF',
   success: '#027A48',
 } as const;
