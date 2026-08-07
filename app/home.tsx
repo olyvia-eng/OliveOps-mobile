@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { PrimaryActionButton } from '@/components/PrimaryActionButton';
 import { Screen } from '@/components/Screen';
 import { OfflineNotice } from '@/components/OfflineNotice';
 import { StatusBanner } from '@/components/StatusBanner';
+import { formatElapsedShort, getGreetingForTime, resolveJobTitle } from '@/features/clocking/presentation';
 import { useClockingActions } from '@/hooks/useClockingActions';
 import { useAuthStore } from '@/store/authStore';
 import { useClockingStore } from '@/store/clockingStore';
+import { colors } from '@/theme/colors';
 
 export default function HomeScreen() {
   const { user } = useAuthStore();
@@ -40,17 +42,7 @@ export default function HomeScreen() {
 
   const currentJobLabel = useMemo(() => {
     if (!activeShift) return 'Not clocked in';
-    const ids = Array.isArray(activeShift.jobIds) && activeShift.jobIds.length > 0
-      ? activeShift.jobIds
-      : (activeShift.jobId ? [activeShift.jobId] : []);
-
-    if (ids.length === 0) return 'General work';
-
-    const titles = ids
-      .map((id) => jobs.find((job) => job.id === id)?.title || id)
-      .filter((value) => value.length > 0);
-
-    return titles.join(', ');
+    return resolveJobTitle(activeShift, jobs);
   }, [activeShift, jobs]);
 
   const runningHours = useMemo(() => {
@@ -59,6 +51,22 @@ export default function HomeScreen() {
     const hours = Math.max(0, (now - started) / (1000 * 60 * 60));
     return hours.toFixed(2);
   }, [activeShift, now]);
+
+  const runningDuration = useMemo(() => {
+    if (!activeShift) return '0h 0m';
+    return formatElapsedShort(activeShift.clockIn, now);
+  }, [activeShift, now]);
+
+  const greeting = useMemo(() => getGreetingForTime(user?.name || 'Crew Member'), [user?.name]);
+  const todayLabel = useMemo(
+    () => new Date(now).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' }),
+    [now]
+  );
+
+  const todaysWork = useMemo(
+    () => jobs.filter((job) => job.status === 'scheduled' || job.status === 'in_progress'),
+    [jobs]
+  );
 
   const dominantLabel = activeShift ? 'Clock Out' : 'Clock In';
 
@@ -73,48 +81,180 @@ export default function HomeScreen() {
   return (
     <Screen>
       <OfflineNotice />
-      <View style={styles.panel}>
-        <Text style={styles.greeting}>Hi {user?.name || 'Crew Member'}</Text>
-        <Text style={styles.label}>Current status</Text>
-        <Text style={styles.value}>{activeShift ? 'Clocked In' : 'Clocked Out'}</Text>
-        <Text style={styles.help}>Current job: {currentJobLabel}</Text>
-        <Text style={styles.help}>Running shift hours: {runningHours}</Text>
+
+      <View style={styles.topRow}>
+        <View style={styles.brandPill}>
+          <Text style={styles.brandDot}>●</Text>
+          <Text style={styles.brandText}>OliveOps</Text>
+        </View>
+        <Pressable accessibilityRole="button" onPress={() => router.push('/settings')}>
+          <Text style={styles.settingsLink}>Settings</Text>
+        </Pressable>
+      </View>
+
+      <View style={styles.headerBlock}>
+        <Text style={styles.greeting}>{greeting}</Text>
+        <Text style={styles.today}>{todayLabel}</Text>
+      </View>
+
+      <View style={styles.statusCard}>
+        <Text style={styles.sectionLabel}>{activeShift ? 'Current Shift' : 'Current Status'}</Text>
+        <View style={styles.statusRow}>
+          <Text style={[styles.statusDot, activeShift ? styles.statusDotActive : styles.statusDotIdle]}>●</Text>
+          <Text style={styles.statusValue}>{activeShift ? 'Clocked in' : 'Not clocked in'}</Text>
+        </View>
+        <Text style={styles.metaText}>Current job: {currentJobLabel}</Text>
+        <Text style={styles.metaText}>Running shift hours: {runningHours}</Text>
+        {activeShift ? <Text style={styles.metaText}>Elapsed: {runningDuration}</Text> : null}
       </View>
 
       {loadError ? <StatusBanner tone="error" message={loadError} /> : null}
 
       <PrimaryActionButton label={dominantLabel} onPress={onDominantPress} />
-      <PrimaryActionButton label="View Active Shift" onPress={() => router.push('/active-shift')} />
-      <PrimaryActionButton label="Time History" onPress={() => router.push('/time-history')} />
-      <PrimaryActionButton label="Settings" onPress={() => router.push('/settings')} />
+
+      <Pressable style={styles.secondaryCard} onPress={() => router.push('/active-shift')}>
+        <Text style={styles.secondaryTitle}>Active Shift</Text>
+        <Text style={styles.secondaryMeta}>View live shift details and elapsed time.</Text>
+      </Pressable>
+
+      {todaysWork.length > 0 ? (
+        <View style={styles.sectionBlock}>
+          <Text style={styles.sectionTitle}>Today's Work</Text>
+          {todaysWork.slice(0, 4).map((job) => (
+            <View key={job.id} style={styles.jobCard}>
+              <Text style={styles.jobTitle}>{job.title || 'Untitled Job'}</Text>
+              <Text style={styles.jobMeta}>{job.status.replace('_', ' ')}</Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
+
+      <Pressable style={styles.secondaryCard} onPress={() => router.push('/time-history')}>
+        <Text style={styles.secondaryTitle}>Time History</Text>
+        <Text style={styles.secondaryMeta}>Review your recent entries and weekly total.</Text>
+      </Pressable>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  panel: {
-    borderRadius: 14,
-    backgroundColor: '#111827',
-    padding: 16,
+  topRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  brandPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  brandDot: {
+    color: colors.primary,
+    fontSize: 12,
+  },
+  brandText: {
+    color: colors.textPrimary,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  settingsLink: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  headerBlock: {
     gap: 8,
   },
   greeting: {
-    color: '#FFFFFF',
-    fontSize: 26,
-    fontWeight: '800',
+    color: colors.textPrimary,
+    fontSize: 32,
+    fontWeight: '700',
+    letterSpacing: -0.4,
   },
-  label: {
-    color: '#94A3B8',
+  today: {
+    color: colors.textSecondary,
     fontSize: 14,
+  },
+  statusCard: {
+    borderRadius: 14,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    padding: 16,
+    gap: 10,
+  },
+  sectionLabel: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    fontWeight: '700',
     textTransform: 'uppercase',
   },
-  value: {
-    color: '#F8FAFC',
-    fontSize: 30,
-    fontWeight: '800',
+  statusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
-  help: {
-    color: '#CBD5E1',
+  statusDot: {
+    fontSize: 12,
+  },
+  statusDotActive: {
+    color: colors.primary,
+  },
+  statusDotIdle: {
+    color: colors.textMuted,
+  },
+  statusValue: {
+    color: colors.textPrimary,
+    fontSize: 22,
+    fontWeight: '700',
+  },
+  metaText: {
+    color: colors.textSecondary,
     fontSize: 15,
+  },
+  sectionBlock: {
+    gap: 10,
+  },
+  sectionTitle: {
+    color: colors.textPrimary,
+    fontSize: 19,
+    fontWeight: '700',
+  },
+  jobCard: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    backgroundColor: colors.surface,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    gap: 4,
+  },
+  jobTitle: {
+    color: colors.textPrimary,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  jobMeta: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    textTransform: 'capitalize',
+  },
+  secondaryCard: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    backgroundColor: colors.surface,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    gap: 4,
+  },
+  secondaryTitle: {
+    color: colors.textPrimary,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  secondaryMeta: {
+    color: colors.textSecondary,
+    fontSize: 14,
   },
 });

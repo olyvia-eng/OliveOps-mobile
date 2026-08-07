@@ -37,6 +37,9 @@ const mockUseClockingStore = jest.fn(() => ({
       status: 'clocked_in',
     },
   ],
+  jobs: [
+    { id: 'job-1', title: 'Front Walkway', status: 'scheduled', assignedEmployeeIds: ['emp-1'] },
+  ],
 }));
 
 jest.mock('expo-router', () => ({
@@ -99,6 +102,10 @@ jest.mock('react-native', () => {
   return {
     StyleSheet: { create: (value: unknown) => value },
     Alert: { alert: jest.fn() },
+    ActivityIndicator: () => React.createElement('activity-indicator', {}),
+    Image: () => React.createElement('image', {}),
+    Pressable: ({ children, onPress }: any) =>
+      React.createElement('pressable', { onPress }, typeof children === 'function' ? children({ pressed: false }) : children),
     View: ({ children }: any) => React.createElement('view', {}, children),
     Text: ({ children }: any) => React.createElement('text', {}, children),
     TextInput: ({ onChangeText, value, placeholder }: any) => React.createElement('textinput', { onChangeText, value, placeholder }),
@@ -117,7 +124,7 @@ describe('ClockOutScreen', () => {
     mockClockOut.mockResolvedValue({ ok: true });
   });
 
-  it('shows offline notice and disables confirm until notes entered', async () => {
+  it('shows offline notice and keeps confirm enabled when active shift exists', async () => {
     let tree: any;
     await act(async () => {
       tree = create(React.createElement(ClockOutScreen));
@@ -125,16 +132,8 @@ describe('ClockOutScreen', () => {
 
     expect(tree.root.findAllByType('offline-notice').length).toBe(1);
 
-    const confirm = tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Confirm Clock Out');
-    expect(confirm?.props.disabled).toBe(true);
-
-    const notesInput = tree.root.findAllByType('textinput').find((node: any) => node.props.placeholder === 'Optional notes');
-    await act(async () => {
-      notesInput.props.onChangeText('Done for today');
-    });
-
-    const enabledConfirm = tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Confirm Clock Out');
-    expect(enabledConfirm?.props.disabled).toBe(false);
+    const confirm = tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Clock Out');
+    expect(confirm?.props.disabled).toBe(false);
   });
 
   it('asks for destructive confirmation before submit', async () => {
@@ -143,12 +142,12 @@ describe('ClockOutScreen', () => {
       tree = create(React.createElement(ClockOutScreen));
     });
 
-    const notesInput = tree.root.findAllByType('textinput').find((node: any) => node.props.placeholder === 'Optional notes');
+    const notesInput = tree.root.findAllByType('textinput').find((node: any) => node.props.placeholder === "Add optional notes about today's work...");
     await act(async () => {
       notesInput.props.onChangeText('Done');
     });
 
-    const confirm = tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Confirm Clock Out');
+    const confirm = tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Clock Out');
     await act(async () => {
       confirm.props.onPress();
     });
@@ -172,12 +171,12 @@ describe('ClockOutScreen', () => {
       tree = create(React.createElement(ClockOutScreen));
     });
 
-    const notesInput = tree.root.findAllByType('textinput').find((node: any) => node.props.placeholder === 'Optional notes');
+    const notesInput = tree.root.findAllByType('textinput').find((node: any) => node.props.placeholder === "Add optional notes about today's work...");
     await act(async () => {
       notesInput.props.onChangeText('Done');
     });
 
-    const confirm = tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Confirm Clock Out');
+    const confirm = tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Clock Out');
     await act(async () => {
       confirm.props.onPress();
     });

@@ -9,6 +9,7 @@ import { useClockingActions } from '@/hooks/useClockingActions';
 import { createRequestMeta } from '@/services/requestGuards';
 import { useAuthStore } from '@/store/authStore';
 import { useClockingStore } from '@/store/clockingStore';
+import { colors } from '@/theme/colors';
 
 export default function ClockInScreen() {
   const { user } = useAuthStore();
@@ -69,7 +70,7 @@ export default function ClockInScreen() {
       <OfflineNotice />
       <View style={styles.card}>
         <Text style={styles.title}>Clock In</Text>
-        <Text style={styles.help}>Choose your assigned job and confirm.</Text>
+        <Text style={styles.help}>Choose your assigned job and confirm your shift.</Text>
         {assignedJobs.length === 0 ? (
           <StatusBanner tone="info" message="No assigned scheduled/in-progress jobs available." />
         ) : (
@@ -82,8 +83,13 @@ export default function ClockInScreen() {
                   onPress={() => setSelectedJobId(job.id)}
                   style={[styles.jobRow, selected && styles.jobRowSelected]}
                 >
-                  <Text style={styles.jobTitle}>{job.title || 'Untitled Job'}</Text>
-                  <Text style={styles.jobMeta}>{selected ? 'Selected' : job.status.replace('_', ' ')}</Text>
+                  <View style={styles.jobTextBlock}>
+                    <Text style={styles.jobTitle}>{job.title || 'Untitled Job'}</Text>
+                    <Text style={styles.jobMeta}>{job.status.replace('_', ' ')}</Text>
+                  </View>
+                  <View style={[styles.checkDot, selected && styles.checkDotSelected]}>
+                    {selected ? <Text style={styles.checkMark}>✓</Text> : null}
+                  </View>
                 </Pressable>
               );
             })}
@@ -95,7 +101,7 @@ export default function ClockInScreen() {
       {error ? <StatusBanner tone="error" message={error} /> : null}
 
       <PrimaryActionButton
-        label={loading ? 'Submitting...' : 'Confirm Clock In'}
+        label={loading ? 'Clocking in...' : 'Clock In'}
         disabled={!canSubmit || loading}
         onPress={() => void submitClockIn()}
       />
@@ -114,44 +120,74 @@ export default function ClockInScreen() {
 const styles = StyleSheet.create({
   card: {
     borderRadius: 14,
-    backgroundColor: '#111827',
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    backgroundColor: colors.surface,
     padding: 16,
     gap: 10,
   },
   title: {
-    color: '#FFFFFF',
-    fontSize: 28,
-    fontWeight: '800',
+    color: colors.textPrimary,
+    fontSize: 31,
+    fontWeight: '700',
+    letterSpacing: -0.4,
   },
   help: {
-    color: '#CBD5E1',
-    fontSize: 14,
+    color: colors.textSecondary,
+    fontSize: 15,
+    lineHeight: 21,
   },
   jobsList: {
     gap: 10,
   },
   jobRow: {
     minHeight: 64,
-    borderRadius: 10,
-    borderColor: '#334155',
+    borderRadius: 12,
+    borderColor: colors.border,
     borderWidth: 1,
-    backgroundColor: '#0F172A',
-    paddingHorizontal: 12,
+    backgroundColor: colors.surface,
+    paddingHorizontal: 14,
     paddingVertical: 10,
-    justifyContent: 'center',
-    gap: 4,
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 10,
   },
   jobRowSelected: {
-    borderColor: '#16A34A',
-    backgroundColor: '#052E16',
+    borderColor: colors.primary,
+    backgroundColor: colors.inputFocusBackground,
+  },
+  jobTextBlock: {
+    flex: 1,
+    gap: 4,
   },
   jobTitle: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: '700',
+    color: colors.textPrimary,
+    fontSize: 17,
+    fontWeight: '600',
   },
   jobMeta: {
-    color: '#CBD5E1',
+    color: colors.textSecondary,
     fontSize: 14,
+    textTransform: 'capitalize',
+  },
+  checkDot: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
+  },
+  checkDotSelected: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primary,
+  },
+  checkMark: {
+    color: colors.surface,
+    fontSize: 14,
+    fontWeight: '700',
   },
 });

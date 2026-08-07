@@ -99,7 +99,7 @@ describe('ClockInScreen', () => {
     const offline = tree.root.findAllByType('offline-notice');
     expect(offline.length).toBe(1);
 
-    const submitButton = tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Confirm Clock In');
+    const submitButton = tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Clock In');
     expect(submitButton?.props.disabled).toBe(true);
 
     const jobPress = tree.root.findAllByType('pressable')[0];
@@ -107,7 +107,7 @@ describe('ClockInScreen', () => {
       jobPress.props.onPress();
     });
 
-    const enabledSubmit = tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Confirm Clock In');
+    const enabledSubmit = tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Clock In');
     expect(enabledSubmit?.props.disabled).toBe(false);
   });
 
@@ -121,7 +121,7 @@ describe('ClockInScreen', () => {
       tree.root.findAllByType('pressable')[0].props.onPress();
     });
 
-    const submitButton = tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Confirm Clock In');
+    const submitButton = tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Clock In');
     await act(async () => {
       await submitButton.props.onPress();
     });
@@ -142,7 +142,7 @@ describe('ClockInScreen', () => {
       tree.root.findAllByType('pressable')[0].props.onPress();
     });
 
-    const submitButton = tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Confirm Clock In');
+    const submitButton = tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Clock In');
     await act(async () => {
       await submitButton.props.onPress();
     });

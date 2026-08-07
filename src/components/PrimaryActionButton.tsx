@@ -1,4 +1,5 @@
 import { Pressable, StyleSheet, Text } from 'react-native';
+import { colors } from '@/theme/colors';
 
 export function PrimaryActionButton({
   label,
@@ -24,22 +25,22 @@ export function PrimaryActionButton({
 
 const styles = StyleSheet.create({
   button: {
-    minHeight: 56,
-    borderRadius: 12,
-    backgroundColor: '#16A34A',
+    minHeight: 53,
+    borderRadius: 13,
+    backgroundColor: colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 16,
   },
   disabled: {
-    opacity: 0.45,
+    opacity: 0.6,
   },
   pressed: {
-    transform: [{ scale: 0.98 }],
+    backgroundColor: colors.primaryPressed,
   },
   text: {
-    color: '#FFFFFF',
-    fontSize: 20,
+    color: colors.surface,
+    fontSize: 17,
     fontWeight: '700',
   },
 });

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { OfflineNotice } from '@/components/OfflineNotice';
@@ -7,15 +7,17 @@ import { PrimaryActionButton } from '@/components/PrimaryActionButton';
 import { Screen } from '@/components/Screen';
 import { StatusBanner } from '@/components/StatusBanner';
 import { completeUpload, prepareUpload, uploadUriToS3 } from '@/api/storageApi';
+import { formatElapsedShort, resolveJobTitle } from '@/features/clocking/presentation';
 import { useClockingActions } from '@/hooks/useClockingActions';
 import { isOnline } from '@/services/connectivity';
 import { createRequestMeta } from '@/services/requestGuards';
 import { useAuthStore } from '@/store/authStore';
 import { useClockingStore } from '@/store/clockingStore';
+import { colors } from '@/theme/colors';
 
 export default function ClockOutScreen() {
   const { user, accessToken } = useAuthStore();
-  const { timeEntries } = useClockingStore();
+  const { timeEntries, jobs } = useClockingStore();
   const { clockOut, loading, refreshWorkContext } = useClockingActions();
 
   const [notes, setNotes] = useState('');
@@ -36,6 +38,11 @@ export default function ClockOutScreen() {
     void refreshWorkContext();
   }, [refreshWorkContext]);
 
+  const shiftLabel = useMemo(() => {
+    if (!activeEntry) return 'No active shift';
+    return resolveJobTitle(activeEntry, jobs);
+  }, [activeEntry, jobs]);
+
   async function choosePhoto() {
     const permission = await ImagePicker.requestCameraPermissionsAsync();
     if (!permission.granted) {
@@ -51,20 +58,26 @@ export default function ClockOutScreen() {
 
     if (result.canceled || result.assets.length === 0) return;
     const asset = result.assets[0];
+    const nextName = asset.fileName || `clock-out-${Date.now()}.jpg`;
 
     setPhotoUri(asset.uri);
-    setPhotoName(asset.fileName || `clock-out-${Date.now()}.jpg`);
+    setPhotoName(nextName);
     setPhotoFileId('');
     setSuccess(null);
     setError(null);
+
+    await uploadPhotoAttachment(asset.uri, nextName);
   }
 
-  async function uploadPhotoAttachment() {
+  async function uploadPhotoAttachment(uriOverride?: string, nameOverride?: string) {
     if (!activeEntry) {
       setError('No active shift found for upload.');
       return;
     }
-    if (!photoUri) {
+    const currentUri = uriOverride ?? photoUri;
+    const currentName = nameOverride ?? photoName;
+
+    if (!currentUri) {
       setError('Capture a photo before uploading.');
       return;
     }
@@ -80,9 +93,9 @@ export default function ClockOutScreen() {
     setSuccess(null);
 
     try {
-      const extension = photoName.toLowerCase().endsWith('.png') ? 'png' : 'jpg';
+      const extension = currentName.toLowerCase().endsWith('.png') ? 'png' : 'jpg';
       const mimeType = extension === 'png' ? 'image/png' : 'image/jpeg';
-      const fileResponse = await fetch(photoUri);
+      const fileResponse = await fetch(currentUri);
       const blob = await fileResponse.blob();
       if (!blob.size) {
         throw new Error('Could not read selected photo size.');
@@ -90,7 +103,7 @@ export default function ClockOutScreen() {
 
       const prepared = await prepareUpload({
         action: 'prepare-upload',
-        fileName: photoName || `clock-out-${Date.now()}.${extension}`,
+        fileName: currentName || `clock-out-${Date.now()}.${extension}`,
         mimeType,
         sizeBytes: blob.size,
         entityType: 'time-entry',
@@ -102,11 +115,11 @@ export default function ClockOutScreen() {
         throw new Error(prepared.error || 'Upload could not be prepared.');
       }
 
-      await uploadUriToS3(prepared.uploadUrl, photoUri, mimeType, prepared.requiredHeaders);
+      await uploadUriToS3(prepared.uploadUrl, currentUri, mimeType, prepared.requiredHeaders);
       await completeUpload(prepared.fileId, accessToken);
 
       setPhotoFileId(prepared.fileId);
-      setSuccess('Photo uploaded and verified.');
+      setSuccess('Photo attached.');
     } catch (uploadError) {
       setError(uploadError instanceof Error ? uploadError.message : 'Photo upload failed.');
     } finally {
@@ -117,11 +130,6 @@ export default function ClockOutScreen() {
   async function submitClockOut(metaOverride?: { requestId: string; idempotencyKey: string }) {
     if (!activeEntry) {
       setError('No active shift found.');
-      return;
-    }
-
-    if (!notes.trim()) {
-      setError('Add notes before clocking out.');
       return;
     }
 
@@ -154,25 +162,73 @@ export default function ClockOutScreen() {
       <OfflineNotice />
       <View style={styles.card}>
         <Text style={styles.title}>Clock Out</Text>
+        {activeEntry ? (
+          <View style={styles.shiftSummary}>
+            <Text style={styles.shiftJob}>{shiftLabel}</Text>
+            <Text style={styles.shiftMeta}>Started {new Date(activeEntry.clockIn).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</Text>
+            <Text style={styles.shiftMeta}>Duration {formatElapsedShort(activeEntry.clockIn)}</Text>
+          </View>
+        ) : null}
+        <Text style={styles.label}>Notes</Text>
         <TextInput
           multiline
           numberOfLines={4}
           value={notes}
           onChangeText={setNotes}
-          placeholder="Optional notes"
-          placeholderTextColor="#64748B"
+          placeholder="Add optional notes about today's work..."
+          placeholderTextColor={colors.inputPlaceholder}
           style={[styles.input, styles.notes]}
         />
+
         <View style={styles.photoCard}>
-          <Text style={styles.photoLabel}>Optional photo attachment</Text>
-          <Text style={styles.photoMeta}>{photoName || 'No photo selected'}</Text>
-          {photoFileId ? <Text style={styles.photoMeta}>Uploaded fileId: {photoFileId}</Text> : null}
-          <PrimaryActionButton label="Capture Photo" disabled={uploadingPhoto || loading} onPress={() => void choosePhoto()} />
-          <PrimaryActionButton
-            label={uploadingPhoto ? 'Uploading Photo...' : 'Upload Photo'}
-            disabled={!photoUri || uploadingPhoto || loading}
-            onPress={() => void uploadPhotoAttachment()}
-          />
+          <Text style={styles.photoLabel}>Photo</Text>
+          <Text style={styles.photoMeta}>Optional - attach a photo of completed work.</Text>
+
+          {photoUri ? (
+            <View style={styles.photoPreviewBlock}>
+              <Image source={{ uri: photoUri }} style={styles.photoPreview} />
+              <Text style={styles.photoName}>{photoName || 'Photo attached'}</Text>
+              <View style={styles.photoActionsRow}>
+                <Pressable
+                  accessibilityRole="button"
+                  style={styles.photoAction}
+                  disabled={uploadingPhoto || loading}
+                  onPress={() => void choosePhoto()}
+                >
+                  <Text style={styles.photoActionText}>Replace Photo</Text>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  style={styles.photoAction}
+                  disabled={uploadingPhoto || loading}
+                  onPress={() => {
+                    setPhotoUri('');
+                    setPhotoName('');
+                    setPhotoFileId('');
+                    setSuccess(null);
+                  }}
+                >
+                  <Text style={styles.photoActionText}>Remove</Text>
+                </Pressable>
+              </View>
+            </View>
+          ) : (
+            <Pressable
+              accessibilityRole="button"
+              style={({ pressed }) => [styles.photoAddButton, pressed && styles.photoAddButtonPressed]}
+              disabled={uploadingPhoto || loading}
+              onPress={() => void choosePhoto()}
+            >
+              <Text style={styles.photoAddButtonText}>Add Photo</Text>
+            </Pressable>
+          )}
+
+          {uploadingPhoto ? (
+            <View style={styles.uploadingRow}>
+              <ActivityIndicator size="small" color={colors.primary} />
+              <Text style={styles.uploadingText}>Attaching photo...</Text>
+            </View>
+          ) : null}
         </View>
       </View>
 
@@ -181,8 +237,8 @@ export default function ClockOutScreen() {
       {!activeEntry ? <StatusBanner tone="info" message="No active shift found. Refresh and try again." /> : null}
 
       <PrimaryActionButton
-        label={loading ? 'Submitting...' : 'Confirm Clock Out'}
-        disabled={!activeEntry || loading || uploadingPhoto || !notes.trim()}
+        label={loading ? 'Clocking out...' : 'Clock Out'}
+        disabled={!activeEntry || loading || uploadingPhoto}
         onPress={onConfirmClockOut}
       />
 
@@ -200,24 +256,50 @@ export default function ClockOutScreen() {
 const styles = StyleSheet.create({
   card: {
     borderRadius: 14,
-    backgroundColor: '#111827',
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    backgroundColor: colors.surface,
     padding: 16,
-    gap: 10,
+    gap: 12,
   },
   title: {
-    color: '#FFFFFF',
-    fontSize: 28,
-    fontWeight: '800',
+    color: colors.textPrimary,
+    fontSize: 31,
+    fontWeight: '700',
+    letterSpacing: -0.4,
+  },
+  shiftSummary: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.divider,
+    backgroundColor: colors.surfaceMuted,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    gap: 3,
+  },
+  shiftJob: {
+    color: colors.textPrimary,
+    fontSize: 17,
+    fontWeight: '600',
+  },
+  shiftMeta: {
+    color: colors.textSecondary,
+    fontSize: 14,
+  },
+  label: {
+    color: colors.textPrimary,
+    fontSize: 15,
+    fontWeight: '600',
   },
   input: {
     minHeight: 52,
-    borderRadius: 10,
-    borderColor: '#334155',
+    borderRadius: 12,
+    borderColor: colors.border,
     borderWidth: 1,
-    color: '#FFFFFF',
-    backgroundColor: '#0F172A',
-    paddingHorizontal: 12,
-    fontSize: 18,
+    color: colors.textPrimary,
+    backgroundColor: colors.surface,
+    paddingHorizontal: 14,
+    fontSize: 16,
   },
   notes: {
     minHeight: 110,
@@ -225,20 +307,79 @@ const styles = StyleSheet.create({
     paddingTop: 12,
   },
   photoCard: {
-    gap: 8,
+    gap: 10,
     borderWidth: 1,
-    borderColor: '#334155',
-    borderRadius: 10,
-    padding: 10,
-    backgroundColor: '#0B1220',
+    borderColor: colors.border,
+    borderRadius: 12,
+    padding: 12,
+    backgroundColor: colors.surface,
   },
   photoLabel: {
-    color: '#FFFFFF',
+    color: colors.textPrimary,
     fontSize: 16,
-    fontWeight: '700',
+    fontWeight: '600',
   },
   photoMeta: {
-    color: '#CBD5E1',
+    color: colors.textSecondary,
+    fontSize: 14,
+  },
+  photoPreviewBlock: {
+    gap: 10,
+  },
+  photoPreview: {
+    width: '100%',
+    height: 160,
+    borderRadius: 10,
+    backgroundColor: colors.surfaceMuted,
+  },
+  photoName: {
+    color: colors.textSecondary,
     fontSize: 13,
+  },
+  photoActionsRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  photoAction: {
+    minHeight: 44,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    flex: 1,
+  },
+  photoActionText: {
+    color: colors.textPrimary,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  photoAddButton: {
+    minHeight: 46,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
+  },
+  photoAddButtonPressed: {
+    backgroundColor: colors.surfaceMuted,
+  },
+  photoAddButtonText: {
+    color: colors.textPrimary,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  uploadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  uploadingText: {
+    color: colors.textSecondary,
+    fontSize: 14,
   },
 });

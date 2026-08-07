@@ -1,4 +1,5 @@
 import { StyleSheet, Text, View } from 'react-native';
+import { colors } from '@/theme/colors';
 
 export function StatusBanner({
   tone,
@@ -9,26 +10,35 @@ export function StatusBanner({
 }) {
   return (
     <View style={[styles.box, toneStyles[tone]]}>
-      <Text style={styles.text}>{message}</Text>
+      <Text style={[styles.text, toneTextStyles[tone]]}>{message}</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   box: {
-    borderRadius: 10,
-    padding: 12,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderWidth: 1,
   },
   text: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '600',
+    fontSize: 14,
+    fontWeight: '500',
+    color: colors.textPrimary,
   },
 });
 
 const toneStyles = StyleSheet.create({
-  info: { backgroundColor: '#1D4ED8' },
-  success: { backgroundColor: '#15803D' },
-  error: { backgroundColor: '#B91C1C' },
-  offline: { backgroundColor: '#9A3412' },
+  info: { backgroundColor: colors.infoBackground, borderColor: colors.infoBorder },
+  success: { backgroundColor: colors.successBackground, borderColor: colors.successBorder },
+  error: { backgroundColor: colors.errorBackground, borderColor: colors.errorBorder },
+  offline: { backgroundColor: colors.offlineBackground, borderColor: colors.offlineBorder },
+});
+
+const toneTextStyles = StyleSheet.create({
+  info: { color: colors.info },
+  success: { color: colors.success },
+  error: { color: colors.error },
+  offline: { color: colors.offline },
 });

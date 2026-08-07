@@ -1,6 +1,7 @@
 import { Stack } from 'expo-router';
 import { AuthProvider } from '@/store/authStore';
 import { ClockingProvider } from '@/store/clockingStore';
+import { colors } from '@/theme/colors';
 
 export default function RootLayout() {
   return (
@@ -8,10 +9,11 @@ export default function RootLayout() {
       <ClockingProvider>
         <Stack
           screenOptions={{
-            headerStyle: { backgroundColor: '#0F172A' },
-            headerTintColor: '#FFFFFF',
+            headerStyle: { backgroundColor: colors.background },
+            headerTintColor: colors.textPrimary,
             headerTitleStyle: { fontWeight: '700' },
-            contentStyle: { backgroundColor: '#0B172A' },
+            headerShadowVisible: false,
+            contentStyle: { backgroundColor: colors.background },
           }}
         >
           <Stack.Screen name="index" options={{ headerShown: false }} />

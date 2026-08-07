@@ -1,6 +1,7 @@
 import { PropsWithChildren } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ScrollView, StyleSheet, View } from 'react-native';
+import { colors } from '@/theme/colors';
 
 export function Screen({ children }: PropsWithChildren) {
   return (
@@ -15,14 +16,16 @@ export function Screen({ children }: PropsWithChildren) {
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: '#0B172A',
+    backgroundColor: colors.background,
   },
   content: {
     flexGrow: 1,
   },
   inner: {
     flex: 1,
-    padding: 20,
+    paddingHorizontal: 20,
+    paddingTop: 18,
+    paddingBottom: 24,
     gap: 14,
   },
 });
