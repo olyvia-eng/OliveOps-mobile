@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import * as clockingApi from '@/api/clockingApi';
+import { scopeJobsForSession, scopeTimeEntriesForSession } from '@/features/clocking/scoping';
 import { beginRequest, createRequestMeta, endRequest } from '@/services/requestGuards';
 import { isOnline } from '@/services/connectivity';
 import { useAuthStore } from '@/store/authStore';
@@ -101,15 +102,8 @@ export function useClockingActions() {
         }
 
         const payload = await clockingApi.loadBootstrap(accessToken);
-        const employeeId = user.employeeId;
-        const scopedJobs = (payload.jobs ?? []).filter((job) => {
-          if (!employeeId) return true;
-          if (!Array.isArray(job.assignedEmployeeIds) || job.assignedEmployeeIds.length === 0) return true;
-          return job.assignedEmployeeIds.includes(employeeId);
-        });
-
-        setJobs(scopedJobs);
-        setTimeEntries(payload.timeEntries ?? []);
+        setJobs(scopeJobsForSession(payload.jobs ?? [], user));
+        setTimeEntries(scopeTimeEntriesForSession(payload.timeEntries ?? [], user));
         return { ok: true };
       } catch (error) {
         return {
