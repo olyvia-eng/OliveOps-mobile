@@ -27,6 +27,26 @@ export async function uploadToS3(uploadUrl: string, file: Blob, requiredHeaders?
   }
 }
 
+export async function uploadUriToS3(
+  uploadUrl: string,
+  fileUri: string,
+  mimeType: string,
+  requiredHeaders?: Record<string, string>
+): Promise<void> {
+  const fileResponse = await fetch(fileUri);
+  if (!fileResponse.ok) {
+    throw new Error('Could not read selected photo.');
+  }
+
+  const blob = await fileResponse.blob();
+  const normalized =
+    blob.type && blob.type.length > 0
+      ? blob
+      : new Blob([blob], { type: mimeType || 'image/jpeg' });
+
+  await uploadToS3(uploadUrl, normalized, requiredHeaders);
+}
+
 export async function completeUpload(fileId: string, accessToken?: string): Promise<{ ok: boolean; fileId: string }> {
   return apiRequest<{ ok: boolean; fileId: string }>(ENDPOINTS.storage, {
     method: 'POST',

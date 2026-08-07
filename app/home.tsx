@@ -11,9 +11,10 @@ import { useClockingStore } from '@/store/clockingStore';
 
 export default function HomeScreen() {
   const { user } = useAuthStore();
-  const { timeEntries } = useClockingStore();
+  const { timeEntries, jobs } = useClockingStore();
   const { refreshWorkContext } = useClockingActions();
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [now, setNow] = useState(Date.now());
 
   useEffect(() => {
     let mounted = true;
@@ -32,6 +33,33 @@ export default function HomeScreen() {
     return timeEntries.find((entry) => entry.employeeId === user.employeeId && entry.status === 'clocked_in') || null;
   }, [timeEntries, user?.employeeId]);
 
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const currentJobLabel = useMemo(() => {
+    if (!activeShift) return 'Not clocked in';
+    const ids = Array.isArray(activeShift.jobIds) && activeShift.jobIds.length > 0
+      ? activeShift.jobIds
+      : (activeShift.jobId ? [activeShift.jobId] : []);
+
+    if (ids.length === 0) return 'General work';
+
+    const titles = ids
+      .map((id) => jobs.find((job) => job.id === id)?.title || id)
+      .filter((value) => value.length > 0);
+
+    return titles.join(', ');
+  }, [activeShift, jobs]);
+
+  const runningHours = useMemo(() => {
+    if (!activeShift) return '0.00';
+    const started = new Date(activeShift.clockIn).getTime();
+    const hours = Math.max(0, (now - started) / (1000 * 60 * 60));
+    return hours.toFixed(2);
+  }, [activeShift, now]);
+
   const dominantLabel = activeShift ? 'Clock Out' : 'Clock In';
 
   function onDominantPress() {
@@ -49,7 +77,8 @@ export default function HomeScreen() {
         <Text style={styles.greeting}>Hi {user?.name || 'Crew Member'}</Text>
         <Text style={styles.label}>Current status</Text>
         <Text style={styles.value}>{activeShift ? 'Clocked In' : 'Clocked Out'}</Text>
-        <Text style={styles.help}>Current job and shift details are shown in Active Shift.</Text>
+        <Text style={styles.help}>Current job: {currentJobLabel}</Text>
+        <Text style={styles.help}>Running shift hours: {runningHours}</Text>
       </View>
 
       {loadError ? <StatusBanner tone="error" message={loadError} /> : null}
