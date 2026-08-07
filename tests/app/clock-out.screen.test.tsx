@@ -25,7 +25,18 @@ const mockUseAuthStore = jest.fn(() => ({
 }));
 
 const mockUseClockingStore = jest.fn(() => ({
+  currentActiveEntryId: 'entry-1',
   timeEntries: [
+    {
+      id: 'entry-2',
+      employeeId: 'emp-1',
+      workType: 'job',
+      jobIds: ['job-2'],
+      clockIn: '2026-08-06T11:00:00.000Z',
+      breakMinutes: 0,
+      notes: '',
+      status: 'clocked_in',
+    },
     {
       id: 'entry-1',
       employeeId: 'emp-1',
@@ -39,6 +50,7 @@ const mockUseClockingStore = jest.fn(() => ({
   ],
   jobs: [
     { id: 'job-1', title: 'Front Walkway', status: 'scheduled', assignedEmployeeIds: ['emp-1'] },
+    { id: 'job-2', title: 'Warehouse', status: 'scheduled', assignedEmployeeIds: ['emp-1'] },
   ],
 }));
 
@@ -154,6 +166,19 @@ describe('ClockOutScreen', () => {
 
     expect(Alert.alert).toHaveBeenCalledTimes(1);
     expect((Alert.alert as jest.Mock).mock.calls[0]?.[0]).toBe('Confirm Clock Out');
+
+    (Alert.alert as jest.Mock).mockImplementation((_title: string, _message: string, actions: Array<{ onPress?: () => void }>) => {
+      const confirmAction = actions?.[1];
+      if (confirmAction?.onPress) {
+        confirmAction.onPress();
+      }
+    });
+
+    await act(async () => {
+      confirm.props.onPress();
+    });
+
+    expect(mockClockOut).toHaveBeenCalledWith('entry-1', 'Done', undefined, { requestId: 'req-2', idempotencyKey: 'key-2' });
   });
 
   it('shows retry button after failed clock-out submission', async () => {

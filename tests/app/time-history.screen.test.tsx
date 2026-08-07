@@ -3,11 +3,28 @@ import { act, create } from 'react-test-renderer';
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 
 const mockClockingState = {
+  currentActiveEntryId: null as string | null,
   timeEntries: [] as any[],
   jobs: [{ id: 'job-1', title: 'Front Walkway', status: 'scheduled', assignedEmployeeIds: ['emp-1'] }],
 };
 
+const mockUseAuthStore = jest.fn(() => ({
+  user: {
+    id: 'u-1',
+    businessId: 'biz-1',
+    name: 'Alex',
+    email: 'a@x.com',
+    role: 'crew_member',
+    businessName: 'OliveOps',
+    employeeId: 'emp-1',
+  },
+}));
+
 const mockUseClockingStore = jest.fn(() => mockClockingState);
+
+jest.mock('@/store/authStore', () => ({
+  useAuthStore: () => mockUseAuthStore(),
+}));
 
 jest.mock('@/store/clockingStore', () => ({
   useClockingStore: () => mockUseClockingStore(),
@@ -48,17 +65,29 @@ import TimeHistoryScreen from '../../app/time-history';
 describe('TimeHistoryScreen', () => {
   beforeEach(() => {
     const now = new Date();
-    const activeClockIn = new Date(now.getTime() - 15 * 60 * 1000).toISOString();
+    const authoritativeActiveClockIn = new Date(now.getTime() - 15 * 60 * 1000).toISOString();
+    const orphanClockIn = new Date(now.getTime() - 3 * 60 * 60 * 1000).toISOString();
     const completedClockIn = new Date(now.getTime() - 2 * 60 * 60 * 1000).toISOString();
     const completedClockOut = new Date(now.getTime() - 40 * 60 * 1000).toISOString();
 
+    mockClockingState.currentActiveEntryId = 'entry-active';
     mockClockingState.timeEntries = [
       {
         id: 'entry-active',
         employeeId: 'emp-1',
         jobId: 'job-1',
         workType: 'job',
-        clockIn: activeClockIn,
+        clockIn: authoritativeActiveClockIn,
+        breakMinutes: 0,
+        notes: '',
+        status: 'clocked_in',
+      },
+      {
+        id: 'entry-orphan-open',
+        employeeId: 'emp-1',
+        jobId: 'job-1',
+        workType: 'non_billable',
+        clockIn: orphanClockIn,
         breakMinutes: 0,
         notes: '',
         status: 'clocked_in',
@@ -77,17 +106,34 @@ describe('TimeHistoryScreen', () => {
     ];
   });
 
-  it('shows active badge, resolved job names, and no raw job IDs', async () => {
+  it('shows Active only for authoritative currentActiveEntryId and no raw job IDs', async () => {
     let tree: any;
     await act(async () => {
       tree = create(React.createElement(TimeHistoryScreen));
     });
 
-    const renderedText = tree.root.findAllByType('text').map((node: any) => String(node.props.children));
+    const renderedText = tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ');
     expect(renderedText).toContain('Front Walkway');
+    expect(renderedText).toContain('Now');
     expect(renderedText).toContain('Active');
+    expect(renderedText).toContain('End time unavailable');
+    expect(renderedText).toContain('Incomplete record');
     expect(renderedText).toContain('Job Work');
     expect(renderedText).not.toContain('job-1');
+
+    const activeBadges = tree.root.findAllByType('text').filter((node: any) => String(node.props.children) === 'Active');
+    expect(activeBadges.length).toBe(1);
+  });
+
+  it('shows completed entry with actual end-time range and no Active badge', async () => {
+    let tree: any;
+    await act(async () => {
+      tree = create(React.createElement(TimeHistoryScreen));
+    });
+
+    const renderedText = tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ');
+    expect(renderedText).toContain(' - ');
+    expect(renderedText).toContain('1h 20m');
   });
 
   it('shows human-friendly weekly total label instead of decimal hours', async () => {

@@ -7,7 +7,7 @@ import { PrimaryActionButton } from '@/components/PrimaryActionButton';
 import { Screen } from '@/components/Screen';
 import { StatusBanner } from '@/components/StatusBanner';
 import { completeUpload, prepareUpload, uploadUriToS3 } from '@/api/storageApi';
-import { formatElapsedShort, resolveJobTitle } from '@/features/clocking/presentation';
+import { formatElapsedShort, resolveCurrentActiveEntry, resolveJobTitle } from '@/features/clocking/presentation';
 import { useClockingActions } from '@/hooks/useClockingActions';
 import { isOnline } from '@/services/connectivity';
 import { createRequestMeta } from '@/services/requestGuards';
@@ -17,7 +17,7 @@ import { colors } from '@/theme/colors';
 
 export default function ClockOutScreen() {
   const { user, accessToken } = useAuthStore();
-  const { timeEntries, jobs } = useClockingStore();
+  const { currentActiveEntryId, timeEntries, jobs } = useClockingStore();
   const { clockOut, loading, refreshWorkContext } = useClockingActions();
 
   const [notes, setNotes] = useState('');
@@ -30,11 +30,8 @@ export default function ClockOutScreen() {
   const [error, setError] = useState<string | null>(null);
 
   const activeEntry = useMemo(() => {
-    if (!user?.employeeId) return null;
-    const activeEntries = timeEntries.filter((entry) => entry.employeeId === user.employeeId && entry.status === 'clocked_in');
-    if (activeEntries.length === 0) return null;
-    return activeEntries.sort((a, b) => new Date(b.clockIn).getTime() - new Date(a.clockIn).getTime())[0] || null;
-  }, [timeEntries, user?.employeeId]);
+    return resolveCurrentActiveEntry(timeEntries, user?.employeeId, currentActiveEntryId);
+  }, [currentActiveEntryId, timeEntries, user?.employeeId]);
 
   useEffect(() => {
     void refreshWorkContext();

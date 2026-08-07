@@ -5,7 +5,7 @@ import { OfflineNotice } from '@/components/OfflineNotice';
 import { PrimaryActionButton } from '@/components/PrimaryActionButton';
 import { Screen } from '@/components/Screen';
 import { StatusBanner } from '@/components/StatusBanner';
-import { getWorkTypeLabel, resolveJobTitle } from '@/features/clocking/presentation';
+import { getWorkTypeLabel, resolveCurrentActiveEntry, resolveJobTitle } from '@/features/clocking/presentation';
 import { useClockingActions } from '@/hooks/useClockingActions';
 import { createRequestMeta } from '@/services/requestGuards';
 import { useAuthStore } from '@/store/authStore';
@@ -22,7 +22,7 @@ type ActivityOption = {
 
 export default function SwitchActivityScreen() {
   const { user, capabilities } = useAuthStore();
-  const { jobs, timeEntries } = useClockingStore();
+  const { currentActiveEntryId, jobs, timeEntries } = useClockingStore();
   const { loading, refreshWorkContext, switchActivity } = useClockingActions();
   const [selectedWorkType, setSelectedWorkType] = useState<TimeEntryWorkType>('job');
   const [selectedJobId, setSelectedJobId] = useState('');
@@ -35,12 +35,8 @@ export default function SwitchActivityScreen() {
   }, [refreshWorkContext]);
 
   const activeEntry = useMemo(() => {
-    if (!user?.employeeId) return null;
-    const entries = timeEntries
-      .filter((entry) => entry.employeeId === user.employeeId && entry.status === 'clocked_in')
-      .sort((a, b) => new Date(b.clockIn).getTime() - new Date(a.clockIn).getTime());
-    return entries[0] ?? null;
-  }, [timeEntries, user?.employeeId]);
+    return resolveCurrentActiveEntry(timeEntries, user?.employeeId, currentActiveEntryId);
+  }, [currentActiveEntryId, timeEntries, user?.employeeId]);
 
   const assignedJobs = useMemo(() => {
     const employeeId = user?.employeeId;

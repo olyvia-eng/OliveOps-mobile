@@ -2,12 +2,9 @@ import React from 'react';
 import { act, create } from 'react-test-renderer';
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 
-const mockSwitchActivity = jest.fn();
 const mockRefresh = jest.fn().mockResolvedValue({ ok: true });
 
 const mockUseClockingActions = jest.fn(() => ({
-  switchActivity: mockSwitchActivity,
-  loading: false,
   refreshWorkContext: mockRefresh,
 }));
 
@@ -21,23 +18,20 @@ const mockUseAuthStore = jest.fn(() => ({
     businessName: 'OliveOps',
     employeeId: 'emp-1',
   },
-  capabilities: {
-    paidDriveTime: true,
-  },
 }));
 
-const mockUseClockingStore = jest.fn(() => ({
+const mockClockingState = {
   currentActiveEntryId: 'entry-1',
   jobs: [
-    { id: 'job-1', title: 'Site A', status: 'scheduled', assignedEmployeeIds: ['emp-1'] },
+    { id: 'job-1', title: 'Front Walkway', status: 'scheduled', assignedEmployeeIds: ['emp-1'] },
     { id: 'job-2', title: 'Warehouse', status: 'scheduled', assignedEmployeeIds: ['emp-1'] },
   ],
   timeEntries: [
     {
       id: 'entry-2',
       employeeId: 'emp-1',
+      jobId: 'job-2',
       workType: 'job',
-      jobIds: ['job-2'],
       clockIn: '2026-08-07T10:10:00.000Z',
       breakMinutes: 0,
       notes: '',
@@ -46,19 +40,21 @@ const mockUseClockingStore = jest.fn(() => ({
     {
       id: 'entry-1',
       employeeId: 'emp-1',
+      jobId: 'job-1',
       workType: 'job',
-      jobIds: ['job-1'],
       clockIn: '2026-08-07T10:00:00.000Z',
       breakMinutes: 0,
       notes: '',
       status: 'clocked_in',
     },
   ],
-}));
+};
+
+const mockUseClockingStore = jest.fn(() => mockClockingState);
 
 jest.mock('expo-router', () => ({
   router: {
-    replace: jest.fn(),
+    push: jest.fn(),
   },
 }));
 
@@ -74,10 +70,6 @@ jest.mock('@/store/clockingStore', () => ({
   useClockingStore: () => mockUseClockingStore(),
 }));
 
-jest.mock('@/services/requestGuards', () => ({
-  createRequestMeta: () => ({ requestId: 'req-switch-1', idempotencyKey: 'key-switch-1' }),
-}));
-
 jest.mock('@/components/Screen', () => ({
   Screen: ({ children }: any) => require('react').createElement('screen', {}, children),
 }));
@@ -91,8 +83,8 @@ jest.mock('@/components/StatusBanner', () => ({
 }));
 
 jest.mock('@/components/PrimaryActionButton', () => ({
-  PrimaryActionButton: ({ label, disabled, onPress }: any) =>
-    require('react').createElement('primary-button', { label, disabled: !!disabled, onPress }),
+  PrimaryActionButton: ({ label, onPress }: any) =>
+    require('react').createElement('primary-button', { label, onPress }),
 }));
 
 jest.mock('react-native', () => {
@@ -101,38 +93,25 @@ jest.mock('react-native', () => {
     StyleSheet: { create: (value: unknown) => value },
     View: ({ children }: any) => React.createElement('view', {}, children),
     Text: ({ children }: any) => React.createElement('text', {}, children),
-    Pressable: ({ children, onPress, testID }: any) =>
-      React.createElement('pressable', { onPress, testID }, typeof children === 'function' ? children({ pressed: false }) : children),
+    Pressable: ({ children, onPress }: any) => React.createElement('pressable', { onPress }, children),
   };
 });
 
-import SwitchActivityScreen from '../../app/switch-activity';
-import { router } from 'expo-router';
+import HomeScreen from '../../app/home';
 
-describe('SwitchActivityScreen', () => {
+describe('HomeScreen', () => {
   beforeEach(() => {
-    (router.replace as jest.Mock).mockReset();
-    mockSwitchActivity.mockReset();
     mockRefresh.mockClear();
-    mockSwitchActivity.mockResolvedValue({ ok: true });
   });
 
-  it('submits unbillable switch with no category payload and no jobIds', async () => {
+  it('uses authoritative active entry id for current status card', async () => {
     let tree: any;
     await act(async () => {
-      tree = create(React.createElement(SwitchActivityScreen));
+      tree = create(React.createElement(HomeScreen));
     });
 
-    await act(async () => {
-      tree.root.findAllByProps({ testID: 'switch-activity-option-non_billable' })[0].props.onPress();
-    });
-
-    const submitButton = tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Switch Activity');
-    await act(async () => {
-      await submitButton.props.onPress();
-    });
-
-    expect(mockSwitchActivity).toHaveBeenCalledWith('non_billable', [], { requestId: 'req-switch-1', idempotencyKey: 'key-switch-1' });
-    expect(router.replace).toHaveBeenCalledWith('/active-shift');
+    const renderedText = tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ');
+    expect(renderedText).toContain('Front Walkway');
+    expect(renderedText).not.toContain('Current job: Warehouse');
   });
 });

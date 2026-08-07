@@ -15,8 +15,12 @@ const mockUseAuthStore = jest.fn(() => ({
 }));
 
 const mockClockingState = {
+  currentActiveEntryId: null as string | null,
   timeEntries: [] as any[],
-  jobs: [{ id: 'job-1', title: 'Front Walkway', status: 'scheduled', assignedEmployeeIds: ['emp-1'] }],
+  jobs: [
+    { id: 'job-1', title: 'Front Walkway', status: 'scheduled', assignedEmployeeIds: ['emp-1'] },
+    { id: 'job-2', title: 'Warehouse', status: 'scheduled', assignedEmployeeIds: ['emp-1'] },
+  ],
 };
 
 const mockUseClockingStore = jest.fn(() => mockClockingState);
@@ -57,6 +61,7 @@ import ActiveShiftScreen from '../../app/active-shift';
 
 describe('ActiveShiftScreen', () => {
   beforeEach(() => {
+    mockClockingState.currentActiveEntryId = null;
     mockClockingState.timeEntries = [];
   });
 
@@ -75,7 +80,18 @@ describe('ActiveShiftScreen', () => {
   });
 
   it('shows active shift with resolved job name and Clock Out CTA', async () => {
+    mockClockingState.currentActiveEntryId = 'entry-1';
     mockClockingState.timeEntries = [
+      {
+        id: 'entry-2',
+        employeeId: 'emp-1',
+        jobId: 'job-2',
+        workType: 'job',
+        clockIn: '2026-08-07T10:10:00.000Z',
+        breakMinutes: 0,
+        notes: '',
+        status: 'clocked_in',
+      },
       {
         id: 'entry-1',
         employeeId: 'emp-1',
@@ -95,6 +111,7 @@ describe('ActiveShiftScreen', () => {
 
     const renderedText = tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ');
     expect(renderedText).toContain('Front Walkway');
+  expect(renderedText).not.toContain('Warehouse');
     expect(renderedText).toContain('Activity:');
     expect(renderedText).toContain('Job Work');
     expect(renderedText).not.toContain('job-1');

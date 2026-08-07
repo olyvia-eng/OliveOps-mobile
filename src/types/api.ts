@@ -34,6 +34,7 @@ export interface BootstrapResponse {
   jobs?: Job[];
   timeEntries?: TimeEntry[];
   employees?: Array<{ id: string }>;
+  currentActiveEntryId?: string | null;
   capabilities?: MobileCapabilities;
   activityConfigs?: ActivityConfig[];
   error?: string;

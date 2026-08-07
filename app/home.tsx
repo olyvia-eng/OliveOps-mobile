@@ -5,7 +5,13 @@ import { PrimaryActionButton } from '@/components/PrimaryActionButton';
 import { Screen } from '@/components/Screen';
 import { OfflineNotice } from '@/components/OfflineNotice';
 import { StatusBanner } from '@/components/StatusBanner';
-import { formatElapsedShort, getGreetingForTime, getWorkTypeLabel, resolveJobTitle } from '@/features/clocking/presentation';
+import {
+  formatElapsedShort,
+  getGreetingForTime,
+  getWorkTypeLabel,
+  resolveCurrentActiveEntry,
+  resolveJobTitle,
+} from '@/features/clocking/presentation';
 import { useClockingActions } from '@/hooks/useClockingActions';
 import { useAuthStore } from '@/store/authStore';
 import { useClockingStore } from '@/store/clockingStore';
@@ -13,7 +19,7 @@ import { colors } from '@/theme/colors';
 
 export default function HomeScreen() {
   const { user } = useAuthStore();
-  const { timeEntries, jobs } = useClockingStore();
+  const { currentActiveEntryId, timeEntries, jobs } = useClockingStore();
   const { refreshWorkContext } = useClockingActions();
   const [loadError, setLoadError] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
@@ -31,11 +37,8 @@ export default function HomeScreen() {
   }, [refreshWorkContext]);
 
   const activeShift = useMemo(() => {
-    if (!user?.employeeId) return null;
-    const activeEntries = timeEntries.filter((entry) => entry.employeeId === user.employeeId && entry.status === 'clocked_in');
-    if (activeEntries.length === 0) return null;
-    return activeEntries.sort((a, b) => new Date(b.clockIn).getTime() - new Date(a.clockIn).getTime())[0] || null;
-  }, [timeEntries, user?.employeeId]);
+    return resolveCurrentActiveEntry(timeEntries, user?.employeeId, currentActiveEntryId);
+  }, [currentActiveEntryId, timeEntries, user?.employeeId]);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 30_000);

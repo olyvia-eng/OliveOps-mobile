@@ -3,22 +3,19 @@ import { StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { PrimaryActionButton } from '@/components/PrimaryActionButton';
 import { Screen } from '@/components/Screen';
-import { formatElapsedClock, getWorkTypeLabel, resolveJobTitle } from '@/features/clocking/presentation';
+import { formatElapsedClock, getWorkTypeLabel, resolveCurrentActiveEntry, resolveJobTitle } from '@/features/clocking/presentation';
 import { useAuthStore } from '@/store/authStore';
 import { useClockingStore } from '@/store/clockingStore';
 import { colors } from '@/theme/colors';
 
 export default function ActiveShiftScreen() {
   const { user } = useAuthStore();
-  const { timeEntries, jobs } = useClockingStore();
+  const { currentActiveEntryId, timeEntries, jobs } = useClockingStore();
   const [now, setNow] = useState(Date.now());
 
   const entry = useMemo(() => {
-    if (!user?.employeeId) return null;
-    const activeEntries = timeEntries.filter((item) => item.employeeId === user.employeeId && item.status === 'clocked_in');
-    if (activeEntries.length === 0) return null;
-    return activeEntries.sort((a, b) => new Date(b.clockIn).getTime() - new Date(a.clockIn).getTime())[0] || null;
-  }, [timeEntries, user?.employeeId]);
+    return resolveCurrentActiveEntry(timeEntries, user?.employeeId, currentActiveEntryId);
+  }, [currentActiveEntryId, timeEntries, user?.employeeId]);
 
   useEffect(() => {
     if (!entry) return;

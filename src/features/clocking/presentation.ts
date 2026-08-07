@@ -6,6 +6,32 @@ export function getWorkTypeLabel(workType: TimeEntry['workType']) {
   return 'Job Work';
 }
 
+export function resolveCurrentActiveEntry(
+  entries: TimeEntry[],
+  employeeId?: string,
+  currentActiveEntryId?: string | null,
+) {
+  if (!employeeId) return null;
+
+  const scopedEntries = entries.filter((entry) => entry.employeeId === employeeId);
+  if (scopedEntries.length === 0) return null;
+
+  if (currentActiveEntryId) {
+    const authoritative = scopedEntries.find((entry) => entry.id === currentActiveEntryId);
+    if (authoritative) return authoritative;
+  }
+
+  const fallback = scopedEntries
+    .filter((entry) => entry.status === 'clocked_in')
+    .sort((a, b) => new Date(b.clockIn).getTime() - new Date(a.clockIn).getTime())[0];
+
+  return fallback ?? null;
+}
+
+export function isAuthoritativeActiveEntry(entryId: string, currentActiveEntryId?: string | null) {
+  return Boolean(currentActiveEntryId && entryId === currentActiveEntryId);
+}
+
 export function resolveJobTitle(entry: Pick<TimeEntry, 'jobId' | 'jobIds'>, jobs: Job[]) {
   const ids = Array.isArray(entry.jobIds) && entry.jobIds.length > 0
     ? entry.jobIds
@@ -58,10 +84,10 @@ export function formatDurationForEntry(entry: TimeEntry, nowMs = Date.now()) {
   return formatDurationMinutes(minutes);
 }
 
-export function formatEntryTimeRange(entry: TimeEntry) {
+export function formatEntryTimeRange(entry: TimeEntry, isAuthoritativeActive = false) {
   const start = new Date(entry.clockIn).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   if (!entry.clockOut) {
-    return `${start} - Now`;
+    return isAuthoritativeActive ? `${start} - Now` : `${start} - End time unavailable`;
   }
 
   const end = new Date(entry.clockOut).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });

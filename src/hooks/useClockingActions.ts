@@ -9,7 +9,13 @@ import type { TimeEntryWorkType } from '@/types/domain';
 
 export function useClockingActions() {
   const { accessToken, user, syncCapabilities } = useAuthStore();
-  const { upsertTimeEntry, setActivityConfigs, setJobs, setTimeEntries } = useClockingStore();
+  const {
+    upsertTimeEntry,
+    setActivityConfigs,
+    setCurrentActiveEntryId,
+    setJobs,
+    setTimeEntries,
+  } = useClockingStore();
   const [loading, setLoading] = useState(false);
 
   async function syncWorkContextFromBootstrap() {
@@ -18,6 +24,7 @@ export function useClockingActions() {
     const payload = await clockingApi.loadBootstrap(accessToken);
     setJobs(scopeJobsForSession(payload.jobs ?? [], user));
     setTimeEntries(scopeTimeEntriesForSession(payload.timeEntries ?? [], user));
+    setCurrentActiveEntryId(payload.currentActiveEntryId ?? null);
     setActivityConfigs(payload.activityConfigs);
     if (payload.capabilities) {
       syncCapabilities(payload.capabilities);
@@ -52,6 +59,7 @@ export function useClockingActions() {
         }, accessToken);
 
         upsertTimeEntry(result.timeEntry);
+        setCurrentActiveEntryId(result.timeEntry.id);
         return { ok: true };
       } catch (error) {
         return {
@@ -93,6 +101,12 @@ export function useClockingActions() {
 
         if (result.timeEntry) {
           upsertTimeEntry(result.timeEntry);
+          setCurrentActiveEntryId(null);
+          try {
+            await syncWorkContextFromBootstrap();
+          } catch {
+            // Preserve successful clock-out even if refresh fails.
+          }
         }
 
         return { ok: true };
@@ -137,7 +151,12 @@ export function useClockingActions() {
         }, accessToken);
 
         upsertTimeEntry(result.timeEntry);
-        await syncWorkContextFromBootstrap();
+        setCurrentActiveEntryId(result.timeEntry.id);
+        try {
+          await syncWorkContextFromBootstrap();
+        } catch {
+          // Preserve successful switch even if refresh fails.
+        }
         return { ok: true };
       } catch (error) {
         return {
@@ -167,7 +186,16 @@ export function useClockingActions() {
         };
       }
     },
-  }), [accessToken, setActivityConfigs, setJobs, setTimeEntries, syncCapabilities, upsertTimeEntry, user]);
+  }), [
+    accessToken,
+    setActivityConfigs,
+    setCurrentActiveEntryId,
+    setJobs,
+    setTimeEntries,
+    syncCapabilities,
+    upsertTimeEntry,
+    user,
+  ]);
 
   return {
     ...actions,

@@ -1,13 +1,23 @@
 import { useMemo } from 'react';
 import { FlatList, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { formatDurationForEntry, formatDurationMinutes, formatEntryTimeRange, getWorkTypeLabel, resolveJobTitle } from '@/features/clocking/presentation';
+import {
+  formatDurationForEntry,
+  formatDurationMinutes,
+  formatEntryTimeRange,
+  getWorkTypeLabel,
+  isAuthoritativeActiveEntry,
+  resolveCurrentActiveEntry,
+  resolveJobTitle,
+} from '@/features/clocking/presentation';
+import { useAuthStore } from '@/store/authStore';
 import { useClockingStore } from '@/store/clockingStore';
 import { getTodayEntries, getWeekTotalHours } from '@/api/timeEntriesApi';
 import { colors } from '@/theme/colors';
 
 export default function TimeHistoryScreen() {
-  const { timeEntries, jobs } = useClockingStore();
+  const { user } = useAuthStore();
+  const { currentActiveEntryId, timeEntries, jobs } = useClockingStore();
   const todayEntries = useMemo(() => getTodayEntries(timeEntries), [timeEntries]);
   const orderedEntries = useMemo(
     () => [...todayEntries].sort((a, b) => new Date(b.clockIn).getTime() - new Date(a.clockIn).getTime()),
@@ -15,6 +25,11 @@ export default function TimeHistoryScreen() {
   );
   const weekTotal = useMemo(() => getWeekTotalHours(timeEntries), [timeEntries]);
   const weekTotalLabel = useMemo(() => formatDurationMinutes(weekTotal * 60), [weekTotal]);
+  const activeEntry = useMemo(
+    () => resolveCurrentActiveEntry(timeEntries, user?.employeeId, currentActiveEntryId),
+    [currentActiveEntryId, timeEntries, user?.employeeId]
+  );
+  const authoritativeActiveEntryId = activeEntry?.id ?? null;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
@@ -35,16 +50,20 @@ export default function TimeHistoryScreen() {
               <Text style={styles.entryJob}>{resolveJobTitle(item, jobs)}</Text>
               {item.clockOut ? (
                 <Text style={styles.entryDuration}>{formatDurationForEntry(item)}</Text>
-              ) : (
+              ) : isAuthoritativeActiveEntry(item.id, authoritativeActiveEntryId) ? (
                 <View style={styles.activeBadge}>
                   <Text style={styles.activeDot}>●</Text>
                   <Text style={styles.activeLabel}>Active</Text>
+                </View>
+              ) : (
+                <View style={styles.incompleteBadge}>
+                  <Text style={styles.incompleteLabel}>Incomplete record</Text>
                 </View>
               )}
             </View>
             <Text style={styles.entryType}>{getWorkTypeLabel(item.workType)}</Text>
             <Text style={styles.entryDateLabel}>Today</Text>
-            <Text style={styles.entryRange}>{formatEntryTimeRange(item)}</Text>
+            <Text style={styles.entryRange}>{formatEntryTimeRange(item, isAuthoritativeActiveEntry(item.id, authoritativeActiveEntryId))}</Text>
           </View>
         )}
         ListEmptyComponent={<Text style={styles.empty}>No time entries for today.</Text>}
@@ -125,6 +144,19 @@ const styles = StyleSheet.create({
   },
   activeLabel: {
     color: colors.success,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  incompleteBadge: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceMuted,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  incompleteLabel: {
+    color: colors.textSecondary,
     fontSize: 12,
     fontWeight: '700',
   },
