@@ -1,5 +1,16 @@
 import type { Job, SessionUser, TimeEntry, TimeEntryWorkType } from '@/types/domain';
 
+export interface MobileCapabilities {
+  paidDriveTime: boolean;
+}
+
+export interface ActivityConfig {
+  type: TimeEntryWorkType;
+  requiresJob: boolean;
+  requiresCategory: boolean;
+  categories?: Array<{ id: string; label: string }>;
+}
+
 export interface ApiEnvelope<T> {
   ok: boolean;
   error?: string;
@@ -15,6 +26,7 @@ export interface AuthSessionResponse {
   accessToken?: string;
   refreshToken?: string;
   expiresAt?: string;
+  capabilities?: MobileCapabilities;
 }
 
 export interface BootstrapResponse {
@@ -22,6 +34,8 @@ export interface BootstrapResponse {
   jobs?: Job[];
   timeEntries?: TimeEntry[];
   employees?: Array<{ id: string }>;
+  capabilities?: MobileCapabilities;
+  activityConfigs?: ActivityConfig[];
   error?: string;
 }
 
@@ -40,6 +54,13 @@ export interface ClockOutRequest {
   requestId: string;
   idempotencyKey: string;
   photoAttachmentFileId?: string;
+}
+
+export interface SwitchActivityRequest {
+  workType: TimeEntryWorkType;
+  jobIds: string[];
+  requestId: string;
+  idempotencyKey: string;
 }
 
 export interface PrepareUploadRequest {

@@ -1,5 +1,11 @@
 import type { Job, TimeEntry } from '@/types/domain';
 
+export function getWorkTypeLabel(workType: TimeEntry['workType']) {
+  if (workType === 'drive_time') return 'Drive Time';
+  if (workType === 'non_billable') return 'Unbillable Time';
+  return 'Job Work';
+}
+
 export function resolveJobTitle(entry: Pick<TimeEntry, 'jobId' | 'jobIds'>, jobs: Job[]) {
   const ids = Array.isArray(entry.jobIds) && entry.jobIds.length > 0
     ? entry.jobIds

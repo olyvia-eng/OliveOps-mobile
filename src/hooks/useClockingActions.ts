@@ -5,15 +5,29 @@ import { beginRequest, createRequestMeta, endRequest } from '@/services/requestG
 import { isOnline } from '@/services/connectivity';
 import { useAuthStore } from '@/store/authStore';
 import { useClockingStore } from '@/store/clockingStore';
+import type { TimeEntryWorkType } from '@/types/domain';
 
 export function useClockingActions() {
-  const { accessToken, user } = useAuthStore();
-  const { upsertTimeEntry, setJobs, setTimeEntries } = useClockingStore();
+  const { accessToken, user, syncCapabilities } = useAuthStore();
+  const { upsertTimeEntry, setActivityConfigs, setJobs, setTimeEntries } = useClockingStore();
   const [loading, setLoading] = useState(false);
+
+  async function syncWorkContextFromBootstrap() {
+    if (!user) return;
+
+    const payload = await clockingApi.loadBootstrap(accessToken);
+    setJobs(scopeJobsForSession(payload.jobs ?? [], user));
+    setTimeEntries(scopeTimeEntriesForSession(payload.timeEntries ?? [], user));
+    setActivityConfigs(payload.activityConfigs);
+    if (payload.capabilities) {
+      syncCapabilities(payload.capabilities);
+    }
+  }
 
   const actions = useMemo(() => ({
     async clockIn(
       employeeId: string,
+      workType: TimeEntryWorkType,
       jobIds: string[],
       requestMeta?: { requestId: string; idempotencyKey: string }
     ) {
@@ -32,7 +46,7 @@ export function useClockingActions() {
         const meta = requestMeta ?? createRequestMeta(employeeId);
         const result = await clockingApi.clockIn({
           employeeId,
-          workType: 'job',
+          workType,
           jobIds,
           ...meta,
         }, accessToken);
@@ -93,6 +107,49 @@ export function useClockingActions() {
       }
     },
 
+    async switchActivity(
+      workType: TimeEntryWorkType,
+      jobIds: string[],
+      requestMeta?: { requestId: string; idempotencyKey: string }
+    ) {
+      const employeeId = user?.employeeId;
+      if (!employeeId) {
+        return { ok: false, error: 'Employee profile is not linked to this account.' };
+      }
+
+      const key = `switch-activity:${employeeId}`;
+      if (!beginRequest(key)) {
+        return { ok: false, error: 'Switch activity already in progress.' };
+      }
+
+      setLoading(true);
+      try {
+        const online = await isOnline();
+        if (!online) {
+          return { ok: false, error: 'Offline. Reconnect and retry switch activity.' };
+        }
+
+        const meta = requestMeta ?? createRequestMeta(employeeId);
+        const result = await clockingApi.switchActivity({
+          workType,
+          jobIds,
+          ...meta,
+        }, accessToken);
+
+        upsertTimeEntry(result.timeEntry);
+        await syncWorkContextFromBootstrap();
+        return { ok: true };
+      } catch (error) {
+        return {
+          ok: false,
+          error: error instanceof Error ? error.message : 'Switch activity failed.',
+        };
+      } finally {
+        endRequest(key);
+        setLoading(false);
+      }
+    },
+
     async refreshWorkContext() {
       if (!user) return { ok: false, error: 'No active user session.' };
       try {
@@ -101,9 +158,7 @@ export function useClockingActions() {
           return { ok: false, error: 'Offline. Reconnect to refresh jobs and shift status.' };
         }
 
-        const payload = await clockingApi.loadBootstrap(accessToken);
-        setJobs(scopeJobsForSession(payload.jobs ?? [], user));
-        setTimeEntries(scopeTimeEntriesForSession(payload.timeEntries ?? [], user));
+        await syncWorkContextFromBootstrap();
         return { ok: true };
       } catch (error) {
         return {
@@ -112,7 +167,7 @@ export function useClockingActions() {
         };
       }
     },
-  }), [accessToken, setJobs, setTimeEntries, upsertTimeEntry, user]);
+  }), [accessToken, setActivityConfigs, setJobs, setTimeEntries, syncCapabilities, upsertTimeEntry, user]);
 
   return {
     ...actions,

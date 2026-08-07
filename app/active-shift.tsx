@@ -3,7 +3,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { PrimaryActionButton } from '@/components/PrimaryActionButton';
 import { Screen } from '@/components/Screen';
-import { formatElapsedClock, resolveJobTitle } from '@/features/clocking/presentation';
+import { formatElapsedClock, getWorkTypeLabel, resolveJobTitle } from '@/features/clocking/presentation';
 import { useAuthStore } from '@/store/authStore';
 import { useClockingStore } from '@/store/clockingStore';
 import { colors } from '@/theme/colors';
@@ -32,6 +32,11 @@ export default function ActiveShiftScreen() {
     return resolveJobTitle(entry, jobs);
   }, [entry, jobs]);
 
+  const activityLabel = useMemo(() => {
+    if (!entry) return 'No active activity';
+    return getWorkTypeLabel(entry.workType);
+  }, [entry]);
+
   return (
     <Screen>
       <View style={styles.card}>
@@ -48,6 +53,7 @@ export default function ActiveShiftScreen() {
               <Text style={styles.statusValue}>Clocked in</Text>
             </View>
             <Text style={styles.jobTitle}>{jobLabel}</Text>
+            <Text style={styles.activityText}>Activity: {activityLabel}</Text>
             <Text style={styles.elapsedClock}>{formatElapsedClock(entry.clockIn, now)}</Text>
             <Text style={styles.elapsedLabel}>Elapsed</Text>
             <View style={styles.metaRow}>
@@ -58,7 +64,10 @@ export default function ActiveShiftScreen() {
       </View>
 
       {entry ? (
-        <PrimaryActionButton label="Clock Out" onPress={() => router.push('/clock-out')} />
+        <>
+          <PrimaryActionButton label="Clock Out" onPress={() => router.push('/clock-out')} />
+          <PrimaryActionButton label="Switch Activity" onPress={() => router.push('/switch-activity')} />
+        </>
       ) : (
         <PrimaryActionButton label="Clock In" onPress={() => router.push('/clock-in')} />
       )}
@@ -98,6 +107,11 @@ const styles = StyleSheet.create({
   jobTitle: {
     color: colors.textPrimary,
     fontSize: 20,
+    fontWeight: '600',
+  },
+  activityText: {
+    color: colors.textSecondary,
+    fontSize: 14,
     fontWeight: '600',
   },
   elapsedClock: {

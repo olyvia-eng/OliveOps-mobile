@@ -5,7 +5,7 @@ import { PrimaryActionButton } from '@/components/PrimaryActionButton';
 import { Screen } from '@/components/Screen';
 import { OfflineNotice } from '@/components/OfflineNotice';
 import { StatusBanner } from '@/components/StatusBanner';
-import { formatElapsedShort, getGreetingForTime, resolveJobTitle } from '@/features/clocking/presentation';
+import { formatElapsedShort, getGreetingForTime, getWorkTypeLabel, resolveJobTitle } from '@/features/clocking/presentation';
 import { useClockingActions } from '@/hooks/useClockingActions';
 import { useAuthStore } from '@/store/authStore';
 import { useClockingStore } from '@/store/clockingStore';
@@ -46,6 +46,11 @@ export default function HomeScreen() {
     if (!activeShift) return 'Not clocked in';
     return resolveJobTitle(activeShift, jobs);
   }, [activeShift, jobs]);
+
+  const currentActivityLabel = useMemo(() => {
+    if (!activeShift) return 'None';
+    return getWorkTypeLabel(activeShift.workType);
+  }, [activeShift]);
 
   const runningHours = useMemo(() => {
     if (!activeShift) return '0.00';
@@ -106,6 +111,7 @@ export default function HomeScreen() {
           <Text style={styles.statusValue}>{activeShift ? 'Clocked in' : 'Not clocked in'}</Text>
         </View>
         <Text style={styles.metaText}>Current job: {currentJobLabel}</Text>
+        <Text style={styles.metaText}>Current activity: {currentActivityLabel}</Text>
         <Text style={styles.metaText}>Running shift hours: {runningHours}</Text>
         {activeShift ? <Text style={styles.metaText}>Elapsed: {runningDuration}</Text> : null}
       </View>

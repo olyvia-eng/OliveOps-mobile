@@ -93,12 +93,15 @@ describe('ActiveShiftScreen', () => {
       tree = create(React.createElement(ActiveShiftScreen));
     });
 
-    const renderedText = tree.root.findAllByType('text').map((node: any) => String(node.props.children));
+    const renderedText = tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ');
     expect(renderedText).toContain('Front Walkway');
+    expect(renderedText).toContain('Activity:');
+    expect(renderedText).toContain('Job Work');
     expect(renderedText).not.toContain('job-1');
 
     const labels = tree.root.findAllByType('primary-button').map((node: any) => node.props.label);
     expect(labels).toContain('Clock Out');
+    expect(labels).toContain('Switch Activity');
     expect(labels).not.toContain('Clock In');
   });
 });

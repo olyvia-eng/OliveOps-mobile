@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { FlatList, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { formatDurationForEntry, formatDurationMinutes, formatEntryTimeRange, resolveJobTitle } from '@/features/clocking/presentation';
+import { formatDurationForEntry, formatDurationMinutes, formatEntryTimeRange, getWorkTypeLabel, resolveJobTitle } from '@/features/clocking/presentation';
 import { useClockingStore } from '@/store/clockingStore';
 import { getTodayEntries, getWeekTotalHours } from '@/api/timeEntriesApi';
 import { colors } from '@/theme/colors';
@@ -42,6 +42,7 @@ export default function TimeHistoryScreen() {
                 </View>
               )}
             </View>
+            <Text style={styles.entryType}>{getWorkTypeLabel(item.workType)}</Text>
             <Text style={styles.entryDateLabel}>Today</Text>
             <Text style={styles.entryRange}>{formatEntryTimeRange(item)}</Text>
           </View>
@@ -131,6 +132,13 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 13,
     fontWeight: '600',
+  },
+  entryType: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
   },
   entryRange: {
     color: colors.textPrimary,

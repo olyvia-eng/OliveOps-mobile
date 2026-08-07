@@ -5,6 +5,7 @@ import { OfflineNotice } from '@/components/OfflineNotice';
 import { PrimaryActionButton } from '@/components/PrimaryActionButton';
 import { Screen } from '@/components/Screen';
 import { StatusBanner } from '@/components/StatusBanner';
+import { getWorkTypeLabel, resolveJobTitle } from '@/features/clocking/presentation';
 import { useClockingActions } from '@/hooks/useClockingActions';
 import { createRequestMeta } from '@/services/requestGuards';
 import { useAuthStore } from '@/store/authStore';
@@ -17,13 +18,12 @@ type ActivityOption = {
   label: string;
   help: string;
   requiresJob: boolean;
-  supportsCategorySelection: boolean;
 };
 
-export default function ClockInScreen() {
+export default function SwitchActivityScreen() {
   const { user, capabilities } = useAuthStore();
-  const { jobs } = useClockingStore();
-  const { clockIn, loading, refreshWorkContext } = useClockingActions();
+  const { jobs, timeEntries } = useClockingStore();
+  const { loading, refreshWorkContext, switchActivity } = useClockingActions();
   const [selectedWorkType, setSelectedWorkType] = useState<TimeEntryWorkType>('job');
   const [selectedJobId, setSelectedJobId] = useState('');
   const [retryMeta, setRetryMeta] = useState<{ requestId: string; idempotencyKey: string } | null>(null);
@@ -33,6 +33,14 @@ export default function ClockInScreen() {
   useEffect(() => {
     void refreshWorkContext();
   }, [refreshWorkContext]);
+
+  const activeEntry = useMemo(() => {
+    if (!user?.employeeId) return null;
+    const entries = timeEntries
+      .filter((entry) => entry.employeeId === user.employeeId && entry.status === 'clocked_in')
+      .sort((a, b) => new Date(b.clockIn).getTime() - new Date(a.clockIn).getTime());
+    return entries[0] ?? null;
+  }, [timeEntries, user?.employeeId]);
 
   const assignedJobs = useMemo(() => {
     const employeeId = user?.employeeId;
@@ -51,14 +59,12 @@ export default function ClockInScreen() {
         label: 'Job Work',
         help: 'Billable labor tied to a specific job.',
         requiresJob: true,
-        supportsCategorySelection: false,
       },
       {
         type: 'non_billable',
         label: 'Unbillable Time',
         help: 'Paid work that is not billed to a job.',
         requiresJob: false,
-        supportsCategorySelection: false,
       },
     ];
 
@@ -68,7 +74,6 @@ export default function ClockInScreen() {
         label: 'Drive Time',
         help: 'Travel between work locations.',
         requiresJob: false,
-        supportsCategorySelection: false,
       });
     }
 
@@ -84,19 +89,19 @@ export default function ClockInScreen() {
   const requiresJobSelection = selectedActivity?.requiresJob === true;
 
   const canSubmit = useMemo(() => {
-    if (!user?.employeeId) return false;
+    if (!activeEntry) return false;
     if (requiresJobSelection) return Boolean(selectedJobId);
     return true;
-  }, [requiresJobSelection, selectedJobId, user?.employeeId]);
+  }, [activeEntry, requiresJobSelection, selectedJobId]);
 
-  async function submitClockIn(metaOverride?: { requestId: string; idempotencyKey: string }) {
-    if (!user?.employeeId) {
-      setError('Employee profile is not linked to this account.');
+  async function submitSwitch(metaOverride?: { requestId: string; idempotencyKey: string }) {
+    if (!activeEntry || !user?.employeeId) {
+      setError('No active shift found.');
       return;
     }
 
     if (requiresJobSelection && !selectedJobId) {
-      setError('Select an assigned job before clocking in.');
+      setError('Select a job before switching to job work.');
       return;
     }
 
@@ -106,106 +111,111 @@ export default function ClockInScreen() {
     const meta = metaOverride ?? retryMeta ?? createRequestMeta(user.employeeId);
     setRetryMeta(meta);
 
-    const jobIds = selectedWorkType === 'non_billable'
+    const nextJobIds = selectedWorkType === 'non_billable'
       ? []
       : (selectedJobId ? [selectedJobId] : []);
 
-    const result = await clockIn(user.employeeId, selectedWorkType, jobIds, meta);
-
+    const result = await switchActivity(selectedWorkType, nextJobIds, meta);
     if (!result.ok) {
-      setError(result.error || 'Clock-in failed.');
+      setError(result.error || 'Could not switch activity.');
       return;
     }
 
     setRetryMeta(null);
-    setStatus('Clock-in submitted successfully.');
+    setStatus('Activity switched successfully.');
     router.replace('/active-shift');
   }
 
   return (
     <Screen>
       <OfflineNotice />
+
       <View style={styles.card}>
-        <Text style={styles.title}>Choose an activity</Text>
-        <Text style={styles.help}>Pick what you are starting right now.</Text>
-
-        <View style={styles.jobsList}>
-          {activityOptions.map((option) => {
-            const selected = selectedWorkType === option.type;
-            return (
-              <Pressable
-                key={option.type}
-                testID={`activity-option-${option.type}`}
-                onPress={() => setSelectedWorkType(option.type)}
-                style={[styles.jobRow, selected && styles.jobRowSelected]}
-              >
-                <View style={styles.jobTextBlock}>
-                  <Text style={styles.jobTitle}>{option.label}</Text>
-                  <Text style={styles.jobMeta}>{option.help}</Text>
-                </View>
-                <View style={[styles.checkDot, selected && styles.checkDotSelected]}>
-                  {selected ? <Text style={styles.checkMark}>✓</Text> : null}
-                </View>
-              </Pressable>
-            );
-          })}
-        </View>
-
-        {showJobSelection ? (
+        {!activeEntry ? (
+          <StatusBanner tone="info" message="No active shift found. Clock in before switching activity." />
+        ) : (
           <>
-            <Text style={styles.sectionLabel}>{requiresJobSelection ? 'Select a job' : 'Job context (optional)'}</Text>
-            {assignedJobs.length === 0 ? (
-              <StatusBanner
-                tone={requiresJobSelection ? 'error' : 'info'}
-                message={requiresJobSelection
-                  ? 'No assigned scheduled/in-progress jobs available.'
-                  : 'No assigned scheduled/in-progress jobs available. You can continue without a job context.'}
-              />
+            <Text style={styles.title}>Switch activity</Text>
+            <Text style={styles.help}>Current activity: {getWorkTypeLabel(activeEntry.workType)}</Text>
+            <Text style={styles.help}>Current context: {resolveJobTitle(activeEntry, jobs)}</Text>
+
+            <View style={styles.list}>
+              {activityOptions.map((option) => {
+                const selected = selectedWorkType === option.type;
+                return (
+                  <Pressable
+                    key={option.type}
+                    testID={`switch-activity-option-${option.type}`}
+                    onPress={() => setSelectedWorkType(option.type)}
+                    style={[styles.row, selected && styles.rowSelected]}
+                  >
+                    <View style={styles.textBlock}>
+                      <Text style={styles.rowTitle}>{option.label}</Text>
+                      <Text style={styles.rowMeta}>{option.help}</Text>
+                    </View>
+                    <View style={[styles.checkDot, selected && styles.checkDotSelected]}>
+                      {selected ? <Text style={styles.checkMark}>✓</Text> : null}
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            {showJobSelection ? (
+              <>
+                <Text style={styles.sectionLabel}>{requiresJobSelection ? 'Select a job' : 'Job context (optional)'}</Text>
+                {assignedJobs.length === 0 ? (
+                  <StatusBanner
+                    tone={requiresJobSelection ? 'error' : 'info'}
+                    message={requiresJobSelection
+                      ? 'No assigned scheduled/in-progress jobs available.'
+                      : 'No assigned scheduled/in-progress jobs available. You can continue without a job context.'}
+                  />
+                ) : (
+                  <View style={styles.list}>
+                    {assignedJobs.map((job) => {
+                      const selected = selectedJobId === job.id;
+                      return (
+                        <Pressable
+                          key={job.id}
+                          testID={`switch-job-option-${job.id}`}
+                          onPress={() => setSelectedJobId(job.id)}
+                          style={[styles.row, selected && styles.rowSelected]}
+                        >
+                          <View style={styles.textBlock}>
+                            <Text style={styles.rowTitle}>{job.title || 'Untitled Job'}</Text>
+                            <Text style={styles.rowMeta}>{job.status.replace('_', ' ')}</Text>
+                          </View>
+                          <View style={[styles.checkDot, selected && styles.checkDotSelected]}>
+                            {selected ? <Text style={styles.checkMark}>✓</Text> : null}
+                          </View>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                )}
+              </>
             ) : (
-              <View style={styles.jobsList}>
-                {assignedJobs.map((job) => {
-                  const selected = selectedJobId === job.id;
-                  return (
-                    <Pressable
-                      key={job.id}
-                      testID={`job-option-${job.id}`}
-                      onPress={() => setSelectedJobId(job.id)}
-                      style={[styles.jobRow, selected && styles.jobRowSelected]}
-                    >
-                      <View style={styles.jobTextBlock}>
-                        <Text style={styles.jobTitle}>{job.title || 'Untitled Job'}</Text>
-                        <Text style={styles.jobMeta}>{job.status.replace('_', ' ')}</Text>
-                      </View>
-                      <View style={[styles.checkDot, selected && styles.checkDotSelected]}>
-                        {selected ? <Text style={styles.checkMark}>✓</Text> : null}
-                      </View>
-                    </Pressable>
-                  );
-                })}
-              </View>
+              <Text style={styles.categoryHint}>Unbillable categories are backend-configurable and will appear when available.</Text>
             )}
           </>
-        ) : null}
-
-        {!selectedActivity?.supportsCategorySelection ? (
-          <Text style={styles.categoryHint}>Unbillable categories are backend-configurable and will appear when available.</Text>
-        ) : null}
+        )}
       </View>
 
       {status ? <StatusBanner tone="success" message={status} /> : null}
       {error ? <StatusBanner tone="error" message={error} /> : null}
 
       <PrimaryActionButton
-        label={loading ? 'Clocking in...' : 'Clock In'}
+        label={loading ? 'Switching...' : 'Switch Activity'}
         disabled={!canSubmit || loading}
-        onPress={() => void submitClockIn()}
+        onPress={() => void submitSwitch()}
       />
 
       {error && retryMeta ? (
         <PrimaryActionButton
-          label="Retry Clock In"
+          label="Retry Switch Activity"
           disabled={loading}
-          onPress={() => void submitClockIn(retryMeta)}
+          onPress={() => void submitSwitch(retryMeta)}
         />
       ) : null}
     </Screen>
@@ -232,6 +242,9 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 21,
   },
+  list: {
+    gap: 10,
+  },
   sectionLabel: {
     color: colors.textSecondary,
     fontSize: 13,
@@ -239,10 +252,7 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     marginTop: 4,
   },
-  jobsList: {
-    gap: 10,
-  },
-  jobRow: {
+  row: {
     minHeight: 64,
     borderRadius: 12,
     borderColor: colors.border,
@@ -255,20 +265,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 10,
   },
-  jobRowSelected: {
+  rowSelected: {
     borderColor: colors.primary,
     backgroundColor: colors.inputFocusBackground,
   },
-  jobTextBlock: {
+  textBlock: {
     flex: 1,
     gap: 4,
   },
-  jobTitle: {
+  rowTitle: {
     color: colors.textPrimary,
     fontSize: 17,
     fontWeight: '600',
   },
-  jobMeta: {
+  rowMeta: {
     color: colors.textSecondary,
     fontSize: 14,
     textTransform: 'capitalize',

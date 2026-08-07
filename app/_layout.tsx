@@ -20,6 +20,7 @@ export default function RootLayout() {
           <Stack.Screen name="login" options={{ headerShown: false }} />
           <Stack.Screen name="home" options={{ title: 'Home' }} />
           <Stack.Screen name="clock-in" options={{ title: 'Clock In' }} />
+          <Stack.Screen name="switch-activity" options={{ title: 'Switch Activity' }} />
           <Stack.Screen name="active-shift" options={{ title: 'Active Shift' }} />
           <Stack.Screen name="clock-out" options={{ title: 'Clock Out' }} />
           <Stack.Screen name="time-history" options={{ title: 'Time History' }} />

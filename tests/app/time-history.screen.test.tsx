@@ -86,6 +86,7 @@ describe('TimeHistoryScreen', () => {
     const renderedText = tree.root.findAllByType('text').map((node: any) => String(node.props.children));
     expect(renderedText).toContain('Front Walkway');
     expect(renderedText).toContain('Active');
+    expect(renderedText).toContain('Job Work');
     expect(renderedText).not.toContain('job-1');
   });
 

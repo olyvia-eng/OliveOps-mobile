@@ -21,6 +21,9 @@ const mockUseAuthStore = jest.fn(() => ({
     businessName: 'OliveOps',
     employeeId: 'emp-1',
   },
+  capabilities: {
+    paidDriveTime: true,
+  },
 }));
 
 const mockUseClockingStore = jest.fn(() => ({
@@ -102,7 +105,7 @@ describe('ClockInScreen', () => {
     const submitButton = tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Clock In');
     expect(submitButton?.props.disabled).toBe(true);
 
-    const jobPress = tree.root.findAllByType('pressable')[0];
+    const jobPress = tree.root.findAllByProps({ testID: 'job-option-job-1' })[0];
     await act(async () => {
       jobPress.props.onPress();
     });
@@ -118,7 +121,7 @@ describe('ClockInScreen', () => {
     });
 
     await act(async () => {
-      tree.root.findAllByType('pressable')[0].props.onPress();
+      tree.root.findAllByProps({ testID: 'job-option-job-1' })[0].props.onPress();
     });
 
     const submitButton = tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Clock In');
@@ -126,7 +129,7 @@ describe('ClockInScreen', () => {
       await submitButton.props.onPress();
     });
 
-    expect(mockClockIn).toHaveBeenCalledWith('emp-1', ['job-1'], { requestId: 'req-1', idempotencyKey: 'key-1' });
+    expect(mockClockIn).toHaveBeenCalledWith('emp-1', 'job', ['job-1'], { requestId: 'req-1', idempotencyKey: 'key-1' });
     expect(router.replace).toHaveBeenCalledWith('/active-shift');
   });
 
@@ -139,7 +142,7 @@ describe('ClockInScreen', () => {
     });
 
     await act(async () => {
-      tree.root.findAllByType('pressable')[0].props.onPress();
+      tree.root.findAllByProps({ testID: 'job-option-job-1' })[0].props.onPress();
     });
 
     const submitButton = tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Clock In');
@@ -149,5 +152,23 @@ describe('ClockInScreen', () => {
 
     const retryButton = tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Retry Clock In');
     expect(retryButton).toBeTruthy();
+  });
+
+  it('submits unbillable without jobIds or category payload', async () => {
+    let tree: any;
+    await act(async () => {
+      tree = create(React.createElement(ClockInScreen));
+    });
+
+    await act(async () => {
+      tree.root.findAllByProps({ testID: 'activity-option-non_billable' })[0].props.onPress();
+    });
+
+    const submitButton = tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Clock In');
+    await act(async () => {
+      await submitButton.props.onPress();
+    });
+
+    expect(mockClockIn).toHaveBeenCalledWith('emp-1', 'non_billable', [], { requestId: 'req-1', idempotencyKey: 'key-1' });
   });
 });

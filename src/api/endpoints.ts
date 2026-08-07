@@ -6,5 +6,6 @@ export const ENDPOINTS = {
   bootstrap: '/api/bootstrap',
   clockIn: '/api/clocking?action=clock-in',
   clockOut: '/api/clocking?action=clock-out',
+  switchActivity: '/api/clocking?action=switch-activity',
   storage: '/api/storage',
 } as const;
