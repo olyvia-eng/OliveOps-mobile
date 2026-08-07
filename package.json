@@ -18,6 +18,8 @@
   "devDependencies": {
     "@types/node": "^26.1.2",
     "@types/react": "~19.2.2",
+    "@types/react-test-renderer": "^19.1.0",
+    "react-test-renderer": "^19.2.3",
     "typescript": "~6.0.3",
     "vitest": "^4.1.10"
   },
@@ -26,7 +28,11 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:fast": "vitest run --exclude src/**/*.screen.test.tsx",
+    "test:ui": "vitest run screen.test.tsx",
+    "test:full": "npm run test:fast && npm run test:ui && node --max-old-space-size=4096 ./node_modules/typescript/bin/tsc --noEmit",
+    "ci:test": "npm run test:full"
   },
   "private": true
 }
