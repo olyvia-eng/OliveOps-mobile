@@ -17,7 +17,7 @@ export default function RootLayout() {
           }}
         >
           <Stack.Screen name="index" options={{ headerShown: false }} />
-          <Stack.Screen name="login" options={{ title: 'Employee Login' }} />
+          <Stack.Screen name="login" options={{ headerShown: false }} />
           <Stack.Screen name="home" options={{ title: 'Home' }} />
           <Stack.Screen name="clock-in" options={{ title: 'Clock In' }} />
           <Stack.Screen name="active-shift" options={{ title: 'Active Shift' }} />

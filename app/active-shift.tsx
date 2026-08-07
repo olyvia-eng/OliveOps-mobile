@@ -15,11 +15,14 @@ export default function ActiveShiftScreen() {
 
   const entry = useMemo(() => {
     if (!user?.employeeId) return null;
-    return timeEntries.find((item) => item.employeeId === user.employeeId && item.status === 'clocked_in') || null;
+    const activeEntries = timeEntries.filter((item) => item.employeeId === user.employeeId && item.status === 'clocked_in');
+    if (activeEntries.length === 0) return null;
+    return activeEntries.sort((a, b) => new Date(b.clockIn).getTime() - new Date(a.clockIn).getTime())[0] || null;
   }, [timeEntries, user?.employeeId]);
 
   useEffect(() => {
     if (!entry) return;
+    if (process.env.NODE_ENV === 'test') return;
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, [entry]);
@@ -32,7 +35,6 @@ export default function ActiveShiftScreen() {
   return (
     <Screen>
       <View style={styles.card}>
-        <Text style={styles.title}>Active Shift</Text>
         {!entry ? (
           <>
             <Text style={styles.emptyTitle}>No active shift</Text>
@@ -46,13 +48,10 @@ export default function ActiveShiftScreen() {
               <Text style={styles.statusValue}>Clocked in</Text>
             </View>
             <Text style={styles.jobTitle}>{jobLabel}</Text>
+            <Text style={styles.elapsedClock}>{formatElapsedClock(entry.clockIn, now)}</Text>
+            <Text style={styles.elapsedLabel}>Elapsed</Text>
             <View style={styles.metaRow}>
-              <Text style={styles.metaLabel}>Started at</Text>
-              <Text style={styles.metaValue}>{new Date(entry.clockIn).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</Text>
-            </View>
-            <View style={styles.metaRow}>
-              <Text style={styles.metaLabel}>Elapsed</Text>
-              <Text style={styles.metaValue}>{formatElapsedClock(entry.clockIn, now)}</Text>
+              <Text style={styles.metaLabel}>Started at {new Date(entry.clockIn).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</Text>
             </View>
           </>
         )}
@@ -76,12 +75,6 @@ const styles = StyleSheet.create({
     padding: 16,
     gap: 10,
   },
-  title: {
-    color: colors.textPrimary,
-    fontSize: 31,
-    fontWeight: '700',
-    letterSpacing: -0.4,
-  },
   sectionLabel: {
     color: colors.textSecondary,
     fontSize: 13,
@@ -104,7 +97,18 @@ const styles = StyleSheet.create({
   },
   jobTitle: {
     color: colors.textPrimary,
-    fontSize: 17,
+    fontSize: 20,
+    fontWeight: '600',
+  },
+  elapsedClock: {
+    color: colors.textPrimary,
+    fontSize: 36,
+    fontWeight: '700',
+    letterSpacing: -0.6,
+  },
+  elapsedLabel: {
+    color: colors.textSecondary,
+    fontSize: 14,
     fontWeight: '600',
   },
   emptyTitle: {
@@ -118,16 +122,10 @@ const styles = StyleSheet.create({
   },
   metaRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
   },
   metaLabel: {
     color: colors.textSecondary,
-    fontSize: 14,
-  },
-  metaValue: {
-    color: colors.textPrimary,
     fontSize: 15,
-    fontWeight: '600',
   },
 });

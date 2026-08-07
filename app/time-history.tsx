@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { FlatList, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { resolveJobTitle } from '@/features/clocking/presentation';
+import { formatDurationForEntry, formatDurationMinutes, formatEntryTimeRange, resolveJobTitle } from '@/features/clocking/presentation';
 import { useClockingStore } from '@/store/clockingStore';
 import { getTodayEntries, getWeekTotalHours } from '@/api/timeEntriesApi';
 import { colors } from '@/theme/colors';
@@ -9,26 +9,41 @@ import { colors } from '@/theme/colors';
 export default function TimeHistoryScreen() {
   const { timeEntries, jobs } = useClockingStore();
   const todayEntries = useMemo(() => getTodayEntries(timeEntries), [timeEntries]);
+  const orderedEntries = useMemo(
+    () => [...todayEntries].sort((a, b) => new Date(b.clockIn).getTime() - new Date(a.clockIn).getTime()),
+    [todayEntries]
+  );
   const weekTotal = useMemo(() => getWeekTotalHours(timeEntries), [timeEntries]);
+  const weekTotalLabel = useMemo(() => formatDurationMinutes(weekTotal * 60), [weekTotal]);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
       <FlatList
-        data={todayEntries}
+        data={orderedEntries}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}
         ListHeaderComponent={(
           <View style={styles.headerCard}>
-            <Text style={styles.title}>Time History</Text>
+            <Text style={styles.title}>Today's entries</Text>
             <Text style={styles.meta}>Today entries: {todayEntries.length}</Text>
-            <Text style={styles.meta}>This week total: {weekTotal.toFixed(2)} hours</Text>
+            <Text style={styles.meta}>This week total: {weekTotalLabel}</Text>
           </View>
         )}
         renderItem={({ item }) => (
           <View style={styles.entryCard}>
-            <Text style={styles.entryText}>In: {new Date(item.clockIn).toLocaleTimeString()}</Text>
-            <Text style={styles.entryText}>Out: {item.clockOut ? new Date(item.clockOut).toLocaleTimeString() : 'Active'}</Text>
-            <Text style={styles.entryText}>Job: {resolveJobTitle(item, jobs)}</Text>
+            <View style={styles.entryTopRow}>
+              <Text style={styles.entryJob}>{resolveJobTitle(item, jobs)}</Text>
+              {item.clockOut ? (
+                <Text style={styles.entryDuration}>{formatDurationForEntry(item)}</Text>
+              ) : (
+                <View style={styles.activeBadge}>
+                  <Text style={styles.activeDot}>●</Text>
+                  <Text style={styles.activeLabel}>Active</Text>
+                </View>
+              )}
+            </View>
+            <Text style={styles.entryDateLabel}>Today</Text>
+            <Text style={styles.entryRange}>{formatEntryTimeRange(item)}</Text>
           </View>
         )}
         ListEmptyComponent={<Text style={styles.empty}>No time entries for today.</Text>}
@@ -59,9 +74,9 @@ const styles = StyleSheet.create({
   },
   title: {
     color: colors.textPrimary,
-    fontSize: 31,
+    fontSize: 24,
     fontWeight: '700',
-    letterSpacing: -0.4,
+    letterSpacing: -0.2,
   },
   meta: {
     color: colors.textSecondary,
@@ -73,9 +88,51 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     backgroundColor: colors.surface,
     padding: 14,
-    gap: 4,
+    gap: 6,
   },
-  entryText: {
+  entryTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  entryJob: {
+    color: colors.textPrimary,
+    fontSize: 16,
+    fontWeight: '600',
+    flex: 1,
+  },
+  entryDuration: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  activeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.successBorder,
+    backgroundColor: colors.successBackground,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    gap: 5,
+  },
+  activeDot: {
+    color: colors.primary,
+    fontSize: 10,
+  },
+  activeLabel: {
+    color: colors.success,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  entryDateLabel: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  entryRange: {
     color: colors.textPrimary,
     fontSize: 15,
   },

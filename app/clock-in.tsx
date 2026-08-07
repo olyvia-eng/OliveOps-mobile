@@ -69,8 +69,8 @@ export default function ClockInScreen() {
     <Screen>
       <OfflineNotice />
       <View style={styles.card}>
-        <Text style={styles.title}>Clock In</Text>
-        <Text style={styles.help}>Choose your assigned job and confirm your shift.</Text>
+        <Text style={styles.title}>Choose a job</Text>
+        <Text style={styles.help}>Select the job you're starting work on.</Text>
         {assignedJobs.length === 0 ? (
           <StatusBanner tone="info" message="No assigned scheduled/in-progress jobs available." />
         ) : (
@@ -128,9 +128,9 @@ const styles = StyleSheet.create({
   },
   title: {
     color: colors.textPrimary,
-    fontSize: 31,
+    fontSize: 24,
     fontWeight: '700',
-    letterSpacing: -0.4,
+    letterSpacing: -0.2,
   },
   help: {
     color: colors.textSecondary,

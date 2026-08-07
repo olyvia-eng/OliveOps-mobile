@@ -32,7 +32,9 @@ export default function HomeScreen() {
 
   const activeShift = useMemo(() => {
     if (!user?.employeeId) return null;
-    return timeEntries.find((entry) => entry.employeeId === user.employeeId && entry.status === 'clocked_in') || null;
+    const activeEntries = timeEntries.filter((entry) => entry.employeeId === user.employeeId && entry.status === 'clocked_in');
+    if (activeEntries.length === 0) return null;
+    return activeEntries.sort((a, b) => new Date(b.clockIn).getTime() - new Date(a.clockIn).getTime())[0] || null;
   }, [timeEntries, user?.employeeId]);
 
   useEffect(() => {

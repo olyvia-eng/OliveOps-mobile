@@ -37,6 +37,31 @@ export function formatElapsedShort(clockIn: string, nowMs = Date.now()) {
   return `${hours}h ${minutes}m`;
 }
 
+export function formatDurationMinutes(totalMinutes: number) {
+  const normalized = Math.max(0, Math.floor(totalMinutes));
+  const hours = Math.floor(normalized / 60);
+  const minutes = normalized % 60;
+  return `${hours}h ${minutes}m`;
+}
+
+export function formatDurationForEntry(entry: TimeEntry, nowMs = Date.now()) {
+  const startedAt = new Date(entry.clockIn).getTime();
+  const endedAt = entry.clockOut ? new Date(entry.clockOut).getTime() : nowMs;
+  const rawMinutes = (endedAt - startedAt) / (1000 * 60);
+  const minutes = Math.max(0, rawMinutes - (entry.breakMinutes || 0));
+  return formatDurationMinutes(minutes);
+}
+
+export function formatEntryTimeRange(entry: TimeEntry) {
+  const start = new Date(entry.clockIn).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  if (!entry.clockOut) {
+    return `${start} - Now`;
+  }
+
+  const end = new Date(entry.clockOut).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  return `${start} - ${end}`;
+}
+
 export function getGreetingForTime(name: string, now = new Date()) {
   const hour = now.getHours();
   const firstName = name.trim().split(/\s+/)[0] || 'Crew Member';

@@ -76,8 +76,11 @@ export default function LoginScreen() {
           >
             <View style={styles.container}>
               <View style={styles.brandRow}>
-                <Image source={require('../assets/icon.png')} style={styles.logo} />
-                <Text style={styles.brandText}>OliveOps</Text>
+                <Image
+                  source={require('../assets/OliveOpsLogo.jpg')}
+                  style={styles.logo}
+                  resizeMode="contain"
+                />
               </View>
 
               <View style={styles.headerBlock}>
@@ -193,21 +196,12 @@ const styles = StyleSheet.create({
     flexGrow: 1,
   },
   brandRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
     marginBottom: 40,
-    gap: 10,
+    alignItems: 'flex-start',
   },
   logo: {
-    width: 30,
-    height: 30,
-    borderRadius: 6,
-  },
-  brandText: {
-    fontSize: 26,
-    fontWeight: '700',
-    color: colors.textPrimary,
-    letterSpacing: -0.2,
+    width: 166,
+    height: 44,
   },
   headerBlock: {
     marginBottom: 30,

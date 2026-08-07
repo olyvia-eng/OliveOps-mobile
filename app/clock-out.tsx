@@ -31,7 +31,9 @@ export default function ClockOutScreen() {
 
   const activeEntry = useMemo(() => {
     if (!user?.employeeId) return null;
-    return timeEntries.find((entry) => entry.employeeId === user.employeeId && entry.status === 'clocked_in') || null;
+    const activeEntries = timeEntries.filter((entry) => entry.employeeId === user.employeeId && entry.status === 'clocked_in');
+    if (activeEntries.length === 0) return null;
+    return activeEntries.sort((a, b) => new Date(b.clockIn).getTime() - new Date(a.clockIn).getTime())[0] || null;
   }, [timeEntries, user?.employeeId]);
 
   useEffect(() => {
@@ -161,7 +163,7 @@ export default function ClockOutScreen() {
     <Screen>
       <OfflineNotice />
       <View style={styles.card}>
-        <Text style={styles.title}>Clock Out</Text>
+        <Text style={styles.title}>Shift summary</Text>
         {activeEntry ? (
           <View style={styles.shiftSummary}>
             <Text style={styles.shiftJob}>{shiftLabel}</Text>
@@ -264,9 +266,9 @@ const styles = StyleSheet.create({
   },
   title: {
     color: colors.textPrimary,
-    fontSize: 31,
+    fontSize: 24,
     fontWeight: '700',
-    letterSpacing: -0.4,
+    letterSpacing: -0.2,
   },
   shiftSummary: {
     borderRadius: 12,
