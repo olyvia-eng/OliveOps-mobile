@@ -8,10 +8,6 @@ import type {
   UnbillableCategory,
 } from '@/types/domain';
 
-export interface MobileCapabilities {
-  paidDriveTime: boolean;
-}
-
 export interface ActivityConfig {
   type: TimeEntryWorkType;
   requiresJob: boolean;
@@ -34,7 +30,6 @@ export interface AuthSessionResponse {
   accessToken?: string;
   refreshToken?: string;
   expiresAt?: string;
-  capabilities?: MobileCapabilities;
 }
 
 export interface BootstrapResponse {
@@ -48,7 +43,6 @@ export interface BootstrapResponse {
     possibleForgottenClockOut: boolean;
     thresholdHours: number;
   };
-  capabilities?: MobileCapabilities;
   activityConfigs?: ActivityConfig[];
   error?: string;
 }

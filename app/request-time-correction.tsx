@@ -33,7 +33,7 @@ const REQUEST_TYPE_OPTIONS: Array<{ id: TimeCorrectionRequestType; label: string
 
 export default function RequestTimeCorrectionScreen() {
   const params = useLocalSearchParams<{ timeEntryId?: string; requestType?: TimeCorrectionRequestType; postClockOut?: string }>();
-  const { user, capabilities } = useAuthStore();
+  const { user } = useAuthStore();
   const { jobs, timeEntries, currentActiveEntryId } = useClockingStore();
   const { clockOut, loading: clockingLoading } = useClockingActions();
   const { submitCorrection, loading } = useTimeCorrectionActions();
@@ -71,7 +71,6 @@ export default function RequestTimeCorrectionScreen() {
     [currentActiveEntryId, timeEntries, user?.employeeId],
   );
 
-  const canShowDriveTime = capabilities?.paidDriveTime === true;
   const requiresActivitySelection = requestType === 'wrong_activity' || requestType === 'forgot_clock_in';
   const requiresUnbillableCategory = requiresActivitySelection && requestedActivity === 'non_billable';
 
@@ -350,15 +349,13 @@ export default function RequestTimeCorrectionScreen() {
           >
             <Text style={styles.optionLabel}>Job Work</Text>
           </Pressable>
-          {canShowDriveTime ? (
-            <Pressable
-              style={[styles.option, requestedActivity === 'drive_time' ? styles.optionSelected : null]}
-              onPress={() => setRequestedActivity('drive_time')}
-              testID="activity-option-drive_time"
-            >
-              <Text style={styles.optionLabel}>Drive Time</Text>
-            </Pressable>
-          ) : null}
+          <Pressable
+            style={[styles.option, requestedActivity === 'drive_time' ? styles.optionSelected : null]}
+            onPress={() => setRequestedActivity('drive_time')}
+            testID="activity-option-drive_time"
+          >
+            <Text style={styles.optionLabel}>Drive Time</Text>
+          </Pressable>
           <Pressable
             style={[styles.option, requestedActivity === 'non_billable' ? styles.optionSelected : null]}
             onPress={() => setRequestedActivity('non_billable')}

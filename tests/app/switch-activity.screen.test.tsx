@@ -41,9 +41,6 @@ const mockUseAuthStore = jest.fn(() => ({
     businessName: 'OliveOps',
     employeeId: 'emp-1',
   },
-  capabilities: {
-    paidDriveTime: true,
-  },
 }));
 
 const mockUseClockingStore = jest.fn(() => ({
@@ -210,6 +207,28 @@ describe('SwitchActivityScreen', () => {
     });
 
     expect(mockSwitchActivity).toHaveBeenCalledWith('non_billable', [], 'cat-training', { requestId: 'req-switch-1', idempotencyKey: 'key-switch-1' });
+    expect(router.replace).toHaveBeenCalledWith('/active-shift');
+  });
+
+  it('offers Drive Time without capability data and submits its canonical work type', async () => {
+    let tree: any;
+    await act(async () => {
+      tree = create(React.createElement(SwitchActivityScreen));
+    });
+
+    const driveOption = tree.root.findAllByProps({ testID: 'switch-activity-option-drive_time' });
+    expect(driveOption.length).toBeGreaterThan(0);
+
+    await act(async () => {
+      driveOption[0].props.onPress();
+    });
+
+    const submitButton = tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Switch Activity');
+    await act(async () => {
+      await submitButton.props.onPress();
+    });
+
+    expect(mockSwitchActivity).toHaveBeenCalledWith('drive_time', [], undefined, { requestId: 'req-switch-1', idempotencyKey: 'key-switch-1' });
     expect(router.replace).toHaveBeenCalledWith('/active-shift');
   });
 });

@@ -139,7 +139,7 @@ Production branding paths are configured in `app.json`. The approved iOS source 
 - [ ] Complete App Privacy using `APP_STORE_PRIVACY_INVENTORY.md` and verify answers against backend retention, processors, and the published privacy policy.
 - [ ] Answer export-compliance questions consistently with `usesNonExemptEncryption: false` and the current use of standard HTTPS/SecureStore. Reassess if cryptography changes.
 - [ ] Enter App Review contact name, phone number, and email address.
-- [ ] Enter review notes with a short walkthrough, capability explanation, and permission context.
+- [ ] Enter review notes with a short walkthrough, activity explanation, and permission context.
 - [ ] Enter the dedicated demo-account username and password only in App Store Connect Review Information, never in source control.
 
 ## App Review Demo Account
@@ -148,7 +148,7 @@ Create a dedicated, non-personal crew-member account in a non-sensitive demo bus
 
 - [ ] Use a stable email address monitored by OliveOps and a stable password that will remain valid throughout review.
 - [ ] Link a valid `employeeId`.
-- [ ] Enable `paidDriveTime` so Apple can see Drive Time.
+- [ ] Ensure the employee is active and has access to time tracking so Apple can see Drive Time.
 - [ ] Assign at least two clearly named demo jobs.
 - [ ] Configure at least one active unbillable category.
 - [ ] Seed several completed entries so Time History and correction workflows are reviewable.
@@ -157,8 +157,6 @@ Create a dedicated, non-personal crew-member account in a non-sensitive demo bus
 - [ ] Reset the account to no active shift before submission.
 - [ ] Avoid MFA, forced password rotation, one-time links, IP restrictions, or other review-time blockers.
 - [ ] Keep the backend and demo data available for the entire review window.
-
-A second account with `paidDriveTime: false` is recommended for internal TestFlight capability-gate testing. Apple can use the enabled account if the review notes explain that Drive Time is account-controlled.
 
 Suggested review-note walkthrough:
 
@@ -175,7 +173,7 @@ Explain that camera and photo-library access are optional and used only to attac
 
 - [ ] `https://app.oliveops.ca/api/auth?action=mobile-login` is deployed and returns a user plus mobile access token.
 - [ ] Session, bootstrap, clocking, unbillable-category, time-correction, and storage endpoints are available over HTTPS.
-- [ ] The demo account receives the expected `paidDriveTime` capability and assigned jobs.
+- [ ] The demo employee is active, can track time, sees Drive Time, and has assigned jobs.
 - [ ] Presigned photo uploads work from a physical iPhone.
 - [ ] Privacy and retention statements have been verified with backend/data owners.
 

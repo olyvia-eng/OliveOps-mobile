@@ -9,7 +9,7 @@ import type { TimeEntryWorkType } from '@/types/domain';
 import { toUserFacingError } from '@/utils/userFacingError';
 
 export function useClockingActions() {
-  const { accessToken, user, syncCapabilities } = useAuthStore();
+  const { accessToken, user } = useAuthStore();
   const {
     upsertTimeEntry,
     setActiveShiftWarnings,
@@ -31,9 +31,6 @@ export function useClockingActions() {
     setCurrentActiveEntryId(payload.currentActiveEntryId ?? null);
     setActiveShiftWarnings(payload.activeShiftWarnings);
     setActivityConfigs(payload.activityConfigs);
-    if (payload.capabilities) {
-      syncCapabilities(payload.capabilities);
-    }
   }
 
   const actions = useMemo(() => ({
@@ -211,7 +208,6 @@ export function useClockingActions() {
     setJobs,
     setTimeCorrections,
     setTimeEntries,
-    syncCapabilities,
     upsertTimeEntry,
     user,
   ]);

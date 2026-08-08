@@ -22,7 +22,7 @@ type ActivityOption = {
 };
 
 export default function ClockInScreen() {
-  const { user, capabilities } = useAuthStore();
+  const { user } = useAuthStore();
   const { jobs } = useClockingStore();
   const { clockIn, loading, refreshWorkContext } = useClockingActions();
   const {
@@ -53,8 +53,7 @@ export default function ClockInScreen() {
     });
   }, [jobs, user?.employeeId]);
 
-  const activityOptions = useMemo<ActivityOption[]>(() => {
-    const options: ActivityOption[] = [
+  const activityOptions = useMemo<ActivityOption[]>(() => [
       {
         type: 'job',
         label: 'Job Work',
@@ -62,24 +61,18 @@ export default function ClockInScreen() {
         requiresJob: true,
       },
       {
+        type: 'drive_time',
+        label: 'Drive Time',
+        help: 'Travel between work locations.',
+        requiresJob: false,
+      },
+      {
         type: 'non_billable',
         label: 'Unbillable Time',
         help: 'Paid work that is not billed to a job.',
         requiresJob: false,
       },
-    ];
-
-    if (capabilities?.paidDriveTime) {
-      options.splice(1, 0, {
-        type: 'drive_time',
-        label: 'Drive Time',
-        help: 'Travel between work locations.',
-        requiresJob: false,
-      });
-    }
-
-    return options;
-  }, [capabilities?.paidDriveTime]);
+    ], []);
 
   const selectedActivity = useMemo(
     () => activityOptions.find((option) => option.type === selectedWorkType) ?? activityOptions[0],

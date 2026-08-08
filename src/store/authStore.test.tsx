@@ -64,7 +64,6 @@ describe('AuthProvider bootstrap', () => {
     mockReadStoredSession.mockResolvedValue({ accessToken: 'token-1' });
     mockGetSession.mockResolvedValue({
       user: { id: 'user-1', email: 'crew@oliveops.ca' },
-      capabilities: { paidDriveTime: true },
     });
 
     await act(async () => {
@@ -112,7 +111,6 @@ describe('AuthProvider bootstrap', () => {
       .mockRejectedValueOnce(new ApiError('Service unavailable', 503))
       .mockResolvedValueOnce({
         user: { id: 'user-1', email: 'crew@oliveops.ca' },
-        capabilities: { paidDriveTime: false },
       });
 
     await act(async () => {

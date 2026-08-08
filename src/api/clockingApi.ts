@@ -2,22 +2,15 @@ import { apiRequest } from '@/api/client';
 import { ENDPOINTS } from '@/api/endpoints';
 import type {
   ActiveUnbillableCategoriesResponse,
-  ActivityConfig,
   BootstrapResponse,
   ClockInRequest,
   ClockOutRequest,
-  MobileCapabilities,
   SwitchActivityRequest,
 } from '@/types/api';
 import type { TimeEntry } from '@/types/domain';
 
-export type BootstrapResponseWithConfig = BootstrapResponse & {
-  capabilities?: MobileCapabilities;
-  activityConfigs?: ActivityConfig[];
-};
-
-export async function loadBootstrap(accessToken?: string): Promise<BootstrapResponseWithConfig> {
-  return apiRequest<BootstrapResponseWithConfig>(ENDPOINTS.bootstrap, {
+export async function loadBootstrap(accessToken?: string): Promise<BootstrapResponse> {
+  return apiRequest<BootstrapResponse>(ENDPOINTS.bootstrap, {
     method: 'GET',
     accessToken,
   });

@@ -18,9 +18,6 @@ const mockUseAuthStore = jest.fn(() => ({
     businessName: 'OliveOps',
     employeeId: 'emp-1',
   },
-  capabilities: {
-    paidDriveTime: true,
-  },
 }));
 
 const mockClockingState = {
@@ -185,9 +182,6 @@ describe('RequestTimeCorrectionScreen', () => {
         businessName: 'OliveOps',
         employeeId: 'emp-1',
       },
-      capabilities: {
-        paidDriveTime: true,
-      },
     });
   });
 
@@ -299,22 +293,8 @@ describe('RequestTimeCorrectionScreen', () => {
     expect(mockSubmitCorrection.mock.calls[0][0].requestType).toBe('forgot_clock_in');
   });
 
-  it('hides drive-time activity option when employee is ineligible', async () => {
+  it('offers Drive Time without capability data and submits its canonical activity type', async () => {
     mockParams = { requestType: 'wrong_activity', timeEntryId: 'entry-1' };
-    mockUseAuthStore.mockReturnValue({
-      user: {
-        id: 'u-1',
-        businessId: 'biz-1',
-        name: 'Alex',
-        email: 'a@x.com',
-        role: 'crew_member',
-        businessName: 'OliveOps',
-        employeeId: 'emp-1',
-      },
-      capabilities: {
-        paidDriveTime: false,
-      },
-    });
 
     let tree: any;
     await act(async () => {
@@ -322,7 +302,27 @@ describe('RequestTimeCorrectionScreen', () => {
     });
 
     const driveOption = tree.root.findAllByProps({ testID: 'activity-option-drive_time' });
-    expect(driveOption.length).toBe(0);
+    expect(driveOption.length).toBeGreaterThan(0);
+
+    await act(async () => {
+      driveOption[0].props.onPress();
+    });
+
+    const reason = tree.root.findAllByType('textinput').find((node: any) => node.props.testID === 'correction-reason-input');
+    await act(async () => {
+      reason.props.onChangeText('This entry should be Drive Time.');
+    });
+
+    const submit = tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Submit Request');
+    await act(async () => {
+      await submit.props.onPress();
+    });
+
+    expect(mockSubmitCorrection).toHaveBeenCalledWith(expect.objectContaining({
+      timeEntryId: 'entry-1',
+      requestType: 'wrong_activity',
+      requestedActivityType: 'drive_time',
+    }));
   });
 
   it('prevents duplicate submit taps while submitting', async () => {

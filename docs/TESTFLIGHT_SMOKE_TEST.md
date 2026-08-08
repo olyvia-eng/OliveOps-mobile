@@ -18,8 +18,7 @@ Run this checklist against a production-profile build installed from TestFlight 
 
 Prepare synthetic data only.
 
-- Eligible crew-member account with a linked employee, `paidDriveTime: true`, at least two assigned jobs, active unbillable categories, and completed history
-- Ineligible crew-member account with `paidDriveTime: false` or absent
+- Active crew-member account with time-tracking access, a linked employee, at least two assigned jobs, active unbillable categories, and completed history
 - Working production photo-upload storage
 - Completed time entry suitable for a correction request
 - Optional active entry older than the configured threshold for a practical long-shift warning test
@@ -38,7 +37,7 @@ Prepare synthetic data only.
 ## Authentication and Session
 
 - [ ] Enter an incorrect password and confirm a friendly login error with no status code, backend text, or internal detail.
-- [ ] Sign in with the eligible demo account.
+- [ ] Sign in with the active demo account.
 - [ ] Confirm Home loads the correct employee/business work context.
 - [ ] Force-close and relaunch; confirm the secure session restores without another login.
 - [ ] With a valid stored session, interrupt connectivity during cold launch; confirm a safe Retry state appears and succeeds after connectivity returns without forcing a new login.
@@ -62,20 +61,12 @@ Prepare synthetic data only.
 - [ ] Select a demo job and clock in.
 - [ ] Confirm success returns to the active state and shows the selected job.
 
-## Clock In: Drive Time Capability
-
-Eligible account:
+## Clock In: Drive Time
 
 - [ ] Confirm Drive Time appears on Clock In.
-- [ ] Select Drive Time, choose a required job, and clock in successfully.
+- [ ] Select Drive Time, optionally choose a job, and clock in successfully.
 - [ ] Confirm Active Shift displays Drive Time.
-
-Ineligible account:
-
-- [ ] Sign in with the account whose `paidDriveTime` capability is false or absent.
-- [ ] Confirm Drive Time is hidden on Clock In.
-- [ ] Confirm Drive Time is hidden on Switch Activity.
-- [ ] Confirm Drive Time is hidden where correction activity choices are capability-gated.
+- [ ] Confirm Drive Time also appears in Switch Activity and Time Correction activity choices.
 
 ## Clock In: Unbillable
 
@@ -89,7 +80,7 @@ Ineligible account:
 
 - [ ] While clocked in, open Switch Activity.
 - [ ] Switch from one demo job to another and confirm the active state updates.
-- [ ] Switch to Drive Time with the eligible account and confirm the selected job/activity.
+- [ ] Switch to Drive Time and confirm the selected job/activity.
 - [ ] Switch to an Unbillable category and confirm the active state updates.
 - [ ] Confirm repeated taps do not create duplicate transitions.
 
@@ -146,7 +137,7 @@ Time History currently displays time-entry and correction state, not photo previ
 - [ ] Confirm success returns from the form and the pending state appears after refresh.
 - [ ] Submit a missing-time request using the Missing Time entry point.
 - [ ] Open My Correction Requests and confirm request type, status, submitted date, requested details, and reason are readable.
-- [ ] Confirm the ineligible account cannot select Drive Time where capability gating applies.
+- [ ] Submit an activity correction to Drive Time and confirm the pending request shows Drive Time.
 
 ## Settings and Legal Links
 

@@ -1,7 +1,6 @@
 import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
 import * as authApi from '@/api/authApi';
 import { clearStoredSession, readStoredSession, writeStoredSession } from '@/services/sessionStorage';
-import type { MobileCapabilities } from '@/types/api';
 import type { SessionUser } from '@/types/domain';
 import { ApiError } from '@/types/errors';
 
@@ -11,10 +10,8 @@ type AuthContextValue = {
   status: SessionStatus;
   user: SessionUser | null;
   accessToken?: string;
-  capabilities?: MobileCapabilities;
   warning?: string;
   bootstrap: () => Promise<void>;
-  syncCapabilities: (next?: MobileCapabilities) => void;
   login: (email: string, password: string) => Promise<{ ok: boolean; error?: string }>;
   logout: () => Promise<void>;
 };
@@ -49,22 +46,11 @@ function mapLoginError(error: unknown) {
   return "We couldn't sign you in. Please try again.";
 }
 
-function normalizeCapabilities(next?: MobileCapabilities): MobileCapabilities {
-  return {
-    paidDriveTime: next?.paidDriveTime === true,
-  };
-}
-
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [status, setStatus] = useState<SessionStatus>('checking');
   const [user, setUser] = useState<SessionUser | null>(null);
   const [accessToken, setAccessToken] = useState<string | undefined>(undefined);
-  const [capabilities, setCapabilities] = useState<MobileCapabilities | undefined>(undefined);
   const [warning, setWarning] = useState<string | undefined>(undefined);
-
-  const syncCapabilities = useCallback((next?: MobileCapabilities) => {
-    setCapabilities(normalizeCapabilities(next));
-  }, []);
 
   const bootstrap = useCallback(async () => {
     setStatus('checking');
@@ -76,7 +62,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch {
       setUser(null);
       setAccessToken(undefined);
-      setCapabilities(undefined);
       setWarning("We couldn't restore your secure session. Please try again.");
       setStatus('error');
       return;
@@ -85,7 +70,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setAccessToken(stored.accessToken);
 
     if (!stored.accessToken) {
-      setCapabilities(undefined);
       setStatus('unauthenticated');
       return;
     }
@@ -96,18 +80,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await clearStoredSessionSafely();
         setUser(null);
         setAccessToken(undefined);
-        setCapabilities(undefined);
         setWarning('Session expired. Please log in again.');
         setStatus('unauthenticated');
         return;
       }
 
       setUser(session.user);
-      syncCapabilities(session.capabilities);
       setStatus('authenticated');
     } catch (error) {
       setUser(null);
-      setCapabilities(undefined);
       if (isUnauthorizedError(error)) {
         await clearStoredSessionSafely();
         setAccessToken(undefined);
@@ -120,13 +101,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setWarning("We couldn't verify your session. Check your connection and try again.");
       setStatus('error');
     }
-  }, [syncCapabilities]);
+  }, []);
 
   const login = useCallback(async (email: string, password: string) => {
     try {
       const response = await authApi.login(email, password);
       setUser(response.user);
-      syncCapabilities(response.capabilities);
 
       setAccessToken(response.accessToken);
       await writeStoredSession({
@@ -140,11 +120,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (error) {
       setUser(null);
       setAccessToken(undefined);
-      setCapabilities(undefined);
       setStatus('unauthenticated');
       return { ok: false, error: mapLoginError(error) };
     }
-  }, [syncCapabilities]);
+  }, []);
 
   const logout = useCallback(async () => {
     try {
@@ -156,7 +135,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await clearStoredSessionSafely();
     setUser(null);
     setAccessToken(undefined);
-    setCapabilities(undefined);
     setStatus('unauthenticated');
     setWarning(undefined);
   }, [accessToken]);
@@ -165,13 +143,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     status,
     user,
     accessToken,
-    capabilities,
     warning,
     bootstrap,
-    syncCapabilities,
     login,
     logout,
-  }), [status, user, accessToken, capabilities, warning, bootstrap, syncCapabilities, login, logout]);
+  }), [status, user, accessToken, warning, bootstrap, login, logout]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
