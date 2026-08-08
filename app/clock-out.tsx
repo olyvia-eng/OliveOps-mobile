@@ -7,6 +7,7 @@ import { PrimaryActionButton } from '@/components/PrimaryActionButton';
 import { Screen } from '@/components/Screen';
 import { StatusBanner } from '@/components/StatusBanner';
 import { completeUpload, prepareUpload, uploadUriToS3 } from '@/api/storageApi';
+import { MAX_TIME_ENTRY_PHOTOS } from '@/features/clocking/constants';
 import { formatElapsedShort, resolveCurrentActiveEntry, resolveJobTitle } from '@/features/clocking/presentation';
 import { useClockingActions } from '@/hooks/useClockingActions';
 import { isOnline } from '@/services/connectivity';
@@ -15,19 +16,51 @@ import { useAuthStore } from '@/store/authStore';
 import { useClockingStore } from '@/store/clockingStore';
 import { colors } from '@/theme/colors';
 
+type PhotoAttachmentStatus = 'uploading' | 'uploaded' | 'failed';
+
+type PhotoAttachment = {
+  localId: string;
+  uri: string;
+  name: string;
+  mimeType: string;
+  fileId?: string;
+  status: PhotoAttachmentStatus;
+  error?: string;
+};
+
+function inferMimeType(fileName: string, fallback?: string) {
+  if (typeof fallback === 'string' && fallback.trim()) {
+    return fallback;
+  }
+
+  const lowerName = (fileName || '').toLowerCase();
+  if (lowerName.endsWith('.png')) return 'image/png';
+  if (lowerName.endsWith('.webp')) return 'image/webp';
+  if (lowerName.endsWith('.heic')) return 'image/heic';
+  if (lowerName.endsWith('.heif')) return 'image/heif';
+  return 'image/jpeg';
+}
+
+function extensionForMimeType(mimeType: string) {
+  if (mimeType === 'image/png') return 'png';
+  if (mimeType === 'image/webp') return 'webp';
+  if (mimeType === 'image/heic') return 'heic';
+  if (mimeType === 'image/heif') return 'heif';
+  return 'jpg';
+}
+
 export default function ClockOutScreen() {
   const { user, accessToken } = useAuthStore();
   const { currentActiveEntryId, timeEntries, jobs } = useClockingStore();
   const { clockOut, loading, refreshWorkContext } = useClockingActions();
 
   const [notes, setNotes] = useState('');
-  const [photoFileId, setPhotoFileId] = useState('');
-  const [photoUri, setPhotoUri] = useState('');
-  const [photoName, setPhotoName] = useState('');
-  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [attachments, setAttachments] = useState<PhotoAttachment[]>([]);
   const [retryMeta, setRetryMeta] = useState<{ requestId: string; idempotencyKey: string } | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const uploadingPhoto = attachments.some((attachment) => attachment.status === 'uploading');
 
   const activeEntry = useMemo(() => {
     return resolveCurrentActiveEntry(timeEntries, user?.employeeId, currentActiveEntryId);
@@ -42,59 +75,124 @@ export default function ClockOutScreen() {
     return resolveJobTitle(activeEntry, jobs);
   }, [activeEntry, jobs]);
 
-  async function choosePhoto() {
-    const permission = await ImagePicker.requestCameraPermissionsAsync();
-    if (!permission.granted) {
-      setError('Camera permission is required to capture a clock-out photo.');
+  function updateAttachment(localId: string, updater: (previous: PhotoAttachment) => PhotoAttachment) {
+    setAttachments((previous) => previous.map((attachment) => {
+      if (attachment.localId !== localId) return attachment;
+      return updater(attachment);
+    }));
+  }
+
+  function promptPhotoSource() {
+    if (attachments.length >= MAX_TIME_ENTRY_PHOTOS) {
+      setError(`You can attach up to ${MAX_TIME_ENTRY_PHOTOS} photos.`);
       return;
     }
 
-    const result = await ImagePicker.launchCameraAsync({
+    Alert.alert('Add Photo', 'Choose a photo source.', [
+      { text: 'Take Photo', onPress: () => { void choosePhoto('camera'); } },
+      { text: 'Choose from Library', onPress: () => { void choosePhoto('library'); } },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  }
+
+  async function choosePhoto(source: 'camera' | 'library') {
+    const permission = source === 'camera'
+      ? await ImagePicker.requestCameraPermissionsAsync()
+      : await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+    if (!permission.granted) {
+      setError(
+        source === 'camera'
+          ? 'Camera permission is required to capture a clock-out photo.'
+          : 'Photo library permission is required to choose a clock-out photo.'
+      );
+      return;
+    }
+
+    const result = source === 'camera'
+      ? await ImagePicker.launchCameraAsync({
+        allowsEditing: false,
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        quality: 0.8,
+      })
+      : await ImagePicker.launchImageLibraryAsync({
       allowsEditing: false,
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       quality: 0.8,
     });
 
     if (result.canceled || result.assets.length === 0) return;
-    const asset = result.assets[0];
-    const nextName = asset.fileName || `clock-out-${Date.now()}.jpg`;
+    if (attachments.length >= MAX_TIME_ENTRY_PHOTOS) {
+      setError(`You can attach up to ${MAX_TIME_ENTRY_PHOTOS} photos.`);
+      return;
+    }
 
-    setPhotoUri(asset.uri);
-    setPhotoName(nextName);
-    setPhotoFileId('');
+    const asset = result.assets[0];
+    const mimeType = inferMimeType(asset.fileName || '', asset.mimeType ?? undefined);
+    const extension = extensionForMimeType(mimeType);
+    const nextName = asset.fileName || `clock-out-${Date.now()}.${extension}`;
+    const localId = `attachment-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+    setAttachments((previous) => [
+      ...previous,
+      {
+        localId,
+        uri: asset.uri,
+        name: nextName,
+        mimeType,
+        status: 'uploading',
+      },
+    ]);
     setSuccess(null);
     setError(null);
 
-    await uploadPhotoAttachment(asset.uri, nextName);
+    await uploadPhotoAttachment({
+      localId,
+      uri: asset.uri,
+      fileName: nextName,
+      mimeType,
+    });
   }
 
-  async function uploadPhotoAttachment(uriOverride?: string, nameOverride?: string) {
+  async function uploadPhotoAttachment({
+    localId,
+    uri,
+    fileName,
+    mimeType,
+  }: {
+    localId: string;
+    uri: string;
+    fileName: string;
+    mimeType: string;
+  }) {
     if (!activeEntry) {
       setError('No active shift found for upload.');
-      return;
-    }
-    const currentUri = uriOverride ?? photoUri;
-    const currentName = nameOverride ?? photoName;
-
-    if (!currentUri) {
-      setError('Capture a photo before uploading.');
+      updateAttachment(localId, (previous) => ({
+        ...previous,
+        status: 'failed',
+        fileId: undefined,
+        error: 'No active shift found for upload.',
+      }));
       return;
     }
 
     const online = await isOnline();
     if (!online) {
       setError('Offline. Reconnect and retry photo upload.');
+      updateAttachment(localId, (previous) => ({
+        ...previous,
+        status: 'failed',
+        fileId: undefined,
+        error: 'Offline. Reconnect and retry photo upload.',
+      }));
       return;
     }
 
-    setUploadingPhoto(true);
     setError(null);
     setSuccess(null);
 
     try {
-      const extension = currentName.toLowerCase().endsWith('.png') ? 'png' : 'jpg';
-      const mimeType = extension === 'png' ? 'image/png' : 'image/jpeg';
-      const fileResponse = await fetch(currentUri);
+      const fileResponse = await fetch(uri);
       const blob = await fileResponse.blob();
       if (!blob.size) {
         throw new Error('Could not read selected photo size.');
@@ -102,7 +200,7 @@ export default function ClockOutScreen() {
 
       const prepared = await prepareUpload({
         action: 'prepare-upload',
-        fileName: currentName || `clock-out-${Date.now()}.${extension}`,
+        fileName,
         mimeType,
         sizeBytes: blob.size,
         entityType: 'time-entry',
@@ -114,16 +212,49 @@ export default function ClockOutScreen() {
         throw new Error(prepared.error || 'Upload could not be prepared.');
       }
 
-      await uploadUriToS3(prepared.uploadUrl, currentUri, mimeType, prepared.requiredHeaders);
+      await uploadUriToS3(prepared.uploadUrl, uri, mimeType, prepared.requiredHeaders);
       await completeUpload(prepared.fileId, accessToken);
 
-      setPhotoFileId(prepared.fileId);
+      updateAttachment(localId, (previous) => ({
+        ...previous,
+        status: 'uploaded',
+        fileId: prepared.fileId,
+        error: undefined,
+      }));
       setSuccess('Photo attached.');
     } catch (uploadError) {
-      setError(uploadError instanceof Error ? uploadError.message : 'Photo upload failed.');
-    } finally {
-      setUploadingPhoto(false);
+      const message = uploadError instanceof Error ? uploadError.message : 'Photo upload failed.';
+      setError(message);
+      updateAttachment(localId, (previous) => ({
+        ...previous,
+        status: 'failed',
+        fileId: undefined,
+        error: message,
+      }));
     }
+  }
+
+  function removeAttachment(localId: string) {
+    setAttachments((previous) => previous.filter((attachment) => attachment.localId !== localId));
+    setSuccess(null);
+  }
+
+  function retryAttachment(localId: string) {
+    const target = attachments.find((attachment) => attachment.localId === localId);
+    if (!target) return;
+
+    updateAttachment(localId, (previous) => ({
+      ...previous,
+      status: 'uploading',
+      fileId: undefined,
+      error: undefined,
+    }));
+    void uploadPhotoAttachment({
+      localId,
+      uri: target.uri,
+      fileName: target.name,
+      mimeType: target.mimeType,
+    });
   }
 
   async function submitClockOut(metaOverride?: { requestId: string; idempotencyKey: string }) {
@@ -138,7 +269,16 @@ export default function ClockOutScreen() {
     const meta = metaOverride ?? retryMeta ?? createRequestMeta(activeEntry.id);
     setRetryMeta(meta);
 
-    const result = await clockOut(activeEntry.id, notes.trim(), photoFileId.trim() || undefined, meta);
+    const uploadedPhotoAttachmentFileIds = attachments
+      .filter((attachment) => attachment.status === 'uploaded' && Boolean(attachment.fileId))
+      .map((attachment) => attachment.fileId as string);
+
+    const result = await clockOut(
+      activeEntry.id,
+      notes.trim(),
+      uploadedPhotoAttachmentFileIds.length > 0 ? uploadedPhotoAttachmentFileIds : undefined,
+      meta
+    );
     if (!result.ok) {
       setError(result.error || 'Clock-out failed.');
       return;
@@ -181,46 +321,48 @@ export default function ClockOutScreen() {
 
         <View style={styles.photoCard}>
           <Text style={styles.photoLabel}>Photo</Text>
-          <Text style={styles.photoMeta}>Optional - attach a photo of completed work.</Text>
+          <Text style={styles.photoMeta}>Optional - attach up to {MAX_TIME_ENTRY_PHOTOS} photos of completed work. ({attachments.length}/{MAX_TIME_ENTRY_PHOTOS})</Text>
 
-          {photoUri ? (
-            <View style={styles.photoPreviewBlock}>
-              <Image source={{ uri: photoUri }} style={styles.photoPreview} />
-              <Text style={styles.photoName}>{photoName || 'Photo attached'}</Text>
+          {attachments.map((attachment) => (
+            <View key={attachment.localId} style={styles.photoPreviewBlock}>
+              <Image source={{ uri: attachment.uri }} style={styles.photoPreview} />
+              <Text style={styles.photoName}>{attachment.name || 'Photo attached'}</Text>
+              <Text style={styles.photoStatus}>
+                {attachment.status === 'uploading' ? 'Uploading...' : attachment.status === 'uploaded' ? 'Attached' : attachment.error || 'Upload failed'}
+              </Text>
               <View style={styles.photoActionsRow}>
+                {attachment.status === 'failed' ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    style={styles.photoAction}
+                    disabled={uploadingPhoto || loading}
+                    onPress={() => retryAttachment(attachment.localId)}
+                  >
+                    <Text style={styles.photoActionText}>Retry</Text>
+                  </Pressable>
+                ) : null}
                 <Pressable
                   accessibilityRole="button"
                   style={styles.photoAction}
                   disabled={uploadingPhoto || loading}
-                  onPress={() => void choosePhoto()}
-                >
-                  <Text style={styles.photoActionText}>Replace Photo</Text>
-                </Pressable>
-                <Pressable
-                  accessibilityRole="button"
-                  style={styles.photoAction}
-                  disabled={uploadingPhoto || loading}
-                  onPress={() => {
-                    setPhotoUri('');
-                    setPhotoName('');
-                    setPhotoFileId('');
-                    setSuccess(null);
-                  }}
+                  onPress={() => removeAttachment(attachment.localId)}
                 >
                   <Text style={styles.photoActionText}>Remove</Text>
                 </Pressable>
               </View>
             </View>
-          ) : (
+          ))}
+
+          {attachments.length < MAX_TIME_ENTRY_PHOTOS ? (
             <Pressable
               accessibilityRole="button"
               style={({ pressed }) => [styles.photoAddButton, pressed && styles.photoAddButtonPressed]}
               disabled={uploadingPhoto || loading}
-              onPress={() => void choosePhoto()}
+              onPress={promptPhotoSource}
             >
               <Text style={styles.photoAddButtonText}>Add Photo</Text>
             </Pressable>
-          )}
+          ) : null}
 
           {uploadingPhoto ? (
             <View style={styles.uploadingRow}>
@@ -332,6 +474,10 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceMuted,
   },
   photoName: {
+    color: colors.textSecondary,
+    fontSize: 13,
+  },
+  photoStatus: {
     color: colors.textSecondary,
     fontSize: 13,
   },

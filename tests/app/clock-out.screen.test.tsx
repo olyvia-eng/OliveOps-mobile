@@ -62,7 +62,9 @@ jest.mock('expo-router', () => ({
 
 jest.mock('expo-image-picker', () => ({
   requestCameraPermissionsAsync: jest.fn().mockResolvedValue({ granted: true }),
+  requestMediaLibraryPermissionsAsync: jest.fn().mockResolvedValue({ granted: true }),
   launchCameraAsync: jest.fn().mockResolvedValue({ canceled: true, assets: [] }),
+  launchImageLibraryAsync: jest.fn().mockResolvedValue({ canceled: true, assets: [] }),
   MediaTypeOptions: { Images: 'Images' },
 }));
 
@@ -127,6 +129,8 @@ jest.mock('react-native', () => {
 import ClockOutScreen from '../../app/clock-out';
 import { router } from 'expo-router';
 import { Alert } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
+import { completeUpload, prepareUpload, uploadUriToS3 } from '@/api/storageApi';
 
 describe('ClockOutScreen', () => {
   beforeEach(() => {
@@ -134,6 +138,15 @@ describe('ClockOutScreen', () => {
     (router.replace as jest.Mock).mockReset();
     mockClockOut.mockReset();
     mockClockOut.mockResolvedValue({ ok: true });
+    (prepareUpload as jest.Mock).mockReset();
+    (uploadUriToS3 as jest.Mock).mockReset();
+    (completeUpload as jest.Mock).mockReset();
+    (ImagePicker.requestMediaLibraryPermissionsAsync as jest.Mock).mockReset();
+    (ImagePicker.launchImageLibraryAsync as jest.Mock).mockReset();
+    (global as any).fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      blob: async () => ({ size: 1024 }),
+    });
   });
 
   it('shows offline notice and keeps confirm enabled when active shift exists', async () => {
@@ -179,6 +192,67 @@ describe('ClockOutScreen', () => {
     });
 
     expect(mockClockOut).toHaveBeenCalledWith('entry-1', 'Done', undefined, { requestId: 'req-2', idempotencyKey: 'key-2' });
+  });
+
+  it('uploads a library photo and submits its file ID array on clock-out', async () => {
+    (ImagePicker.requestMediaLibraryPermissionsAsync as jest.Mock).mockResolvedValue({ granted: true });
+    (ImagePicker.launchImageLibraryAsync as jest.Mock).mockResolvedValue({
+      canceled: false,
+      assets: [
+        {
+          uri: 'file://clock-out-1.heic',
+          fileName: 'clock-out-1.heic',
+          mimeType: 'image/heic',
+        },
+      ],
+    });
+    (prepareUpload as jest.Mock).mockResolvedValue({
+      ok: true,
+      fileId: 'file-123',
+      uploadUrl: 'https://uploads.example/file-123',
+      requiredHeaders: { 'Content-Type': 'image/heic' },
+    });
+    (uploadUriToS3 as jest.Mock).mockResolvedValue(undefined);
+    (completeUpload as jest.Mock).mockResolvedValue({ ok: true, fileId: 'file-123' });
+
+    (Alert.alert as jest.Mock).mockImplementation((title: string, _message: string, actions: Array<{ onPress?: () => void }>) => {
+      if (title === 'Add Photo') {
+        const libraryAction = actions?.[1];
+        if (libraryAction?.onPress) libraryAction.onPress();
+        return;
+      }
+
+      if (title === 'Confirm Clock Out') {
+        const confirmAction = actions?.[1];
+        if (confirmAction?.onPress) confirmAction.onPress();
+      }
+    });
+
+    let tree: any;
+    await act(async () => {
+      tree = create(React.createElement(ClockOutScreen));
+    });
+
+    const notesInput = tree.root.findAllByType('textinput').find((node: any) => node.props.placeholder === "Add optional notes about today's work...");
+    await act(async () => {
+      notesInput.props.onChangeText('Done');
+    });
+
+    const addPhotoPressable = tree.root.findAllByType('pressable').find((node: any) => {
+      const children = node.children ?? [];
+      return children.some((child: any) => child?.props?.children === 'Add Photo');
+    });
+
+    await act(async () => {
+      addPhotoPressable.props.onPress();
+    });
+
+    const confirm = tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Clock Out');
+    await act(async () => {
+      confirm.props.onPress();
+    });
+
+    expect(mockClockOut).toHaveBeenCalledWith('entry-1', 'Done', ['file-123'], { requestId: 'req-2', idempotencyKey: 'key-2' });
   });
 
   it('shows retry button after failed clock-out submission', async () => {

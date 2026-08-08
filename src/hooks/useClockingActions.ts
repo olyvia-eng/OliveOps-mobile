@@ -79,7 +79,7 @@ export function useClockingActions() {
     async clockOut(
       entryId: string,
       notes: string,
-      photoAttachmentFileId?: string,
+      photoAttachmentFileIds?: string[],
       requestMeta?: { requestId: string; idempotencyKey: string }
     ) {
       const key = `clock-out:${entryId}`;
@@ -95,11 +95,15 @@ export function useClockingActions() {
         }
 
         const meta = requestMeta ?? createRequestMeta(entryId);
+        const normalizedPhotoAttachmentFileIds = Array.isArray(photoAttachmentFileIds)
+          ? [...new Set(photoAttachmentFileIds.filter((value) => typeof value === 'string').map((value) => value.trim()).filter(Boolean))]
+          : [];
         const result = await clockingApi.clockOut({
           entryId,
           breakMinutes: 0,
           notes,
-          photoAttachmentFileId,
+          photoAttachmentFileIds: normalizedPhotoAttachmentFileIds.length > 0 ? normalizedPhotoAttachmentFileIds : undefined,
+          photoAttachmentFileId: normalizedPhotoAttachmentFileIds[0],
           ...meta,
         }, accessToken);
 

@@ -74,7 +74,9 @@ export interface TimeEntry {
   clockOut?: string;
   breakMinutes: number;
   notes: string;
+  photoAttachmentFileIds?: string[];
   photoAttachmentFileId?: string;
+  clockOutPhotoFileIds?: string[];
   clockOutPhotoFileId?: string;
   status: ClockStatus;
 }

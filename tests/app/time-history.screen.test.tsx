@@ -1,6 +1,6 @@
 import React from 'react';
 import { act, create } from 'react-test-renderer';
-import { beforeEach, describe, expect, it, jest } from '@jest/globals';
+import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
 
 const mockClockingState = {
   currentActiveEntryId: null as string | null,
@@ -72,7 +72,10 @@ import TimeHistoryScreen from '../../app/time-history';
 
 describe('TimeHistoryScreen', () => {
   beforeEach(() => {
-    const now = new Date();
+    const now = new Date(2026, 7, 6, 12, 0, 0, 0);
+    jest.useFakeTimers();
+    jest.setSystemTime(now);
+
     const authoritativeActiveClockIn = new Date(now.getTime() - 15 * 60 * 1000).toISOString();
     const orphanClockIn = new Date(now.getTime() - 3 * 60 * 60 * 1000).toISOString();
     const completedClockIn = new Date(now.getTime() - 2 * 60 * 60 * 1000).toISOString();
@@ -140,6 +143,10 @@ describe('TimeHistoryScreen', () => {
         status: 'clocked_out',
       },
     ];
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
   });
 
   it('shows Active only for authoritative currentActiveEntryId and no raw job IDs', async () => {

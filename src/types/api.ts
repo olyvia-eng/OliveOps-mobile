@@ -92,6 +92,7 @@ export interface ClockOutRequest {
   notes: string;
   requestId: string;
   idempotencyKey: string;
+  photoAttachmentFileIds?: string[];
   photoAttachmentFileId?: string;
 }
 
