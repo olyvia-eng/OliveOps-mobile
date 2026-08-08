@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
-import { clockIn, clockOut, loadBootstrap } from '@/api/clockingApi';
+import { clockIn, clockOut, loadActiveUnbillableCategories, loadBootstrap } from '@/api/clockingApi';
 import { ApiError } from '@/types/errors';
 
 jest.mock('@/config/env', () => ({
@@ -60,6 +60,63 @@ describe('clockingApi', () => {
 
     expect(payload.ok).toBe(true);
     expect(payload.timeEntry.status).toBe('clocked_in');
+  });
+
+  it('submits non-billable clock-in with unbillable category ID', async () => {
+    const fetchMock = jest.fn().mockResolvedValue(
+      mockResponse(200, {
+        ok: true,
+        timeEntry: {
+          id: 'entry-2',
+          employeeId: 'emp-1',
+          workType: 'non_billable',
+          unbillableCategoryId: 'cat-training',
+          unbillableCategoryName: 'Training',
+          jobIds: [],
+          clockIn: '2026-08-06T10:00:00.000Z',
+          breakMinutes: 0,
+          notes: '',
+          status: 'clocked_in',
+        },
+      })
+    );
+    (global as any).fetch = fetchMock;
+
+    const payload = await clockIn({
+      employeeId: 'emp-1',
+      workType: 'non_billable',
+      jobIds: [],
+      unbillableCategoryId: 'cat-training',
+      requestId: 'req-4',
+      idempotencyKey: 'key-4',
+    }, 'token-1');
+
+    expect(payload.ok).toBe(true);
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.unbillableCategoryId).toBe('cat-training');
+  });
+
+  it('loads active unbillable categories', async () => {
+    (global as any).fetch = jest.fn().mockResolvedValue(
+      mockResponse(200, {
+        ok: true,
+        items: [
+          {
+            id: 'cat-training',
+            name: 'Training',
+            description: '',
+            sortOrder: 0,
+            active: true,
+            createdAt: '2026-01-01T00:00:00.000Z',
+            updatedAt: '2026-01-01T00:00:00.000Z',
+          },
+        ],
+      })
+    );
+
+    const payload = await loadActiveUnbillableCategories('token-1');
+    expect(payload.items[0].id).toBe('cat-training');
+    expect(payload.items[0].name).toBe('Training');
   });
 
   it('submits clock-out successfully', async () => {

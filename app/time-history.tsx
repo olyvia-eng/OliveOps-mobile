@@ -11,8 +11,8 @@ import {
   hasApprovedCorrectionForEntry,
   hasPendingCorrectionForEntry,
   isAuthoritativeActiveEntry,
+  resolveEntryPrimaryLabel,
   resolveCurrentActiveEntry,
-  resolveJobTitle,
 } from '@/features/clocking/presentation';
 import { useAuthStore } from '@/store/authStore';
 import { useClockingStore } from '@/store/clockingStore';
@@ -66,7 +66,7 @@ export default function TimeHistoryScreen() {
         renderItem={({ item }) => (
           <View style={styles.entryCard}>
             <View style={styles.entryTopRow}>
-              <Text style={styles.entryJob}>{resolveJobTitle(item, jobs)}</Text>
+              <Text style={styles.entryJob}>{resolveEntryPrimaryLabel(item, jobs)}</Text>
               {item.clockOut ? (
                 <Text style={styles.entryDuration}>{formatDurationForEntry(item)}</Text>
               ) : isAuthoritativeActiveEntry(item.id, authoritativeActiveEntryId) ? (

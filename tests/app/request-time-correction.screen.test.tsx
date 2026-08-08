@@ -6,6 +6,7 @@ let mockParams: any = {};
 let mockCorrectionLoading = false;
 const mockSubmitCorrection = jest.fn();
 const mockClockOut = jest.fn();
+const mockLoadUnbillableCategoriesIfNeeded = jest.fn().mockResolvedValue(undefined);
 
 const mockUseAuthStore = jest.fn(() => ({
   user: {
@@ -67,6 +68,25 @@ const mockUseTimeCorrectionActions = jest.fn(() => ({
   loading: mockCorrectionLoading,
 }));
 
+const mockUseUnbillableCategories = jest.fn(() => ({
+  categories: [
+    {
+      id: 'cat-training',
+      name: 'Training',
+      description: '',
+      sortOrder: 0,
+      active: true,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    },
+  ],
+  loading: false,
+  error: null,
+  hasLoaded: true,
+  loadIfNeeded: mockLoadUnbillableCategoriesIfNeeded,
+  retry: jest.fn(),
+}));
+
 jest.mock('expo-router', () => ({
   useLocalSearchParams: () => mockParams,
   router: {
@@ -89,6 +109,10 @@ jest.mock('@/hooks/useClockingActions', () => ({
 
 jest.mock('@/hooks/useTimeCorrectionActions', () => ({
   useTimeCorrectionActions: () => mockUseTimeCorrectionActions(),
+}));
+
+jest.mock('@/hooks/useUnbillableCategories', () => ({
+  useUnbillableCategories: () => mockUseUnbillableCategories(),
 }));
 
 jest.mock('@/services/requestGuards', () => ({
@@ -129,6 +153,26 @@ describe('RequestTimeCorrectionScreen', () => {
     mockClockingState.currentActiveEntryId = null;
     mockSubmitCorrection.mockReset();
     mockClockOut.mockReset();
+    mockLoadUnbillableCategoriesIfNeeded.mockClear();
+    mockUseUnbillableCategories.mockReset();
+    mockUseUnbillableCategories.mockReturnValue({
+      categories: [
+        {
+          id: 'cat-training',
+          name: 'Training',
+          description: '',
+          sortOrder: 0,
+          active: true,
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        },
+      ],
+      loading: false,
+      error: null,
+      hasLoaded: true,
+      loadIfNeeded: mockLoadUnbillableCategoriesIfNeeded,
+      retry: jest.fn(),
+    });
     mockSubmitCorrection.mockResolvedValue({ ok: true, correction: { id: 'corr-1' } });
     mockClockOut.mockResolvedValue({ ok: true });
     mockUseAuthStore.mockReturnValue({
@@ -292,5 +336,60 @@ describe('RequestTimeCorrectionScreen', () => {
 
     const submit = tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Submitting...');
     expect(submit.props.disabled).toBe(true);
+  });
+
+  it('requires unbillable category for non-billable activity corrections', async () => {
+    mockParams = { requestType: 'wrong_activity', timeEntryId: 'entry-1' };
+
+    let tree: any;
+    await act(async () => {
+      tree = create(React.createElement(RequestTimeCorrectionScreen));
+    });
+
+    await act(async () => {
+      tree.root.findAllByProps({ testID: 'activity-option-non_billable' })[0].props.onPress();
+    });
+
+    const reason = tree.root.findAllByType('textinput').find((node: any) => node.props.testID === 'correction-reason-input');
+    await act(async () => {
+      reason.props.onChangeText('Should be non-billable training.');
+    });
+
+    const submit = tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Submit Request');
+    expect(submit.props.disabled).toBe(true);
+  });
+
+  it('submits requestedUnbillableCategoryId for non-billable activity correction', async () => {
+    mockParams = { requestType: 'wrong_activity', timeEntryId: 'entry-1' };
+
+    let tree: any;
+    await act(async () => {
+      tree = create(React.createElement(RequestTimeCorrectionScreen));
+    });
+
+    await act(async () => {
+      tree.root.findAllByProps({ testID: 'activity-option-non_billable' })[0].props.onPress();
+    });
+
+    await act(async () => {
+      tree.root.findAllByProps({ testID: 'unbillable-category-option-cat-training' })[0].props.onPress();
+    });
+
+    const reason = tree.root.findAllByType('textinput').find((node: any) => node.props.testID === 'correction-reason-input');
+    await act(async () => {
+      reason.props.onChangeText('Should be non-billable training.');
+    });
+
+    const submit = tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Submit Request');
+    await act(async () => {
+      await submit.props.onPress();
+    });
+
+    expect(mockSubmitCorrection).toHaveBeenCalled();
+    expect(mockSubmitCorrection.mock.calls[0][0]).toMatchObject({
+      requestType: 'wrong_activity',
+      requestedActivityType: 'non_billable',
+      requestedUnbillableCategoryId: 'cat-training',
+    });
   });
 });

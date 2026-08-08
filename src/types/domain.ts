@@ -41,6 +41,8 @@ export interface TimeCorrectionRequest {
   requestedClockOutAt?: string;
   requestedJobId?: string;
   requestedActivityType?: TimeEntryWorkType;
+  requestedUnbillableCategoryId?: string;
+  requestedUnbillableCategoryName?: string;
   requestedSegments?: TimeCorrectionSegmentRequest[];
   reason: string;
   submittedByUserId: string;
@@ -53,6 +55,8 @@ export interface TimeCorrectionRequest {
   originalJobId?: string;
   originalJobIds?: string[];
   originalActivityType?: TimeEntryWorkType;
+  originalUnbillableCategoryId?: string;
+  originalUnbillableCategoryName?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -64,12 +68,24 @@ export interface Job {
   assignedEmployeeIds: string[];
 }
 
+export interface UnbillableCategory {
+  id: string;
+  name: string;
+  description?: string;
+  sortOrder: number;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface TimeEntry {
   id: string;
   employeeId: string;
   jobId?: string;
   jobIds?: string[];
   workType: TimeEntryWorkType;
+  unbillableCategoryId?: string;
+  unbillableCategoryName?: string;
   clockIn: string;
   clockOut?: string;
   breakMinutes: number;

@@ -102,6 +102,8 @@ describe('TimeHistoryScreen', () => {
         requestType: 'wrong_activity',
         status: 'approved',
         requestedActivityType: 'non_billable',
+        requestedUnbillableCategoryId: 'cat-training',
+        requestedUnbillableCategoryName: 'Equipment Maintenance',
         reason: 'Was actually shop prep',
         submittedByUserId: 'u-1',
         submittedAt: new Date(now.getTime() - 30 * 60 * 1000).toISOString(),
@@ -138,6 +140,18 @@ describe('TimeHistoryScreen', () => {
         workType: 'job',
         clockIn: completedClockIn,
         clockOut: completedClockOut,
+        breakMinutes: 0,
+        notes: '',
+        status: 'clocked_out',
+      },
+      {
+        id: 'entry-archived-unbillable',
+        employeeId: 'emp-1',
+        workType: 'non_billable',
+        unbillableCategoryId: 'cat-archived',
+        unbillableCategoryName: 'Archived Category Name',
+        clockIn: new Date(now.getTime() - 6 * 60 * 60 * 1000).toISOString(),
+        clockOut: new Date(now.getTime() - 5 * 60 * 60 * 1000).toISOString(),
         breakMinutes: 0,
         notes: '',
         status: 'clocked_out',
@@ -189,9 +203,21 @@ describe('TimeHistoryScreen', () => {
 
     const renderedText = tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ');
     expect(renderedText).toContain('Unbillable Time');
+    expect(renderedText).toContain('Equipment Maintenance');
 
     const pendingBadges = tree.root.findAllByType('text').filter((node: any) => String(node.props.children) === 'Correction pending');
     expect(pendingBadges.length).toBe(1);
+  });
+
+  it('shows historical archived unbillable category names in time history', async () => {
+    let tree: any;
+    await act(async () => {
+      tree = create(React.createElement(TimeHistoryScreen));
+    });
+
+    const renderedText = tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ');
+    expect(renderedText).toContain('Archived Category Name');
+    expect(renderedText).not.toContain('cat-archived');
   });
 
   it('shows human-friendly weekly total label instead of decimal hours', async () => {

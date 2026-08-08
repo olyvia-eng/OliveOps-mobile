@@ -4,7 +4,14 @@ import { router } from 'expo-router';
 import { PrimaryActionButton } from '@/components/PrimaryActionButton';
 import { Screen } from '@/components/Screen';
 import { StatusBanner } from '@/components/StatusBanner';
-import { formatElapsedClock, formatLongShiftWarning, getWorkTypeLabel, resolveCurrentActiveEntry, resolveJobTitle } from '@/features/clocking/presentation';
+import {
+  formatElapsedClock,
+  formatLongShiftWarning,
+  getWorkTypeLabel,
+  resolveCurrentActiveEntry,
+  resolveJobTitle,
+  resolveUnbillableCategoryName,
+} from '@/features/clocking/presentation';
 import { useAuthStore } from '@/store/authStore';
 import { useClockingStore } from '@/store/clockingStore';
 import { colors } from '@/theme/colors';
@@ -35,6 +42,11 @@ export default function ActiveShiftScreen() {
     return getWorkTypeLabel(entry.workType);
   }, [entry]);
 
+  const unbillableCategoryLabel = useMemo(() => {
+    if (!entry) return null;
+    return resolveUnbillableCategoryName(entry);
+  }, [entry]);
+
   const showLongShiftWarning = Boolean(entry && activeShiftWarnings.possibleForgottenClockOut);
   const longShiftWarning = useMemo(() => {
     if (!entry) return '';
@@ -57,7 +69,14 @@ export default function ActiveShiftScreen() {
               <Text style={styles.statusValue}>Clocked in</Text>
             </View>
             <Text style={styles.jobTitle}>{jobLabel}</Text>
-            <Text style={styles.activityText}>Activity: {activityLabel}</Text>
+            {entry.workType === 'non_billable' ? (
+              <View style={styles.activityStack}>
+                <Text style={styles.activityText}>Unbillable</Text>
+                <Text style={styles.activityCategoryText}>{unbillableCategoryLabel}</Text>
+              </View>
+            ) : (
+              <Text style={styles.activityText}>Activity: {activityLabel}</Text>
+            )}
             <Text style={styles.elapsedClock}>{formatElapsedClock(entry.clockIn, now)}</Text>
             <Text style={styles.elapsedLabel}>Elapsed</Text>
             <View style={styles.metaRow}>
@@ -126,6 +145,14 @@ const styles = StyleSheet.create({
   activityText: {
     color: colors.textSecondary,
     fontSize: 14,
+    fontWeight: '600',
+  },
+  activityStack: {
+    gap: 2,
+  },
+  activityCategoryText: {
+    color: colors.textPrimary,
+    fontSize: 15,
     fontWeight: '600',
   },
   elapsedClock: {

@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useMemo, useState } from 'react';
 import type { ActivityConfig } from '@/types/api';
-import type { Job, TimeCorrectionRequest, TimeEntry } from '@/types/domain';
+import type { Job, TimeCorrectionRequest, TimeEntry, UnbillableCategory } from '@/types/domain';
 
 export type ActiveShiftWarnings = {
   possibleForgottenClockOut: boolean;
@@ -11,12 +11,21 @@ type ClockingState = {
   jobs: Job[];
   timeEntries: TimeEntry[];
   timeCorrections: TimeCorrectionRequest[];
+  unbillableCategories: UnbillableCategory[];
+  unbillableCategoriesLoading: boolean;
+  unbillableCategoriesError: string | null;
+  unbillableCategoriesLoadedAt: number | null;
+  unbillableCategoriesBusinessId: string | null;
   currentActiveEntryId: string | null;
   activeShiftWarnings: ActiveShiftWarnings;
   activityConfigs?: ActivityConfig[];
   setJobs: (jobs: Job[]) => void;
   setTimeEntries: (entries: TimeEntry[]) => void;
   setTimeCorrections: (items: TimeCorrectionRequest[]) => void;
+  setUnbillableCategories: (items: UnbillableCategory[], businessId: string) => void;
+  setUnbillableCategoriesLoading: (loading: boolean) => void;
+  setUnbillableCategoriesError: (error: string | null) => void;
+  resetUnbillableCategories: () => void;
   setCurrentActiveEntryId: (entryId: string | null) => void;
   setActiveShiftWarnings: (warnings?: Partial<ActiveShiftWarnings>) => void;
   setActivityConfigs: (configs?: ActivityConfig[]) => void;
@@ -29,6 +38,11 @@ export function ClockingProvider({ children }: { children: React.ReactNode }) {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [timeEntries, setTimeEntries] = useState<TimeEntry[]>([]);
   const [timeCorrections, setTimeCorrections] = useState<TimeCorrectionRequest[]>([]);
+  const [unbillableCategories, setUnbillableCategoriesState] = useState<UnbillableCategory[]>([]);
+  const [unbillableCategoriesLoading, setUnbillableCategoriesLoading] = useState(false);
+  const [unbillableCategoriesError, setUnbillableCategoriesError] = useState<string | null>(null);
+  const [unbillableCategoriesLoadedAt, setUnbillableCategoriesLoadedAt] = useState<number | null>(null);
+  const [unbillableCategoriesBusinessId, setUnbillableCategoriesBusinessId] = useState<string | null>(null);
   const [currentActiveEntryId, setCurrentActiveEntryId] = useState<string | null>(null);
   const [activeShiftWarnings, setActiveShiftWarningsState] = useState<ActiveShiftWarnings>({
     possibleForgottenClockOut: false,
@@ -53,23 +67,59 @@ export function ClockingProvider({ children }: { children: React.ReactNode }) {
     });
   }
 
+  function setUnbillableCategories(items: UnbillableCategory[], businessId: string) {
+    setUnbillableCategoriesState(items);
+    setUnbillableCategoriesBusinessId(businessId);
+    setUnbillableCategoriesLoadedAt(Date.now());
+    setUnbillableCategoriesError(null);
+  }
+
+  function resetUnbillableCategories() {
+    setUnbillableCategoriesState([]);
+    setUnbillableCategoriesLoading(false);
+    setUnbillableCategoriesError(null);
+    setUnbillableCategoriesLoadedAt(null);
+    setUnbillableCategoriesBusinessId(null);
+  }
+
   const value = useMemo<ClockingState>(
     () => ({
       jobs,
       timeEntries,
       timeCorrections,
+      unbillableCategories,
+      unbillableCategoriesLoading,
+      unbillableCategoriesError,
+      unbillableCategoriesLoadedAt,
+      unbillableCategoriesBusinessId,
       currentActiveEntryId,
       activeShiftWarnings,
       activityConfigs,
       setJobs,
       setTimeEntries,
       setTimeCorrections,
+      setUnbillableCategories,
+      setUnbillableCategoriesLoading,
+      setUnbillableCategoriesError,
+      resetUnbillableCategories,
       setCurrentActiveEntryId,
       setActiveShiftWarnings,
       setActivityConfigs,
       upsertTimeEntry,
     }),
-    [activeShiftWarnings, activityConfigs, currentActiveEntryId, jobs, timeCorrections, timeEntries]
+    [
+      activeShiftWarnings,
+      activityConfigs,
+      currentActiveEntryId,
+      jobs,
+      timeCorrections,
+      timeEntries,
+      unbillableCategories,
+      unbillableCategoriesBusinessId,
+      unbillableCategoriesError,
+      unbillableCategoriesLoadedAt,
+      unbillableCategoriesLoading,
+    ]
   );
 
   return <ClockingContext.Provider value={value}>{children}</ClockingContext.Provider>;

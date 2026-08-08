@@ -5,6 +5,7 @@ import type {
   TimeCorrectionRequestType,
   TimeEntry,
   TimeEntryWorkType,
+  UnbillableCategory,
 } from '@/types/domain';
 
 export interface MobileCapabilities {
@@ -60,6 +61,8 @@ export interface CreateTimeCorrectionRequest {
   requestedClockOutAt?: string;
   requestedJobId?: string;
   requestedActivityType?: TimeEntryWorkType;
+  requestedUnbillableCategoryId?: string;
+  requestedUnbillableCategoryName?: string;
   reason: string;
 }
 
@@ -82,6 +85,7 @@ export interface ClockInRequest {
   employeeId: string;
   workType: TimeEntryWorkType;
   jobIds: string[];
+  unbillableCategoryId?: string;
   requestId: string;
   idempotencyKey: string;
 }
@@ -99,8 +103,14 @@ export interface ClockOutRequest {
 export interface SwitchActivityRequest {
   workType: TimeEntryWorkType;
   jobIds: string[];
+  unbillableCategoryId?: string;
   requestId: string;
   idempotencyKey: string;
+}
+
+export interface ActiveUnbillableCategoriesResponse {
+  ok: boolean;
+  items: UnbillableCategory[];
 }
 
 export interface PrepareUploadRequest {

@@ -40,6 +40,7 @@ export function useClockingActions() {
       employeeId: string,
       workType: TimeEntryWorkType,
       jobIds: string[],
+      unbillableCategoryId?: string,
       requestMeta?: { requestId: string; idempotencyKey: string }
     ) {
       const key = `clock-in:${employeeId}`;
@@ -59,6 +60,9 @@ export function useClockingActions() {
           employeeId,
           workType,
           jobIds,
+          unbillableCategoryId: typeof unbillableCategoryId === 'string' && unbillableCategoryId.trim()
+            ? unbillableCategoryId.trim()
+            : undefined,
           ...meta,
         }, accessToken);
 
@@ -132,6 +136,7 @@ export function useClockingActions() {
     async switchActivity(
       workType: TimeEntryWorkType,
       jobIds: string[],
+      unbillableCategoryId?: string,
       requestMeta?: { requestId: string; idempotencyKey: string }
     ) {
       const employeeId = user?.employeeId;
@@ -155,6 +160,9 @@ export function useClockingActions() {
         const result = await clockingApi.switchActivity({
           workType,
           jobIds,
+          unbillableCategoryId: typeof unbillableCategoryId === 'string' && unbillableCategoryId.trim()
+            ? unbillableCategoryId.trim()
+            : undefined,
           ...meta,
         }, accessToken);
 

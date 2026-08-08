@@ -1,6 +1,7 @@
 import { apiRequest } from '@/api/client';
 import { ENDPOINTS } from '@/api/endpoints';
 import type {
+  ActiveUnbillableCategoriesResponse,
   ActivityConfig,
   BootstrapResponse,
   ClockInRequest,
@@ -42,6 +43,13 @@ export async function switchActivity(payload: SwitchActivityRequest, accessToken
   return apiRequest<{ ok: boolean; timeEntry: TimeEntry }>(ENDPOINTS.switchActivity, {
     method: 'POST',
     body: JSON.stringify(payload),
+    accessToken,
+  });
+}
+
+export async function loadActiveUnbillableCategories(accessToken?: string): Promise<ActiveUnbillableCategoriesResponse> {
+  return apiRequest<ActiveUnbillableCategoriesResponse>(ENDPOINTS.activeUnbillableCategories, {
+    method: 'GET',
     accessToken,
   });
 }

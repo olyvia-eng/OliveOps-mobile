@@ -155,4 +155,31 @@ describe('ActiveShiftScreen', () => {
     const renderedText = tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ');
     expect(renderedText).toContain('Clock Out & Request Correction');
   });
+
+  it('shows unbillable category name for active unbillable shift', async () => {
+    mockClockingState.currentActiveEntryId = 'entry-3';
+    mockClockingState.timeEntries = [
+      {
+        id: 'entry-3',
+        employeeId: 'emp-1',
+        workType: 'non_billable',
+        unbillableCategoryId: 'cat-maintenance',
+        unbillableCategoryName: 'Equipment Maintenance',
+        clockIn: '2026-08-07T10:00:00.000Z',
+        breakMinutes: 0,
+        notes: '',
+        status: 'clocked_in',
+      },
+    ];
+
+    let tree: any;
+    await act(async () => {
+      tree = create(React.createElement(ActiveShiftScreen));
+    });
+
+    const renderedText = tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ');
+    expect(renderedText).toContain('Unbillable');
+    expect(renderedText).toContain('Equipment Maintenance');
+    expect(renderedText).not.toContain('cat-maintenance');
+  });
 });

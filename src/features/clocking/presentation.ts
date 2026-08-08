@@ -57,6 +57,20 @@ export function resolveJobTitle(entry: Pick<TimeEntry, 'jobId' | 'jobIds'>, jobs
   return titles.join(', ');
 }
 
+export function resolveUnbillableCategoryName(entry: Pick<TimeEntry, 'workType' | 'unbillableCategoryName'>) {
+  if (entry.workType !== 'non_billable') return null;
+  if (typeof entry.unbillableCategoryName === 'string' && entry.unbillableCategoryName.trim()) {
+    return entry.unbillableCategoryName.trim();
+  }
+  return 'Unbillable category unavailable';
+}
+
+export function resolveEntryPrimaryLabel(entry: TimeEntry, jobs: Job[]) {
+  const unbillableCategoryName = resolveUnbillableCategoryName(entry);
+  if (unbillableCategoryName) return unbillableCategoryName;
+  return resolveJobTitle(entry, jobs);
+}
+
 export function formatElapsedClock(clockIn: string, nowMs = Date.now()) {
   const startedAt = new Date(clockIn).getTime();
   const totalSeconds = Math.max(0, Math.floor((nowMs - startedAt) / 1000));
@@ -113,16 +127,27 @@ export function buildEffectiveTimeEntries(entries: TimeEntry[], corrections: Tim
   return entries.map((entry) => {
     const correction = approvedByEntryId.get(entry.id);
     if (!correction) return entry;
+    const nextWorkType = correction.requestedActivityType ?? entry.workType;
     const nextJobIds = correction.requestedJobId
       ? [correction.requestedJobId]
       : (Array.isArray(entry.jobIds) ? entry.jobIds : (entry.jobId ? [entry.jobId] : []));
+
+    const nextUnbillableCategoryId = nextWorkType === 'non_billable'
+      ? (correction.requestedUnbillableCategoryId ?? entry.unbillableCategoryId)
+      : undefined;
+    const nextUnbillableCategoryName = nextWorkType === 'non_billable'
+      ? (correction.requestedUnbillableCategoryName ?? entry.unbillableCategoryName)
+      : undefined;
+
     return {
       ...entry,
       clockIn: correction.requestedClockInAt ?? entry.clockIn,
       clockOut: correction.requestedClockOutAt ?? entry.clockOut,
       jobId: correction.requestedJobId ?? entry.jobId,
       jobIds: nextJobIds,
-      workType: correction.requestedActivityType ?? entry.workType,
+      workType: nextWorkType,
+      unbillableCategoryId: nextUnbillableCategoryId,
+      unbillableCategoryName: nextUnbillableCategoryName,
     };
   });
 }

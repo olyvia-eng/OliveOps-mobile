@@ -1,9 +1,10 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { PrimaryActionButton } from '@/components/PrimaryActionButton';
 import { Screen } from '@/components/Screen';
 import { StatusBanner } from '@/components/StatusBanner';
+import { UnbillableCategorySelector } from '@/components/UnbillableCategorySelector';
 import { createRequestMeta } from '@/services/requestGuards';
 import {
   formatEntryTimeRange,
@@ -14,6 +15,7 @@ import {
 } from '@/features/clocking/presentation';
 import { useClockingActions } from '@/hooks/useClockingActions';
 import { useTimeCorrectionActions } from '@/hooks/useTimeCorrectionActions';
+import { useUnbillableCategories } from '@/hooks/useUnbillableCategories';
 import { useAuthStore } from '@/store/authStore';
 import { useClockingStore } from '@/store/clockingStore';
 import { colors } from '@/theme/colors';
@@ -35,6 +37,13 @@ export default function RequestTimeCorrectionScreen() {
   const { jobs, timeEntries, currentActiveEntryId } = useClockingStore();
   const { clockOut, loading: clockingLoading } = useClockingActions();
   const { submitCorrection, loading } = useTimeCorrectionActions();
+  const {
+    categories: unbillableCategories,
+    loading: unbillableCategoriesLoading,
+    error: unbillableCategoriesError,
+    loadIfNeeded: loadUnbillableCategoriesIfNeeded,
+    retry: retryUnbillableCategories,
+  } = useUnbillableCategories();
 
   const entryId = typeof params.timeEntryId === 'string' ? params.timeEntryId : undefined;
   const defaultRequestType = typeof params.requestType === 'string'
@@ -47,6 +56,7 @@ export default function RequestTimeCorrectionScreen() {
   const [requestedEndTime, setRequestedEndTime] = useState('17:00');
   const [requestedActivity, setRequestedActivity] = useState<TimeEntryWorkType>('job');
   const [requestedJobId, setRequestedJobId] = useState<string>('');
+  const [requestedUnbillableCategoryId, setRequestedUnbillableCategoryId] = useState<string>('');
   const [reason, setReason] = useState('');
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -62,6 +72,23 @@ export default function RequestTimeCorrectionScreen() {
   );
 
   const canShowDriveTime = capabilities?.paidDriveTime === true;
+  const requiresActivitySelection = requestType === 'wrong_activity' || requestType === 'forgot_clock_in';
+  const requiresUnbillableCategory = requiresActivitySelection && requestedActivity === 'non_billable';
+
+  useEffect(() => {
+    if (!requiresUnbillableCategory) return;
+    void loadUnbillableCategoriesIfNeeded();
+  }, [loadUnbillableCategoriesIfNeeded, requiresUnbillableCategory]);
+
+  useEffect(() => {
+    if (!requiresUnbillableCategory) return;
+    if (!requestedUnbillableCategoryId) return;
+
+    const isStillValid = unbillableCategories.some((category) => category.id === requestedUnbillableCategoryId);
+    if (!isStillValid) {
+      setRequestedUnbillableCategoryId('');
+    }
+  }, [requiresUnbillableCategory, requestedUnbillableCategoryId, unbillableCategories]);
 
   function combineDateAndTime(dateValue: string, timeValue: string) {
     if (!dateValue || !timeValue) return undefined;
@@ -90,6 +117,9 @@ export default function RequestTimeCorrectionScreen() {
       if (requestedActivity === 'job') {
         payload.requestedJobId = requestedJobId || undefined;
       }
+      if (requestedActivity === 'non_billable') {
+        payload.requestedUnbillableCategoryId = requestedUnbillableCategoryId || undefined;
+      }
     }
 
     if (requestType === 'forgot_clock_out') {
@@ -112,6 +142,9 @@ export default function RequestTimeCorrectionScreen() {
       payload.requestedActivityType = requestedActivity;
       if (requestedActivity === 'job') {
         payload.requestedJobId = requestedJobId || undefined;
+      }
+      if (requestedActivity === 'non_billable') {
+        payload.requestedUnbillableCategoryId = requestedUnbillableCategoryId || undefined;
       }
     }
 
@@ -160,6 +193,25 @@ export default function RequestTimeCorrectionScreen() {
       && !requestedJobId) {
       setError('Choose a correct job before submitting.');
       return;
+    }
+
+    if (requiresUnbillableCategory) {
+      if (unbillableCategoriesLoading) {
+        setError('Unbillable categories are still loading.');
+        return;
+      }
+      if (unbillableCategoriesError) {
+        setError('Unbillable categories could not be loaded. Retry and try again.');
+        return;
+      }
+      if (unbillableCategories.length === 0) {
+        setError('No unbillable categories are currently available. Ask your administrator to configure them in OliveOps.');
+        return;
+      }
+      if (!requestedUnbillableCategoryId) {
+        setError('Choose an unbillable category before submitting.');
+        return;
+      }
     }
 
     const payload = getPayload();
@@ -288,7 +340,7 @@ export default function RequestTimeCorrectionScreen() {
         </View>
       ) : null}
 
-      {(requestType === 'wrong_activity' || requestType === 'forgot_clock_in') ? (
+      {requiresActivitySelection ? (
         <View style={styles.section}>
           <Text style={styles.label}>Choose correct activity</Text>
           <Pressable
@@ -315,6 +367,19 @@ export default function RequestTimeCorrectionScreen() {
             <Text style={styles.optionLabel}>Unbillable Time</Text>
           </Pressable>
         </View>
+      ) : null}
+
+      {requiresUnbillableCategory ? (
+        <UnbillableCategorySelector
+          categories={unbillableCategories}
+          selectedCategoryId={requestedUnbillableCategoryId}
+          loading={unbillableCategoriesLoading}
+          error={unbillableCategoriesError}
+          onSelect={setRequestedUnbillableCategoryId}
+          onRetry={() => {
+            void retryUnbillableCategories();
+          }}
+        />
       ) : null}
 
       {(requestType === 'wrong_job' || ((requestType === 'wrong_activity' || requestType === 'forgot_clock_in') && requestedActivity === 'job')) ? (
@@ -358,7 +423,16 @@ export default function RequestTimeCorrectionScreen() {
 
       <PrimaryActionButton
         label={submitting ? 'Submitting...' : 'Submit Request'}
-        disabled={submitting || requiresClockOutFirst}
+        disabled={
+          submitting
+          || requiresClockOutFirst
+          || (requiresUnbillableCategory && (
+            unbillableCategoriesLoading
+            || Boolean(unbillableCategoriesError)
+            || unbillableCategories.length === 0
+            || !requestedUnbillableCategoryId
+          ))
+        }
         onPress={() => { void submitRequest(); }}
       />
       {submitting ? <ActivityIndicator size="small" color={colors.primary} /> : null}

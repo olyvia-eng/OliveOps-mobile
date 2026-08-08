@@ -4,11 +4,31 @@ import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 
 const mockSwitchActivity = jest.fn();
 const mockRefresh = jest.fn().mockResolvedValue({ ok: true });
+const mockLoadUnbillableCategoriesIfNeeded = jest.fn().mockResolvedValue(undefined);
 
 const mockUseClockingActions = jest.fn(() => ({
   switchActivity: mockSwitchActivity,
   loading: false,
   refreshWorkContext: mockRefresh,
+}));
+
+const mockUseUnbillableCategories = jest.fn(() => ({
+  categories: [
+    {
+      id: 'cat-training',
+      name: 'Training',
+      description: '',
+      sortOrder: 0,
+      active: true,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    },
+  ],
+  loading: false,
+  error: null,
+  hasLoaded: true,
+  loadIfNeeded: mockLoadUnbillableCategoriesIfNeeded,
+  retry: jest.fn(),
 }));
 
 const mockUseAuthStore = jest.fn(() => ({
@@ -66,6 +86,10 @@ jest.mock('@/hooks/useClockingActions', () => ({
   useClockingActions: () => mockUseClockingActions(),
 }));
 
+jest.mock('@/hooks/useUnbillableCategories', () => ({
+  useUnbillableCategories: () => mockUseUnbillableCategories(),
+}));
+
 jest.mock('@/store/authStore', () => ({
   useAuthStore: () => mockUseAuthStore(),
 }));
@@ -114,10 +138,45 @@ describe('SwitchActivityScreen', () => {
     (router.replace as jest.Mock).mockReset();
     mockSwitchActivity.mockReset();
     mockRefresh.mockClear();
+    mockLoadUnbillableCategoriesIfNeeded.mockClear();
+    mockUseUnbillableCategories.mockReset();
+    mockUseUnbillableCategories.mockReturnValue({
+      categories: [
+        {
+          id: 'cat-training',
+          name: 'Training',
+          description: '',
+          sortOrder: 0,
+          active: true,
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        },
+      ],
+      loading: false,
+      error: null,
+      hasLoaded: true,
+      loadIfNeeded: mockLoadUnbillableCategoriesIfNeeded,
+      retry: jest.fn(),
+    });
     mockSwitchActivity.mockResolvedValue({ ok: true });
   });
 
-  it('submits unbillable switch with no category payload and no jobIds', async () => {
+  it('loads categories from shared source for unbillable switch', async () => {
+    let tree: any;
+    await act(async () => {
+      tree = create(React.createElement(SwitchActivityScreen));
+    });
+
+    await act(async () => {
+      tree.root.findAllByProps({ testID: 'switch-activity-option-non_billable' })[0].props.onPress();
+    });
+
+    expect(mockLoadUnbillableCategoriesIfNeeded).toHaveBeenCalled();
+    const renderedText = tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ');
+    expect(renderedText).toContain('Training');
+  });
+
+  it('requires unbillable category before enabling switch submission', async () => {
     let tree: any;
     await act(async () => {
       tree = create(React.createElement(SwitchActivityScreen));
@@ -128,11 +187,29 @@ describe('SwitchActivityScreen', () => {
     });
 
     const submitButton = tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Switch Activity');
+    expect(submitButton?.props.disabled).toBe(true);
+  });
+
+  it('submits unbillable switch with selected category ID and no jobIds', async () => {
+    let tree: any;
+    await act(async () => {
+      tree = create(React.createElement(SwitchActivityScreen));
+    });
+
+    await act(async () => {
+      tree.root.findAllByProps({ testID: 'switch-activity-option-non_billable' })[0].props.onPress();
+    });
+
+    await act(async () => {
+      tree.root.findAllByProps({ testID: 'unbillable-category-option-cat-training' })[0].props.onPress();
+    });
+
+    const submitButton = tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Switch Activity');
     await act(async () => {
       await submitButton.props.onPress();
     });
 
-    expect(mockSwitchActivity).toHaveBeenCalledWith('non_billable', [], { requestId: 'req-switch-1', idempotencyKey: 'key-switch-1' });
+    expect(mockSwitchActivity).toHaveBeenCalledWith('non_billable', [], 'cat-training', { requestId: 'req-switch-1', idempotencyKey: 'key-switch-1' });
     expect(router.replace).toHaveBeenCalledWith('/active-shift');
   });
 });

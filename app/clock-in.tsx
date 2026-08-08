@@ -5,7 +5,9 @@ import { OfflineNotice } from '@/components/OfflineNotice';
 import { PrimaryActionButton } from '@/components/PrimaryActionButton';
 import { Screen } from '@/components/Screen';
 import { StatusBanner } from '@/components/StatusBanner';
+import { UnbillableCategorySelector } from '@/components/UnbillableCategorySelector';
 import { useClockingActions } from '@/hooks/useClockingActions';
+import { useUnbillableCategories } from '@/hooks/useUnbillableCategories';
 import { createRequestMeta } from '@/services/requestGuards';
 import { useAuthStore } from '@/store/authStore';
 import { useClockingStore } from '@/store/clockingStore';
@@ -17,15 +19,22 @@ type ActivityOption = {
   label: string;
   help: string;
   requiresJob: boolean;
-  supportsCategorySelection: boolean;
 };
 
 export default function ClockInScreen() {
   const { user, capabilities } = useAuthStore();
   const { jobs } = useClockingStore();
   const { clockIn, loading, refreshWorkContext } = useClockingActions();
+  const {
+    categories: unbillableCategories,
+    loading: unbillableCategoriesLoading,
+    error: unbillableCategoriesError,
+    loadIfNeeded: loadUnbillableCategoriesIfNeeded,
+    retry: retryUnbillableCategories,
+  } = useUnbillableCategories();
   const [selectedWorkType, setSelectedWorkType] = useState<TimeEntryWorkType>('job');
   const [selectedJobId, setSelectedJobId] = useState('');
+  const [selectedUnbillableCategoryId, setSelectedUnbillableCategoryId] = useState('');
   const [retryMeta, setRetryMeta] = useState<{ requestId: string; idempotencyKey: string } | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -51,14 +60,12 @@ export default function ClockInScreen() {
         label: 'Job Work',
         help: 'Billable labor tied to a specific job.',
         requiresJob: true,
-        supportsCategorySelection: false,
       },
       {
         type: 'non_billable',
         label: 'Unbillable Time',
         help: 'Paid work that is not billed to a job.',
         requiresJob: false,
-        supportsCategorySelection: false,
       },
     ];
 
@@ -68,7 +75,6 @@ export default function ClockInScreen() {
         label: 'Drive Time',
         help: 'Travel between work locations.',
         requiresJob: false,
-        supportsCategorySelection: false,
       });
     }
 
@@ -82,12 +88,43 @@ export default function ClockInScreen() {
 
   const showJobSelection = selectedWorkType === 'job' || selectedWorkType === 'drive_time';
   const requiresJobSelection = selectedActivity?.requiresJob === true;
+  const requiresUnbillableCategory = selectedWorkType === 'non_billable';
+
+  useEffect(() => {
+    if (!requiresUnbillableCategory) return;
+    void loadUnbillableCategoriesIfNeeded();
+  }, [loadUnbillableCategoriesIfNeeded, requiresUnbillableCategory]);
+
+  useEffect(() => {
+    if (!requiresUnbillableCategory) return;
+    if (!selectedUnbillableCategoryId) return;
+
+    const isStillValid = unbillableCategories.some((category) => category.id === selectedUnbillableCategoryId);
+    if (!isStillValid) {
+      setSelectedUnbillableCategoryId('');
+    }
+  }, [requiresUnbillableCategory, selectedUnbillableCategoryId, unbillableCategories]);
 
   const canSubmit = useMemo(() => {
     if (!user?.employeeId) return false;
     if (requiresJobSelection) return Boolean(selectedJobId);
+    if (requiresUnbillableCategory) {
+      if (unbillableCategoriesLoading) return false;
+      if (Boolean(unbillableCategoriesError)) return false;
+      if (unbillableCategories.length === 0) return false;
+      return Boolean(selectedUnbillableCategoryId);
+    }
     return true;
-  }, [requiresJobSelection, selectedJobId, user?.employeeId]);
+  }, [
+    requiresJobSelection,
+    selectedJobId,
+    user?.employeeId,
+    requiresUnbillableCategory,
+    unbillableCategoriesLoading,
+    unbillableCategoriesError,
+    unbillableCategories,
+    selectedUnbillableCategoryId,
+  ]);
 
   async function submitClockIn(metaOverride?: { requestId: string; idempotencyKey: string }) {
     if (!user?.employeeId) {
@@ -100,6 +137,25 @@ export default function ClockInScreen() {
       return;
     }
 
+    if (requiresUnbillableCategory) {
+      if (unbillableCategoriesLoading) {
+        setError('Unbillable categories are still loading.');
+        return;
+      }
+      if (unbillableCategoriesError) {
+        setError('Unbillable categories could not be loaded. Retry and try again.');
+        return;
+      }
+      if (unbillableCategories.length === 0) {
+        setError('No unbillable categories are currently available. Ask your administrator to configure them in OliveOps.');
+        return;
+      }
+      if (!selectedUnbillableCategoryId) {
+        setError('Select an unbillable category before clocking in.');
+        return;
+      }
+    }
+
     setStatus(null);
     setError(null);
 
@@ -110,7 +166,13 @@ export default function ClockInScreen() {
       ? []
       : (selectedJobId ? [selectedJobId] : []);
 
-    const result = await clockIn(user.employeeId, selectedWorkType, jobIds, meta);
+    const result = await clockIn(
+      user.employeeId,
+      selectedWorkType,
+      jobIds,
+      selectedWorkType === 'non_billable' ? selectedUnbillableCategoryId : undefined,
+      meta,
+    );
 
     if (!result.ok) {
       setError(result.error || 'Clock-in failed.');
@@ -187,8 +249,17 @@ export default function ClockInScreen() {
           </>
         ) : null}
 
-        {!selectedActivity?.supportsCategorySelection ? (
-          <Text style={styles.categoryHint}>Unbillable categories are backend-configurable and will appear when available.</Text>
+        {requiresUnbillableCategory ? (
+          <UnbillableCategorySelector
+            categories={unbillableCategories}
+            selectedCategoryId={selectedUnbillableCategoryId}
+            loading={unbillableCategoriesLoading}
+            error={unbillableCategoriesError}
+            onSelect={setSelectedUnbillableCategoryId}
+            onRetry={() => {
+              void retryUnbillableCategories();
+            }}
+          />
         ) : null}
       </View>
 
@@ -291,11 +362,5 @@ const styles = StyleSheet.create({
     color: colors.surface,
     fontSize: 14,
     fontWeight: '700',
-  },
-  categoryHint: {
-    color: colors.textSecondary,
-    fontSize: 13,
-    lineHeight: 18,
-    marginTop: 4,
   },
 });
