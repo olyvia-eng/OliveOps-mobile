@@ -46,33 +46,15 @@ describe('authApi', () => {
     await expect(login('a@x.com', 'bad')).rejects.toBeInstanceOf(ApiError);
   });
 
-  it('falls back to login when mobile-login is unsupported and accepts token-bearing response', async () => {
-    fetchMock
-      .mockResolvedValueOnce(mockResponse(400, { ok: false, error: 'Invalid auth action' }))
-      .mockResolvedValueOnce(mockResponse(200, {
-        ok: true,
-        accessToken: 'token-2',
-        user: { id: 'u1', businessId: 'biz-1', name: 'Alex', email: 'a@x.com', role: 'crew_member', businessName: 'OliveOps', employeeId: 'emp-1' },
-      }));
+  it('does not fallback to generic login when mobile-login action is unsupported', async () => {
+    fetchMock.mockResolvedValueOnce(mockResponse(400, { ok: false, error: 'Invalid auth action' }));
 
-    const result = await login('a@x.com', 'pw');
-    expect(result.accessToken).toBe('token-2');
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      2,
-      'http://localhost:3000/api/auth?action=login',
+    await expect(login('a@x.com', 'pw')).rejects.toBeInstanceOf(ApiError);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:3000/api/auth?action=mobile-login',
       expect.objectContaining({ method: 'POST' })
     );
-  });
-
-  it('rejects fallback login responses that do not include accessToken', async () => {
-    fetchMock
-      .mockResolvedValueOnce(mockResponse(400, { ok: false, error: 'Invalid auth action' }))
-      .mockResolvedValueOnce(mockResponse(200, {
-        ok: true,
-        user: { id: 'u1', businessId: 'biz-1', name: 'Alex', email: 'a@x.com', role: 'crew_member', businessName: 'OliveOps', employeeId: 'emp-1' },
-      }));
-
-    await expect(login('a@x.com', 'pw')).rejects.toMatchObject({ code: 'MOBILE_AUTH_UNAVAILABLE' });
   });
 
   it('supports session restoration when endpoint is valid', async () => {

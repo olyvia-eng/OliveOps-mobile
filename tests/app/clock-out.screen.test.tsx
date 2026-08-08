@@ -92,6 +92,7 @@ jest.mock('@/api/storageApi', () => ({
   prepareUpload: jest.fn(),
   uploadUriToS3: jest.fn(),
   completeUpload: jest.fn(),
+  deleteUploadedFile: jest.fn(),
 }));
 
 jest.mock('@/components/Screen', () => ({
@@ -130,7 +131,7 @@ import ClockOutScreen from '../../app/clock-out';
 import { router } from 'expo-router';
 import { Alert } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import { completeUpload, prepareUpload, uploadUriToS3 } from '@/api/storageApi';
+import { completeUpload, deleteUploadedFile, prepareUpload, uploadUriToS3 } from '@/api/storageApi';
 
 describe('ClockOutScreen', () => {
   beforeEach(() => {
@@ -141,6 +142,7 @@ describe('ClockOutScreen', () => {
     (prepareUpload as jest.Mock).mockReset();
     (uploadUriToS3 as jest.Mock).mockReset();
     (completeUpload as jest.Mock).mockReset();
+    (deleteUploadedFile as jest.Mock).mockReset();
     (ImagePicker.requestMediaLibraryPermissionsAsync as jest.Mock).mockReset();
     (ImagePicker.launchImageLibraryAsync as jest.Mock).mockReset();
     (global as any).fetch = jest.fn().mockResolvedValue({
@@ -194,8 +196,7 @@ describe('ClockOutScreen', () => {
     expect(mockClockOut).toHaveBeenCalledWith('entry-1', 'Done', undefined, { requestId: 'req-2', idempotencyKey: 'key-2' });
   });
 
-  it('uploads a library photo and submits its file ID array on clock-out', async () => {
-    (ImagePicker.requestMediaLibraryPermissionsAsync as jest.Mock).mockResolvedValue({ granted: true });
+  it('uploads selected library photos and submits all file IDs on clock-out', async () => {
     (ImagePicker.launchImageLibraryAsync as jest.Mock).mockResolvedValue({
       canceled: false,
       assets: [
@@ -204,16 +205,30 @@ describe('ClockOutScreen', () => {
           fileName: 'clock-out-1.heic',
           mimeType: 'image/heic',
         },
+        {
+          uri: 'file://clock-out-2.jpg',
+          fileName: 'clock-out-2.jpg',
+          mimeType: 'image/jpeg',
+        },
       ],
     });
-    (prepareUpload as jest.Mock).mockResolvedValue({
-      ok: true,
-      fileId: 'file-123',
-      uploadUrl: 'https://uploads.example/file-123',
-      requiredHeaders: { 'Content-Type': 'image/heic' },
-    });
+    (prepareUpload as jest.Mock)
+      .mockResolvedValueOnce({
+        ok: true,
+        fileId: 'file-123',
+        uploadUrl: 'https://uploads.example/file-123',
+        requiredHeaders: { 'Content-Type': 'image/heic' },
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        fileId: 'file-456',
+        uploadUrl: 'https://uploads.example/file-456',
+        requiredHeaders: { 'Content-Type': 'image/jpeg' },
+      });
     (uploadUriToS3 as jest.Mock).mockResolvedValue(undefined);
-    (completeUpload as jest.Mock).mockResolvedValue({ ok: true, fileId: 'file-123' });
+    (completeUpload as jest.Mock)
+      .mockResolvedValueOnce({ ok: true, fileId: 'file-123' })
+      .mockResolvedValueOnce({ ok: true, fileId: 'file-456' });
 
     (Alert.alert as jest.Mock).mockImplementation((title: string, _message: string, actions: Array<{ onPress?: () => void }>) => {
       if (title === 'Add Photo') {
@@ -252,7 +267,62 @@ describe('ClockOutScreen', () => {
       confirm.props.onPress();
     });
 
-    expect(mockClockOut).toHaveBeenCalledWith('entry-1', 'Done', ['file-123'], { requestId: 'req-2', idempotencyKey: 'key-2' });
+    expect(mockClockOut).toHaveBeenCalledWith('entry-1', 'Done', ['file-123', 'file-456'], { requestId: 'req-2', idempotencyKey: 'key-2' });
+    expect(prepareUpload).toHaveBeenCalledTimes(2);
+  });
+
+  it('deletes uploaded unsaved attachment when removed', async () => {
+    (ImagePicker.launchImageLibraryAsync as jest.Mock).mockResolvedValue({
+      canceled: false,
+      assets: [
+        {
+          uri: 'file://clock-out-1.heic',
+          fileName: 'clock-out-1.heic',
+          mimeType: 'image/heic',
+        },
+      ],
+    });
+    (prepareUpload as jest.Mock).mockResolvedValue({
+      ok: true,
+      fileId: 'file-123',
+      uploadUrl: 'https://uploads.example/file-123',
+      requiredHeaders: { 'Content-Type': 'image/heic' },
+    });
+    (uploadUriToS3 as jest.Mock).mockResolvedValue(undefined);
+    (completeUpload as jest.Mock).mockResolvedValue({ ok: true, fileId: 'file-123' });
+    (deleteUploadedFile as jest.Mock).mockResolvedValue({ ok: true });
+
+    (Alert.alert as jest.Mock).mockImplementation((title: string, _message: string, actions: Array<{ onPress?: () => void }>) => {
+      if (title === 'Add Photo') {
+        const libraryAction = actions?.[1];
+        if (libraryAction?.onPress) libraryAction.onPress();
+      }
+    });
+
+    let tree: any;
+    await act(async () => {
+      tree = create(React.createElement(ClockOutScreen));
+    });
+
+    const addPhotoPressable = tree.root.findAllByType('pressable').find((node: any) => {
+      const children = node.children ?? [];
+      return children.some((child: any) => child?.props?.children === 'Add Photo');
+    });
+
+    await act(async () => {
+      addPhotoPressable.props.onPress();
+    });
+
+    const removePressable = tree.root.findAllByType('pressable').find((node: any) => {
+      const children = node.children ?? [];
+      return children.some((child: any) => child?.props?.children === 'Remove');
+    });
+
+    await act(async () => {
+      removePressable.props.onPress();
+    });
+
+    expect(deleteUploadedFile).toHaveBeenCalledWith('file-123', 'token-1');
   });
 
   it('shows retry button after failed clock-out submission', async () => {

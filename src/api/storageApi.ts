@@ -62,3 +62,11 @@ export async function prepareDownload(fileId: string, accessToken?: string): Pro
     accessToken,
   });
 }
+
+export async function deleteUploadedFile(fileId: string, accessToken?: string): Promise<{ ok: boolean }> {
+  return apiRequest<{ ok: boolean }>(ENDPOINTS.storage, {
+    method: 'POST',
+    body: JSON.stringify({ action: 'delete', fileId }),
+    accessToken,
+  });
+}

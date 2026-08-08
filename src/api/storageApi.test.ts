@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
-import { completeUpload, prepareUpload, prepareDownload, uploadToS3, uploadUriToS3 } from '@/api/storageApi';
+import { completeUpload, deleteUploadedFile, prepareUpload, prepareDownload, uploadToS3, uploadUriToS3 } from '@/api/storageApi';
 
 jest.mock('@/config/env', () => ({
   ENV: { apiBaseUrl: 'http://localhost:3000' },
@@ -74,5 +74,21 @@ describe('storageApi', () => {
 
     await uploadUriToS3('https://upload.example/file-1', 'file:///tmp/photo.jpg', 'image/jpeg');
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('deletes an uploaded file by fileId', async () => {
+    const fetchMock = jest.fn();
+    fetchMock.mockResolvedValue(mockJsonResponse(200, { ok: true }));
+    (global as any).fetch = fetchMock;
+
+    const payload = await deleteUploadedFile('file-123');
+    expect(payload.ok).toBe(true);
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:3000/api/storage',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ action: 'delete', fileId: 'file-123' }),
+      })
+    );
   });
 });

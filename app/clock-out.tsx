@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Image, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
@@ -6,7 +6,7 @@ import { OfflineNotice } from '@/components/OfflineNotice';
 import { PrimaryActionButton } from '@/components/PrimaryActionButton';
 import { Screen } from '@/components/Screen';
 import { StatusBanner } from '@/components/StatusBanner';
-import { completeUpload, prepareUpload, uploadUriToS3 } from '@/api/storageApi';
+import { completeUpload, deleteUploadedFile, prepareUpload, uploadUriToS3 } from '@/api/storageApi';
 import { MAX_TIME_ENTRY_PHOTOS } from '@/features/clocking/constants';
 import { formatElapsedShort, resolveCurrentActiveEntry, resolveJobTitle } from '@/features/clocking/presentation';
 import { useClockingActions } from '@/hooks/useClockingActions';
@@ -59,6 +59,9 @@ export default function ClockOutScreen() {
   const [retryMeta, setRetryMeta] = useState<{ requestId: string; idempotencyKey: string } | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const attachmentsRef = useRef<PhotoAttachment[]>([]);
+  const submittedRef = useRef(false);
+  const cleanedFileIdsRef = useRef<Set<string>>(new Set());
 
   const uploadingPhoto = attachments.some((attachment) => attachment.status === 'uploading');
 
@@ -70,6 +73,21 @@ export default function ClockOutScreen() {
     void refreshWorkContext();
   }, [refreshWorkContext]);
 
+  useEffect(() => {
+    attachmentsRef.current = attachments;
+  }, [attachments]);
+
+  useEffect(() => {
+    return () => {
+      if (submittedRef.current) return;
+
+      for (const attachment of attachmentsRef.current) {
+        if (attachment.status !== 'uploaded' || !attachment.fileId) continue;
+        void cleanupUploadedAttachment(attachment.fileId);
+      }
+    };
+  }, []);
+
   const shiftLabel = useMemo(() => {
     if (!activeEntry) return 'No active shift';
     return resolveJobTitle(activeEntry, jobs);
@@ -80,6 +98,19 @@ export default function ClockOutScreen() {
       if (attachment.localId !== localId) return attachment;
       return updater(attachment);
     }));
+  }
+
+  async function cleanupUploadedAttachment(fileId: string) {
+    if (cleanedFileIdsRef.current.has(fileId)) return;
+    cleanedFileIdsRef.current.add(fileId);
+
+    try {
+      await deleteUploadedFile(fileId, accessToken);
+    } catch (cleanupError) {
+      if (__DEV__) {
+        console.error('[clock-out:cleanup-upload]', cleanupError);
+      }
+    }
   }
 
   function promptPhotoSource() {
@@ -96,16 +127,17 @@ export default function ClockOutScreen() {
   }
 
   async function choosePhoto(source: 'camera' | 'library') {
-    const permission = source === 'camera'
-      ? await ImagePicker.requestCameraPermissionsAsync()
-      : await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (source === 'camera') {
+      const permission = await ImagePicker.requestCameraPermissionsAsync();
+      if (!permission.granted) {
+        setError('Camera permission is required to capture a clock-out photo.');
+        return;
+      }
+    }
 
-    if (!permission.granted) {
-      setError(
-        source === 'camera'
-          ? 'Camera permission is required to capture a clock-out photo.'
-          : 'Photo library permission is required to choose a clock-out photo.'
-      );
+    const remainingSlots = MAX_TIME_ENTRY_PHOTOS - attachments.length;
+    if (remainingSlots <= 0) {
+      setError(`You can attach up to ${MAX_TIME_ENTRY_PHOTOS} photos.`);
       return;
     }
 
@@ -116,42 +148,49 @@ export default function ClockOutScreen() {
         quality: 0.8,
       })
       : await ImagePicker.launchImageLibraryAsync({
-      allowsEditing: false,
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.8,
-    });
+        allowsEditing: false,
+        allowsMultipleSelection: true,
+        selectionLimit: remainingSlots,
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        quality: 0.8,
+      });
 
     if (result.canceled || result.assets.length === 0) return;
-    if (attachments.length >= MAX_TIME_ENTRY_PHOTOS) {
-      setError(`You can attach up to ${MAX_TIME_ENTRY_PHOTOS} photos.`);
-      return;
-    }
 
-    const asset = result.assets[0];
-    const mimeType = inferMimeType(asset.fileName || '', asset.mimeType ?? undefined);
-    const extension = extensionForMimeType(mimeType);
-    const nextName = asset.fileName || `clock-out-${Date.now()}.${extension}`;
-    const localId = `attachment-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const selectedAssets = result.assets.slice(0, remainingSlots);
+    const pendingUploads = selectedAssets.map((asset, index) => {
+      const mimeType = inferMimeType(asset.fileName || '', asset.mimeType ?? undefined);
+      const extension = extensionForMimeType(mimeType);
+      const nextName = asset.fileName || `clock-out-${Date.now()}-${index}.${extension}`;
+      const localId = `attachment-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 8)}`;
 
-    setAttachments((previous) => [
-      ...previous,
-      {
+      return {
         localId,
         uri: asset.uri,
         name: nextName,
         mimeType,
-        status: 'uploading',
-      },
+      };
+    });
+
+    setAttachments((previous) => [
+      ...previous,
+      ...pendingUploads.map((upload) => ({
+        localId: upload.localId,
+        uri: upload.uri,
+        name: upload.name,
+        mimeType: upload.mimeType,
+        status: 'uploading' as PhotoAttachmentStatus,
+      })),
     ]);
     setSuccess(null);
     setError(null);
 
-    await uploadPhotoAttachment({
-      localId,
-      uri: asset.uri,
-      fileName: nextName,
-      mimeType,
-    });
+    await Promise.all(pendingUploads.map((upload) => uploadPhotoAttachment({
+      localId: upload.localId,
+      uri: upload.uri,
+      fileName: upload.name,
+      mimeType: upload.mimeType,
+    })));
   }
 
   async function uploadPhotoAttachment({
@@ -235,7 +274,13 @@ export default function ClockOutScreen() {
   }
 
   function removeAttachment(localId: string) {
+    const target = attachments.find((attachment) => attachment.localId === localId);
     setAttachments((previous) => previous.filter((attachment) => attachment.localId !== localId));
+
+    if (target?.status === 'uploaded' && target.fileId) {
+      void cleanupUploadedAttachment(target.fileId);
+    }
+
     setSuccess(null);
   }
 
@@ -285,6 +330,7 @@ export default function ClockOutScreen() {
     }
 
     setRetryMeta(null);
+    submittedRef.current = true;
     setSuccess('Clock-out submitted successfully.');
     router.replace('/home');
   }
