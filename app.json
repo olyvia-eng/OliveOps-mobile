@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "OliveOps",
+    "name": "OliveOps Mobile",
     "slug": "oliveops-mobile",
     "version": "1.0.0",
     "runtimeVersion": {
@@ -12,42 +12,41 @@
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#2C5F2E"
+      "backgroundColor": "#FFFFFF"
     },
     "ios": {
-      "supportsTablet": false,
       "bundleIdentifier": "ca.oliveops.mobile",
       "buildNumber": "1",
-      "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+      "supportsTablet": false,
+      "config": {
+        "usesNonExemptEncryption": false
       }
     },
     "android": {
       "package": "ca.oliveops.mobile",
       "versionCode": 1,
       "adaptiveIcon": {
-        "backgroundColor": "#2C5F2E",
+        "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
-      }
+      },
+      "predictiveBackGestureEnabled": false
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
+      "expo-router",
+      "expo-secure-store",
       [
         "expo-image-picker",
         {
-          "photosPermission": "OliveOps accesses your photo library only when you choose to attach a photo to a shift note.",
-          "cameraPermission": "OliveOps uses your camera only when you choose to take a photo for a shift note."
+          "cameraPermission": "Allow OliveOps to take job-site photos to attach to time entries.",
+          "photosPermission": "Allow OliveOps to select job-site photos to attach to time entries.",
+          "microphonePermission": false
         }
       ]
-    ],
-    "extra": {
-      "eas": {
-        "projectId": "oliveops-mobile"
-      }
-    }
+    ]
   }
 }
