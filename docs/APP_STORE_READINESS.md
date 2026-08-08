@@ -78,10 +78,9 @@ Production branding paths are configured in `app.json`. No branding file was cro
 
 ### iOS App Icon
 
-- `assets/icon.png` has the required 1024 x 1024 square PNG dimensions and Expo will generate the device sizes.
-- Visual inspection still shows Expo starter artwork and guide marks in the current file. Replace the file in place with the approved OliveOps icon before the TestFlight release candidate.
-- The final replacement must be full-bleed, have no pre-rounded corners or transparent pixels, and keep important artwork away from the outer edge.
-- Do not substitute the full wordmark as the app icon.
+- `assets/icon.png` is the approved 1024 x 1024 OliveOps leaf icon, and Expo will generate the required device sizes.
+- The source is an opaque, full-bleed RGB PNG without pre-rounded corners or transparent pixels.
+- The iOS production icon asset is ready for the TestFlight release candidate.
 
 ### Splash Screen
 
