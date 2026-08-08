@@ -67,44 +67,36 @@ Do not add Apple credentials, team IDs, App Store IDs, or signing files to this 
 
 ## Production Assets
 
-Current Expo starter assets are not approved OliveOps production branding.
+Production branding paths are configured in `app.json`. No branding file was cropped, regenerated, or otherwise modified.
 
-Current file dimensions:
-
-- `assets/icon.png`: 1024 x 1024
-- `assets/splash-icon.png`: 1024 x 1024
-- `assets/android-icon-foreground.png`: 512 x 512
-- `assets/android-icon-background.png`: 512 x 512
-- `assets/android-icon-monochrome.png`: 432 x 432
-- `assets/favicon.png`: 48 x 48
-- `assets/OliveOpsLogo.jpg`: 213 x 73
+- `assets/icon.png`: configured as the global and explicit iOS icon.
+- `assets/adaptive-icon.png`: configured as the Android legacy icon and adaptive foreground.
+- `assets/splash-icon.png`: configured through the SDK 54 `expo-splash-screen` plugin.
+- `assets/fulllogo.png`: retained as the reusable high-resolution full OliveOps logo.
+- `assets/OliveOpsLogo.jpg`: retained because the Login screen still references it.
+- Old `android-icon-background.png`, `android-icon-foreground.png`, and `android-icon-monochrome.png` files remain in the repository but are no longer referenced by production configuration.
 
 ### iOS App Icon
 
-- Replace `assets/icon.png`, which is referenced by `expo.icon`.
-- Supply an approved 1024 x 1024 PNG in sRGB.
-- Use a square, full-bleed image without pre-rounded corners.
-- Do not use transparency for the iOS production source.
-- Keep important artwork away from the outer edge so it remains legible at small sizes.
-- Expo generates the required device icon sizes from this source.
-
-`assets/OliveOpsLogo.jpg` is a small rectangular login wordmark. It is not a suitable app-icon source.
+- `assets/icon.png` has the required 1024 x 1024 square PNG dimensions and Expo will generate the device sizes.
+- Visual inspection still shows Expo starter artwork and guide marks in the current file. Replace the file in place with the approved OliveOps icon before the TestFlight release candidate.
+- The final replacement must be full-bleed, have no pre-rounded corners or transparent pixels, and keep important artwork away from the outer edge.
+- Do not substitute the full wordmark as the app icon.
 
 ### Splash Screen
 
-- `assets/splash-icon.png` is an Expo starter placeholder and is not currently referenced by `app.json`.
-- No final splash treatment is configured.
-- Supply an approved transparent PNG logo/image and an exact approved background hex color.
-- Use a square source of at least 1024 x 1024 with generous transparent safe space around the mark; Expo will place it responsively rather than using a device-specific full-screen bitmap.
-- Configure the Expo splash only after final artwork and resize behavior are approved. Do not configure the current placeholder.
+- `assets/splash-icon.png` is a 1024 x 1024 OliveOps logo/wordmark asset.
+- The SDK 54 `expo-splash-screen` config plugin uses `imageWidth: 300`, `resizeMode: contain`, and warm off-white `#F5EFE7`.
+- `contain` preserves the logo aspect ratio without cropping or stretching.
+- Configuration is ready. Verify final scale and background blending in a preview or production build because Expo Go and development clients cannot fully reproduce the native SDK 54 splash.
 
 ### Android Adaptive Icon
 
-These are not blockers for an iOS-only TestFlight build, but all remain Expo starter assets and must be replaced before Android release:
-
-- `assets/android-icon-foreground.png`: approved square transparent foreground, preferably 1080 x 1080; keep the mark inside the adaptive-icon safe center.
-- `assets/android-icon-background.png`: approved square full-bleed opaque background, preferably 1080 x 1080, or use an approved solid background color.
-- `assets/android-icon-monochrome.png`: approved single-color transparent mark for themed icons, preferably 1080 x 1080.
+- `assets/adaptive-icon.png` is configured for both `android.icon` and `android.adaptiveIcon.foregroundImage` over `#F5EFE7`.
+- The primary leaf mark is centered within the adaptive mask safe area.
+- The supplied file is a flattened opaque icon rather than a transparent foreground layer. It may be clipped differently by circular, squircle, or OEM masks.
+- Before an Android production release, provide a transparent foreground export containing only the safe-zone artwork. A branded monochrome layer is also recommended for Android 13 themed icons.
+- This Android caveat does not block an iOS TestFlight build.
 
 ### Web Favicon
 
