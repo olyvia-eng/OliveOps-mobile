@@ -38,6 +38,10 @@ jest.mock('@/components/PrimaryActionButton', () => ({
     require('react').createElement('primary-button', { label, onPress }),
 }));
 
+jest.mock('@/components/StatusBanner', () => ({
+  StatusBanner: ({ message }: any) => require('react').createElement('status-banner', { message }),
+}));
+
 jest.mock('react-native', () => {
   const React = require('react');
   return {
@@ -92,5 +96,22 @@ describe('SettingsScreen', () => {
 
     expect(mockLogout).toHaveBeenCalledTimes(1);
     expect(router.replace).toHaveBeenCalledWith('/login');
+  });
+
+  it('shows a safe error when an external link cannot be opened', async () => {
+    mockOpenUrl.mockRejectedValueOnce(new Error('system handler unavailable'));
+
+    let tree: any;
+    await act(async () => {
+      tree = create(React.createElement(SettingsScreen));
+    });
+
+    await act(async () => {
+      tree.root.findAllByType('pressable')[0].props.onPress();
+    });
+
+    expect(tree.root.findByType('status-banner').props.message).toBe(
+      'Could not open that link. Please try again.'
+    );
   });
 });

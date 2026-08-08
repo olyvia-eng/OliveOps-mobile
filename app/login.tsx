@@ -15,6 +15,8 @@ import {
   View,
 } from 'react-native';
 import { router } from 'expo-router';
+import { OfflineNotice } from '@/components/OfflineNotice';
+import { isOnline } from '@/services/connectivity';
 import { colors } from '@/theme/colors';
 import { useAuthStore } from '@/store/authStore';
 
@@ -46,6 +48,19 @@ export default function LoginScreen() {
     setLoading(true);
     setError('');
 
+    let online = false;
+    try {
+      online = await isOnline();
+    } catch {
+      // Treat an unavailable connectivity check as offline.
+    }
+
+    if (!online) {
+      setError('Offline. Reconnect and try signing in again.');
+      setLoading(false);
+      return;
+    }
+
     const result = await login(email.trim(), password);
 
     if (!result.ok) {
@@ -72,6 +87,7 @@ export default function LoginScreen() {
             contentContainerStyle={styles.scrollContent}
           >
             <View style={styles.container}>
+              <OfflineNotice />
               <View style={styles.brandRow}>
                 <Image
                   source={require('../assets/OliveOpsLogo.jpg')}

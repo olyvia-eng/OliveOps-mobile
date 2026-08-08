@@ -32,6 +32,7 @@ Prepare synthetic data only.
 - [ ] Cold-launch after force-closing the app.
 - [ ] Confirm the launch screen uses approved branding with no Expo placeholder.
 - [ ] Confirm the session-checking state resolves without a blank screen or crash.
+- [ ] Confirm Login does not flash before a stored session finishes restoring.
 - [ ] Confirm a signed-out device reaches Login.
 
 ## Authentication and Session
@@ -40,6 +41,7 @@ Prepare synthetic data only.
 - [ ] Sign in with the eligible demo account.
 - [ ] Confirm Home loads the correct employee/business work context.
 - [ ] Force-close and relaunch; confirm the secure session restores without another login.
+- [ ] With a valid stored session, interrupt connectivity during cold launch; confirm a safe Retry state appears and succeeds after connectivity returns without forcing a new login.
 - [ ] Open Settings, log out, and confirm Login appears.
 - [ ] Relaunch after logout and confirm the session remains cleared.
 - [ ] If practical, expire the test session server-side and confirm the app shows a safe expired-session message on relaunch or the next action.
@@ -120,6 +122,7 @@ Mixed and capacity:
 - [ ] Reach five total attachments and confirm Add Photo is no longer available.
 - [ ] Remove one and confirm another photo can be added.
 - [ ] Submit five uploaded photos and confirm clock-out succeeds.
+- [ ] Interrupt one upload in a multi-photo selection; confirm the failed item offers Retry and Clock Out remains disabled until the item succeeds or is removed.
 
 Draft cleanup:
 
@@ -156,6 +159,7 @@ Time History currently displays time-entry and correction state, not photo previ
 ## Offline and Error Behavior
 
 - [ ] Disable Wi-Fi and cellular and confirm the offline notice appears.
+- [ ] From Login, attempt to sign in while offline; confirm no sign-in request succeeds and a reconnect message appears.
 - [ ] Attempt Clock In, Switch Activity, Clock Out, photo upload, history/correction refresh, and correction submission as practical.
 - [ ] Confirm each blocked network action shows a friendly offline/retry message and does not duplicate a request.
 - [ ] Re-enable connectivity and manually retry; confirm the action succeeds.

@@ -514,4 +514,105 @@ describe('ClockOutScreen', () => {
     const retry = tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Retry Clock Out');
     expect(retry).toBeTruthy();
   });
+
+  it('cleans a failed prepared upload and blocks clock-out until the failed photo is retried', async () => {
+    (ImagePicker.launchImageLibraryAsync as jest.Mock).mockResolvedValue({
+      canceled: false,
+      assets: [
+        { uri: 'file://first.jpg', fileName: 'first.jpg', mimeType: 'image/jpeg' },
+        { uri: 'file://second.jpg', fileName: 'second.jpg', mimeType: 'image/jpeg' },
+      ],
+    });
+    (prepareUpload as jest.Mock)
+      .mockResolvedValueOnce({ fileId: 'file-1', uploadUrl: 'https://uploads.example/file-1' })
+      .mockResolvedValueOnce({ fileId: 'file-2', uploadUrl: 'https://uploads.example/file-2' })
+      .mockResolvedValueOnce({ fileId: 'file-2-retry', uploadUrl: 'https://uploads.example/file-2-retry' });
+    (uploadUriToS3 as jest.Mock).mockImplementation((url: string) => {
+      return url.endsWith('/file-2')
+        ? Promise.reject(new Error('upload interrupted'))
+        : Promise.resolve();
+    });
+    (completeUpload as jest.Mock).mockResolvedValue({ ok: true });
+    (deleteUploadedFile as jest.Mock).mockResolvedValue({ ok: true });
+    (Alert.alert as jest.Mock).mockImplementation((title: string, _message: string, actions: Array<{ onPress?: () => void }>) => {
+      if (title === 'Add Photo') actions?.[1]?.onPress?.();
+      if (title === 'Confirm Clock Out') actions?.[1]?.onPress?.();
+    });
+
+    let tree: any;
+    await act(async () => {
+      tree = create(React.createElement(ClockOutScreen));
+    });
+    const addPhoto = tree.root.findAllByType('pressable').find((node: any) =>
+      (node.children ?? []).some((child: any) => child?.props?.children === 'Add Photo')
+    );
+    await act(async () => {
+      addPhoto.props.onPress();
+    });
+
+    expect(deleteUploadedFile).toHaveBeenCalledWith('file-2', 'token-1');
+    let clockOutButton = tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Clock Out');
+    expect(clockOutButton.props.disabled).toBe(true);
+
+    const retryPhoto = tree.root.findAllByType('pressable').find((node: any) =>
+      (node.children ?? []).some((child: any) => child?.props?.children === 'Retry')
+    );
+    await act(async () => {
+      retryPhoto.props.onPress();
+    });
+
+    clockOutButton = tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Clock Out');
+    expect(clockOutButton.props.disabled).toBe(false);
+    await act(async () => {
+      clockOutButton.props.onPress();
+    });
+    expect(mockClockOut).toHaveBeenCalledWith(
+      'entry-1',
+      '',
+      ['file-1', 'file-2-retry'],
+      { requestId: 'req-2', idempotencyKey: 'key-2' }
+    );
+  });
+
+  it('keeps clock-out disabled while a photo upload is in progress', async () => {
+    let finishUpload: (() => void) | undefined;
+    const uploadPending = new Promise<void>((resolve) => {
+      finishUpload = resolve;
+    });
+    (ImagePicker.launchImageLibraryAsync as jest.Mock).mockResolvedValue({
+      canceled: false,
+      assets: [{ uri: 'file://pending.jpg', fileName: 'pending.jpg', mimeType: 'image/jpeg' }],
+    });
+    (prepareUpload as jest.Mock).mockResolvedValue({
+      fileId: 'pending-file',
+      uploadUrl: 'https://uploads.example/pending-file',
+    });
+    (uploadUriToS3 as jest.Mock).mockReturnValue(uploadPending);
+    (completeUpload as jest.Mock).mockResolvedValue({ ok: true });
+    (Alert.alert as jest.Mock).mockImplementation((title: string, _message: string, actions: Array<{ onPress?: () => void }>) => {
+      if (title === 'Add Photo') actions?.[1]?.onPress?.();
+    });
+
+    let tree: any;
+    await act(async () => {
+      tree = create(React.createElement(ClockOutScreen));
+    });
+    const addPhoto = tree.root.findAllByType('pressable').find((node: any) =>
+      (node.children ?? []).some((child: any) => child?.props?.children === 'Add Photo')
+    );
+    await act(async () => {
+      addPhoto.props.onPress();
+      await Promise.resolve();
+    });
+
+    let clockOutButton = tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Clock Out');
+    expect(clockOutButton.props.disabled).toBe(true);
+
+    await act(async () => {
+      finishUpload?.();
+      await uploadPending;
+    });
+    clockOutButton = tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Clock Out');
+    expect(clockOutButton.props.disabled).toBe(false);
+  });
 });

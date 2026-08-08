@@ -16,10 +16,11 @@
       }
     },
     "android": {
-      "icon": "./assets/adaptive-icon.png",
+      "package": "ca.oliveops.mobile",
+      "icon": "./assets/icon.png",
       "adaptiveIcon": {
         "backgroundColor": "#F5EFE7",
-        "foregroundImage": "./assets/adaptive-icon.png"
+        "foregroundImage": "./assets/adaptive-icon-foreground.png"
       },
       "predictiveBackGestureEnabled": false
     },
@@ -46,6 +47,13 @@
           "microphonePermission": false
         }
       ]
-    ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "b4520c74-5e00-49fa-abf0-2ed0649d1223"
+      }
+    },
+    "owner": "olyvias-team"
   }
 }

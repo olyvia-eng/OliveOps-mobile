@@ -1,7 +1,9 @@
+import { useState } from 'react';
 import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { PrimaryActionButton } from '@/components/PrimaryActionButton';
 import { Screen } from '@/components/Screen';
+import { StatusBanner } from '@/components/StatusBanner';
 import { useAuthStore } from '@/store/authStore';
 import { colors } from '@/theme/colors';
 
@@ -11,9 +13,15 @@ const SUPPORT_URL = 'mailto:support@oliveops.ca';
 
 export default function SettingsScreen() {
   const { logout, user } = useAuthStore();
+  const [linkError, setLinkError] = useState<string | null>(null);
 
   async function openExternalUrl(url: string) {
-    await Linking.openURL(url);
+    setLinkError(null);
+    try {
+      await Linking.openURL(url);
+    } catch {
+      setLinkError('Could not open that link. Please try again.');
+    }
   }
 
   async function onLogout() {
@@ -59,6 +67,7 @@ export default function SettingsScreen() {
           </Pressable>
         </View>
       </View>
+      {linkError ? <StatusBanner tone="error" message={linkError} /> : null}
       <PrimaryActionButton label="Log Out" onPress={() => void onLogout()} />
     </Screen>
   );

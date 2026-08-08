@@ -5,7 +5,7 @@ import type { MobileCapabilities } from '@/types/api';
 import type { SessionUser } from '@/types/domain';
 import { ApiError } from '@/types/errors';
 
-type SessionStatus = 'checking' | 'authenticated' | 'unauthenticated';
+type SessionStatus = 'checking' | 'authenticated' | 'unauthenticated' | 'error';
 
 type AuthContextValue = {
   status: SessionStatus;
@@ -22,9 +22,18 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 function isUnauthorizedError(error: unknown) {
+  if (error instanceof ApiError && error.status === 401) return true;
   if (!(error instanceof Error)) return false;
   const normalized = error.message.toLowerCase();
   return normalized.includes('401') || normalized.includes('unauthorized');
+}
+
+async function clearStoredSessionSafely() {
+  try {
+    await clearStoredSession();
+  } catch {
+    // In-memory auth state must still be cleared if secure storage is unavailable.
+  }
 }
 
 function mapLoginError(error: unknown) {
@@ -61,7 +70,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setStatus('checking');
     setWarning(undefined);
 
-    const stored = await readStoredSession();
+    let stored;
+    try {
+      stored = await readStoredSession();
+    } catch {
+      setUser(null);
+      setAccessToken(undefined);
+      setCapabilities(undefined);
+      setWarning("We couldn't restore your secure session. Please try again.");
+      setStatus('error');
+      return;
+    }
+
     setAccessToken(stored.accessToken);
 
     if (!stored.accessToken) {
@@ -73,10 +93,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const session = await authApi.getSession(stored.accessToken);
       if (!session.user) {
-        await clearStoredSession();
+        await clearStoredSessionSafely();
         setUser(null);
         setAccessToken(undefined);
         setCapabilities(undefined);
+        setWarning('Session expired. Please log in again.');
         setStatus('unauthenticated');
         return;
       }
@@ -85,16 +106,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       syncCapabilities(session.capabilities);
       setStatus('authenticated');
     } catch (error) {
-      await clearStoredSession();
       setUser(null);
-      setAccessToken(undefined);
       setCapabilities(undefined);
       if (isUnauthorizedError(error)) {
+        await clearStoredSessionSafely();
+        setAccessToken(undefined);
         setWarning('Session expired. Please log in again.');
+        setStatus('unauthenticated');
+        return;
       }
-      setStatus('unauthenticated');
+
+      setAccessToken(stored.accessToken);
+      setWarning("We couldn't verify your session. Check your connection and try again.");
+      setStatus('error');
     }
-  }, []);
+  }, [syncCapabilities]);
 
   const login = useCallback(async (email: string, password: string) => {
     try {
@@ -127,7 +153,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Ignore logout errors and clear local session state.
     }
 
-    await clearStoredSession();
+    await clearStoredSessionSafely();
     setUser(null);
     setAccessToken(undefined);
     setCapabilities(undefined);

@@ -15,6 +15,7 @@ See also:
 - App version: `1.0.0`
 - iOS build-number seed: `1`
 - iOS bundle identifier: `ca.oliveops.mobile`
+- Android package: `ca.oliveops.mobile`
 - iPhone-only v1: `supportsTablet: false`
 - Custom URL scheme: not configured; current app flows do not require one
 - Encryption declaration: `usesNonExemptEncryption: false`
@@ -22,28 +23,29 @@ See also:
 - EAS build profiles: development, internal preview, and store production
 - Development profile dependency: `expo-dev-client` installed
 - Production version strategy: EAS remote build numbers with `autoIncrement: true`
+- EAS project ID: `b4520c74-5e00-49fa-abf0-2ed0649d1223`
 
 The committed `app.json` remains the marketing-version baseline. Once EAS initializes remote versioning, EAS is authoritative for the iOS build number and increments it without rewriting `app.json`.
 
 ## EAS Project Setup
 
-The repository is not currently linked to an EAS project: `app.json` has no `extra.eas.projectId` or `owner`. Run these commands interactively from the repository root under the correct OliveOps Expo account.
+The repository is linked to the `olyvias-team` EAS account with project ID `b4520c74-5e00-49fa-abf0-2ed0649d1223` in `app.json`.
 
-1. Link or create the EAS project:
-
-   ```powershell
-   npx eas-cli@latest init
-   ```
-
-   Confirm the selected account and project belong to OliveOps. Allow EAS CLI to add `expo.extra.eas.projectId` to the app configuration.
-
-2. Verify the link:
+1. Verify the link under the intended OliveOps Expo account before the first build:
 
    ```powershell
    npx eas-cli@latest project:info
    ```
 
-3. Configure the public production API variable:
+2. Verify the production public environment:
+
+   ```powershell
+   npx eas-cli@latest env:list --environment production
+   ```
+
+   It must include `EXPO_PUBLIC_API_BASE_URL=https://app.oliveops.ca`.
+
+3. If missing, configure the public production API variable:
 
    ```powershell
    npx eas-cli@latest env:set --name EXPO_PUBLIC_API_BASE_URL --value https://app.oliveops.ca --environment production --visibility plaintext
@@ -67,10 +69,10 @@ Do not add Apple credentials, team IDs, App Store IDs, or signing files to this 
 
 ## Production Assets
 
-Production branding paths are configured in `app.json`. No branding file was cropped, regenerated, or otherwise modified.
+Production branding paths are configured in `app.json`. The approved iOS source remains unchanged; the Android adaptive foreground is derived from that approved leaf artwork.
 
-- `assets/icon.png`: configured as the global and explicit iOS icon.
-- `assets/adaptive-icon.png`: configured as the Android legacy icon and adaptive foreground.
+- `assets/icon.png`: configured as the global, iOS, and legacy Android icon.
+- `assets/adaptive-icon-foreground.png`: transparent Android adaptive foreground derived from the approved leaf.
 - `assets/splash-icon.png`: configured through the SDK 54 `expo-splash-screen` plugin.
 - `assets/fulllogo.png`: retained as the reusable high-resolution full OliveOps logo.
 - `assets/OliveOpsLogo.jpg`: retained because the Login screen still references it.
@@ -91,11 +93,20 @@ Production branding paths are configured in `app.json`. No branding file was cro
 
 ### Android Adaptive Icon
 
-- `assets/adaptive-icon.png` is configured for both `android.icon` and `android.adaptiveIcon.foregroundImage` over `#F5EFE7`.
-- The primary leaf mark is centered within the adaptive mask safe area.
-- The supplied file is a flattened opaque icon rather than a transparent foreground layer. It may be clipped differently by circular, squircle, or OEM masks.
-- Before an Android production release, provide a transparent foreground export containing only the safe-zone artwork. A branded monochrome layer is also recommended for Android 13 themed icons.
-- This Android caveat does not block an iOS TestFlight build.
+- `assets/adaptive-icon-foreground.png` is a 1024 x 1024 RGBA PNG containing only the approved green leaf on transparency.
+- The visible 594 x 564 leaf bounds are centered within a conservative adaptive-mask safe zone.
+- `android.adaptiveIcon.backgroundColor` separately supplies warm off-white `#F5EFE7`.
+- `assets/icon.png` remains the opaque legacy Android fallback.
+- Verify circular, squircle, and OEM mask rendering in an Android preview build before Play Store release. A branded monochrome layer remains optional for Android 13 themed icons.
+
+## Runtime Resilience
+
+- SecureStore restoration finishes before startup redirects, preventing a Login flash for restorable sessions.
+- Confirmed expired or invalid sessions are cleared and routed safely to Login.
+- Transient network, backend, or SecureStore verification failures show a retryable startup state rather than deleting a potentially valid session.
+- A top-level error boundary prevents unexpected render failures from leaving a blank screen; user-facing fallback text never includes exception details.
+- Login and destructive clocking/correction flows fail closed while offline. No offline queue is implemented or implied.
+- Failed prepared photo uploads are cleaned up best-effort, and clock-out remains blocked while any retained attachment is uploading or failed.
 
 ### Web Favicon
 

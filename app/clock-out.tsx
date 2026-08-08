@@ -65,6 +65,7 @@ export default function ClockOutScreen() {
   const cleanedFileIdsRef = useRef<Set<string>>(new Set());
 
   const uploadingPhoto = attachments.some((attachment) => attachment.status === 'uploading');
+  const hasIncompletePhoto = attachments.some((attachment) => attachment.status !== 'uploaded');
 
   const activeEntry = useMemo(() => {
     return resolveCurrentActiveEntry(timeEntries, user?.employeeId, currentActiveEntryId);
@@ -229,6 +230,7 @@ export default function ClockOutScreen() {
     setError(null);
     setSuccess(null);
 
+    let preparedFileId: string | undefined;
     try {
       const fileResponse = await fetch(uri);
       const blob = await fileResponse.blob();
@@ -249,6 +251,7 @@ export default function ClockOutScreen() {
       if (!prepared.fileId || !prepared.uploadUrl) {
         throw new Error('Upload could not be prepared.');
       }
+      preparedFileId = prepared.fileId;
 
       await uploadUriToS3(prepared.uploadUrl, uri, mimeType, prepared.requiredHeaders);
       await completeUpload(prepared.fileId, accessToken);
@@ -261,6 +264,9 @@ export default function ClockOutScreen() {
       }));
       setSuccess('Photo attached.');
     } catch (uploadError) {
+      if (preparedFileId) {
+        await cleanupUploadedAttachment(preparedFileId);
+      }
       const message = toUserFacingError(uploadError, 'Photo upload failed. Please try again.');
       setError(message);
       updateAttachment(localId, (previous) => ({
@@ -424,14 +430,14 @@ export default function ClockOutScreen() {
 
       <PrimaryActionButton
         label={loading ? 'Clocking out...' : 'Clock Out'}
-        disabled={!activeEntry || loading || uploadingPhoto}
+        disabled={!activeEntry || loading || hasIncompletePhoto}
         onPress={onConfirmClockOut}
       />
 
       {error && retryMeta ? (
         <PrimaryActionButton
           label="Retry Clock Out"
-          disabled={loading || uploadingPhoto}
+          disabled={loading || hasIncompletePhoto}
           onPress={() => void submitClockOut(retryMeta)}
         />
       ) : null}
