@@ -57,6 +57,18 @@ describe('authApi', () => {
     );
   });
 
+  it('rejects a mobile login response without an access token', async () => {
+    fetchMock.mockResolvedValue(mockResponse(200, {
+      ok: true,
+      user: { id: 'u1', businessId: 'biz-1', name: 'Alex', email: 'a@x.com', role: 'crew_member', businessName: 'OliveOps', employeeId: 'emp-1' },
+    }));
+
+    await expect(login('a@x.com', 'pw')).rejects.toMatchObject({
+      code: 'MOBILE_AUTH_UNAVAILABLE',
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it('supports session restoration when endpoint is valid', async () => {
     fetchMock.mockResolvedValue(mockResponse(200, {
       ok: true,

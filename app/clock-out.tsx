@@ -15,6 +15,7 @@ import { createRequestMeta } from '@/services/requestGuards';
 import { useAuthStore } from '@/store/authStore';
 import { useClockingStore } from '@/store/clockingStore';
 import { colors } from '@/theme/colors';
+import { toUserFacingError } from '@/utils/userFacingError';
 
 type PhotoAttachmentStatus = 'uploading' | 'uploaded' | 'failed';
 
@@ -106,10 +107,8 @@ export default function ClockOutScreen() {
 
     try {
       await deleteUploadedFile(fileId, accessToken);
-    } catch (cleanupError) {
-      if (__DEV__) {
-        console.error('[clock-out:cleanup-upload]', cleanupError);
-      }
+    } catch {
+      // Cleanup is best effort and must not interrupt navigation.
     }
   }
 
@@ -248,7 +247,7 @@ export default function ClockOutScreen() {
       }, accessToken);
 
       if (!prepared.fileId || !prepared.uploadUrl) {
-        throw new Error(prepared.error || 'Upload could not be prepared.');
+        throw new Error('Upload could not be prepared.');
       }
 
       await uploadUriToS3(prepared.uploadUrl, uri, mimeType, prepared.requiredHeaders);
@@ -262,7 +261,7 @@ export default function ClockOutScreen() {
       }));
       setSuccess('Photo attached.');
     } catch (uploadError) {
-      const message = uploadError instanceof Error ? uploadError.message : 'Photo upload failed.';
+      const message = toUserFacingError(uploadError, 'Photo upload failed. Please try again.');
       setError(message);
       updateAttachment(localId, (previous) => ({
         ...previous,

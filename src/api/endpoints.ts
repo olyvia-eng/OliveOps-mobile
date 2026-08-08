@@ -1,5 +1,4 @@
 export const ENDPOINTS = {
-  authLogin: '/api/auth?action=login',
   authMobileLogin: '/api/auth?action=mobile-login',
   authSession: '/api/auth?action=session',
   authLogout: '/api/auth?action=logout',

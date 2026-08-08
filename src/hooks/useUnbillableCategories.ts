@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import { loadActiveUnbillableCategories } from '@/api/clockingApi';
 import { useAuthStore } from '@/store/authStore';
 import { useClockingStore } from '@/store/clockingStore';
+import { toUserFacingError } from '@/utils/userFacingError';
 
 const CATEGORY_CACHE_TTL_MS = 5 * 60 * 1000;
 
@@ -53,9 +54,7 @@ export function useUnbillableCategories() {
       setUnbillableCategories(activeItems, businessId);
     } catch (error) {
       setUnbillableCategoriesError(
-        error instanceof Error
-          ? error.message
-          : 'Could not load unbillable categories. Please try again.',
+        toUserFacingError(error, 'Could not load unbillable categories. Please try again.'),
       );
     } finally {
       setUnbillableCategoriesLoading(false);

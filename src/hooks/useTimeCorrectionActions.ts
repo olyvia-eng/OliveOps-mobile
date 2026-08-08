@@ -5,6 +5,7 @@ import { isOnline } from '@/services/connectivity';
 import { useAuthStore } from '@/store/authStore';
 import { useClockingStore } from '@/store/clockingStore';
 import type { CreateTimeCorrectionRequest } from '@/types/api';
+import { toUserFacingError } from '@/utils/userFacingError';
 
 export function useTimeCorrectionActions() {
   const { accessToken } = useAuthStore();
@@ -36,7 +37,7 @@ export function useTimeCorrectionActions() {
       } catch (error) {
         return {
           ok: false,
-          error: error instanceof Error ? error.message : 'Could not submit correction request.',
+          error: toUserFacingError(error, 'Could not submit correction request. Please try again.'),
         };
       } finally {
         endRequest(key);
@@ -58,7 +59,7 @@ export function useTimeCorrectionActions() {
       } catch (error) {
         return {
           ok: false,
-          error: error instanceof Error ? error.message : 'Could not load correction requests.',
+          error: toUserFacingError(error, 'Could not load correction requests. Please try again.'),
         };
       } finally {
         setLoading(false);

@@ -1,6 +1,6 @@
 import React from 'react';
 import { act, create } from 'react-test-renderer';
-import { beforeEach, describe, expect, it, jest } from '@jest/globals';
+import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
 
 const mockRefresh = jest.fn().mockResolvedValue({ ok: true });
 
@@ -105,13 +105,22 @@ jest.mock('react-native', () => {
 import HomeScreen from '../../app/home';
 
 describe('HomeScreen', () => {
+  let tree: any;
+
   beforeEach(() => {
     mockRefresh.mockClear();
     mockClockingState.activeShiftWarnings.possibleForgottenClockOut = false;
   });
 
+  afterEach(async () => {
+    if (!tree) return;
+    await act(async () => {
+      tree.unmount();
+    });
+    tree = undefined;
+  });
+
   it('uses authoritative active entry id for current status card', async () => {
-    let tree: any;
     await act(async () => {
       tree = create(React.createElement(HomeScreen));
     });
@@ -124,7 +133,6 @@ describe('HomeScreen', () => {
   it('shows long-shift warning actions when possible forgotten clock-out is flagged', async () => {
     mockClockingState.activeShiftWarnings.possibleForgottenClockOut = true;
 
-    let tree: any;
     await act(async () => {
       tree = create(React.createElement(HomeScreen));
     });

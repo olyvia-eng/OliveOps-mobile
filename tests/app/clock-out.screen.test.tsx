@@ -143,7 +143,10 @@ describe('ClockOutScreen', () => {
     (uploadUriToS3 as jest.Mock).mockReset();
     (completeUpload as jest.Mock).mockReset();
     (deleteUploadedFile as jest.Mock).mockReset();
+    (ImagePicker.requestCameraPermissionsAsync as jest.Mock).mockReset();
+    (ImagePicker.requestCameraPermissionsAsync as jest.Mock).mockResolvedValue({ granted: true });
     (ImagePicker.requestMediaLibraryPermissionsAsync as jest.Mock).mockReset();
+    (ImagePicker.launchCameraAsync as jest.Mock).mockReset();
     (ImagePicker.launchImageLibraryAsync as jest.Mock).mockReset();
     (global as any).fetch = jest.fn().mockResolvedValue({
       ok: true,
@@ -271,6 +274,81 @@ describe('ClockOutScreen', () => {
     expect(prepareUpload).toHaveBeenCalledTimes(2);
   });
 
+  it('combines camera and library photos while respecting the five-photo capacity', async () => {
+    (ImagePicker.launchCameraAsync as jest.Mock).mockResolvedValue({
+      canceled: false,
+      assets: [{ uri: 'file://camera.jpg', fileName: 'camera.jpg', mimeType: 'image/jpeg' }],
+    });
+    (ImagePicker.launchImageLibraryAsync as jest.Mock).mockResolvedValue({
+      canceled: false,
+      assets: Array.from({ length: 6 }, (_, index) => ({
+        uri: `file://library-${index + 1}.jpg`,
+        fileName: `library-${index + 1}.jpg`,
+        mimeType: 'image/jpeg',
+      })),
+    });
+    for (let index = 1; index <= 5; index += 1) {
+      (prepareUpload as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        fileId: `file-${index}`,
+        uploadUrl: `https://uploads.example/file-${index}`,
+        requiredHeaders: { 'Content-Type': 'image/jpeg' },
+      });
+    }
+    (uploadUriToS3 as jest.Mock).mockResolvedValue(undefined);
+    (completeUpload as jest.Mock).mockResolvedValue({ ok: true });
+
+    let nextSource: 'camera' | 'library' = 'camera';
+    (Alert.alert as jest.Mock).mockImplementation((title: string, _message: string, actions: Array<{ onPress?: () => void }>) => {
+      if (title === 'Add Photo') {
+        const action = nextSource === 'camera' ? actions?.[0] : actions?.[1];
+        action?.onPress?.();
+        return;
+      }
+
+      if (title === 'Confirm Clock Out') {
+        actions?.[1]?.onPress?.();
+      }
+    });
+
+    let tree: any;
+    await act(async () => {
+      tree = create(React.createElement(ClockOutScreen));
+    });
+
+    const findAddPhoto = () => tree.root.findAllByType('pressable').find((node: any) =>
+      (node.children ?? []).some((child: any) => child?.props?.children === 'Add Photo')
+    );
+
+    await act(async () => {
+      findAddPhoto().props.onPress();
+    });
+    nextSource = 'library';
+    await act(async () => {
+      findAddPhoto().props.onPress();
+    });
+
+    expect(ImagePicker.launchImageLibraryAsync).toHaveBeenCalledWith(expect.objectContaining({
+      allowsMultipleSelection: true,
+      selectionLimit: 4,
+    }));
+    expect(ImagePicker.requestMediaLibraryPermissionsAsync).not.toHaveBeenCalled();
+    expect(prepareUpload).toHaveBeenCalledTimes(5);
+    expect(findAddPhoto()).toBeUndefined();
+
+    const confirm = tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Clock Out');
+    await act(async () => {
+      confirm.props.onPress();
+    });
+
+    expect(mockClockOut).toHaveBeenCalledWith(
+      'entry-1',
+      '',
+      ['file-1', 'file-2', 'file-3', 'file-4', 'file-5'],
+      { requestId: 'req-2', idempotencyKey: 'key-2' }
+    );
+  });
+
   it('deletes uploaded unsaved attachment when removed', async () => {
     (ImagePicker.launchImageLibraryAsync as jest.Mock).mockResolvedValue({
       canceled: false,
@@ -323,6 +401,89 @@ describe('ClockOutScreen', () => {
     });
 
     expect(deleteUploadedFile).toHaveBeenCalledWith('file-123', 'token-1');
+  });
+
+  it('cleans up uploaded attachments when leaving without clocking out', async () => {
+    (ImagePicker.launchImageLibraryAsync as jest.Mock).mockResolvedValue({
+      canceled: false,
+      assets: [{ uri: 'file://draft.jpg', fileName: 'draft.jpg', mimeType: 'image/jpeg' }],
+    });
+    (prepareUpload as jest.Mock).mockResolvedValue({
+      ok: true,
+      fileId: 'draft-file',
+      uploadUrl: 'https://uploads.example/draft-file',
+      requiredHeaders: { 'Content-Type': 'image/jpeg' },
+    });
+    (uploadUriToS3 as jest.Mock).mockResolvedValue(undefined);
+    (completeUpload as jest.Mock).mockResolvedValue({ ok: true, fileId: 'draft-file' });
+    (deleteUploadedFile as jest.Mock).mockResolvedValue({ ok: true });
+    (Alert.alert as jest.Mock).mockImplementation((title: string, _message: string, actions: Array<{ onPress?: () => void }>) => {
+      if (title === 'Add Photo') actions?.[1]?.onPress?.();
+    });
+
+    let tree: any;
+    await act(async () => {
+      tree = create(React.createElement(ClockOutScreen));
+    });
+    const addPhoto = tree.root.findAllByType('pressable').find((node: any) =>
+      (node.children ?? []).some((child: any) => child?.props?.children === 'Add Photo')
+    );
+    await act(async () => {
+      addPhoto.props.onPress();
+    });
+    await act(async () => {
+      tree.unmount();
+    });
+
+    expect(deleteUploadedFile).toHaveBeenCalledWith('draft-file', 'token-1');
+  });
+
+  it('does not clean up attachments committed by a successful clock-out', async () => {
+    (ImagePicker.launchImageLibraryAsync as jest.Mock).mockResolvedValue({
+      canceled: false,
+      assets: [{ uri: 'file://committed.jpg', fileName: 'committed.jpg', mimeType: 'image/jpeg' }],
+    });
+    (prepareUpload as jest.Mock).mockResolvedValue({
+      ok: true,
+      fileId: 'committed-file',
+      uploadUrl: 'https://uploads.example/committed-file',
+      requiredHeaders: { 'Content-Type': 'image/jpeg' },
+    });
+    (uploadUriToS3 as jest.Mock).mockResolvedValue(undefined);
+    (completeUpload as jest.Mock).mockResolvedValue({ ok: true, fileId: 'committed-file' });
+    (Alert.alert as jest.Mock).mockImplementation((title: string, _message: string, actions: Array<{ onPress?: () => void }>) => {
+      if (title === 'Add Photo') {
+        actions?.[1]?.onPress?.();
+      } else if (title === 'Confirm Clock Out') {
+        actions?.[1]?.onPress?.();
+      }
+    });
+
+    let tree: any;
+    await act(async () => {
+      tree = create(React.createElement(ClockOutScreen));
+    });
+    const addPhoto = tree.root.findAllByType('pressable').find((node: any) =>
+      (node.children ?? []).some((child: any) => child?.props?.children === 'Add Photo')
+    );
+    await act(async () => {
+      addPhoto.props.onPress();
+    });
+    const confirm = tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Clock Out');
+    await act(async () => {
+      confirm.props.onPress();
+    });
+    await act(async () => {
+      tree.unmount();
+    });
+
+    expect(mockClockOut).toHaveBeenCalledWith(
+      'entry-1',
+      '',
+      ['committed-file'],
+      { requestId: 'req-2', idempotencyKey: 'key-2' }
+    );
+    expect(deleteUploadedFile).not.toHaveBeenCalled();
   });
 
   it('shows retry button after failed clock-out submission', async () => {

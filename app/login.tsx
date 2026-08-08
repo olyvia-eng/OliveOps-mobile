@@ -49,9 +49,6 @@ export default function LoginScreen() {
     const result = await login(email.trim(), password);
 
     if (!result.ok) {
-      if (__DEV__) {
-        console.error('[login:error]', result.error ?? 'unknown_error');
-      }
       setError(toFriendlyLoginError(result.error));
       setLoading(false);
       return;

@@ -6,6 +6,7 @@ import { isOnline } from '@/services/connectivity';
 import { useAuthStore } from '@/store/authStore';
 import { useClockingStore } from '@/store/clockingStore';
 import type { TimeEntryWorkType } from '@/types/domain';
+import { toUserFacingError } from '@/utils/userFacingError';
 
 export function useClockingActions() {
   const { accessToken, user, syncCapabilities } = useAuthStore();
@@ -72,7 +73,7 @@ export function useClockingActions() {
       } catch (error) {
         return {
           ok: false,
-          error: error instanceof Error ? error.message : 'Clock-in failed.',
+          error: toUserFacingError(error, 'Clock-in failed. Please try again.'),
         };
       } finally {
         endRequest(key);
@@ -125,7 +126,7 @@ export function useClockingActions() {
       } catch (error) {
         return {
           ok: false,
-          error: error instanceof Error ? error.message : 'Clock-out failed.',
+          error: toUserFacingError(error, 'Clock-out failed. Please try again.'),
         };
       } finally {
         endRequest(key);
@@ -177,7 +178,7 @@ export function useClockingActions() {
       } catch (error) {
         return {
           ok: false,
-          error: error instanceof Error ? error.message : 'Switch activity failed.',
+          error: toUserFacingError(error, 'Switch activity failed. Please try again.'),
         };
       } finally {
         endRequest(key);
@@ -198,7 +199,7 @@ export function useClockingActions() {
       } catch (error) {
         return {
           ok: false,
-          error: error instanceof Error ? error.message : 'Could not refresh work context.',
+          error: toUserFacingError(error, 'Could not refresh work context. Please try again.'),
         };
       }
     },

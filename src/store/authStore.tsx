@@ -99,33 +99,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const login = useCallback(async (email: string, password: string) => {
     try {
       const response = await authApi.login(email, password);
-      if (!response.user) {
-        setStatus('unauthenticated');
-        return { ok: false, error: response.error || 'Login failed.' };
-      }
-
       setUser(response.user);
       syncCapabilities(response.capabilities);
 
-      if (response.accessToken) {
-        setAccessToken(response.accessToken);
-        await writeStoredSession({
-          accessToken: response.accessToken,
-          refreshToken: response.refreshToken,
-        });
-        setWarning(undefined);
-      } else {
-        await clearStoredSession();
-        setAccessToken(undefined);
-        setWarning('Login succeeded but no mobile access token was returned.');
-      }
+      setAccessToken(response.accessToken);
+      await writeStoredSession({
+        accessToken: response.accessToken,
+        refreshToken: response.refreshToken,
+      });
+      setWarning(undefined);
 
       setStatus('authenticated');
       return { ok: true };
     } catch (error) {
-      if (__DEV__) {
-        console.error('[auth:login]', error);
-      }
       setUser(null);
       setAccessToken(undefined);
       setCapabilities(undefined);
