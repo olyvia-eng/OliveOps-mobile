@@ -38,7 +38,7 @@ function readPngMetadata(relativePath: string) {
 
 describe('release app config', () => {
   it('keeps production identifiers and compliance settings explicit', () => {
-    expect(config.expo.ios.bundleIdentifier).toBe('ca.oliveops.mobile');
+    expect(config.expo.ios.bundleIdentifier).toBe('ca.oliveops.app');
     expect(config.expo.android.package).toBe('ca.oliveops.mobile');
     expect(config.expo.ios.supportsTablet).toBe(false);
     expect(config.expo.ios.config.usesNonExemptEncryption).toBe(false);
