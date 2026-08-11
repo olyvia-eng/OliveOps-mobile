@@ -46,7 +46,8 @@
           "photosPermission": "Allow OliveOps to select job-site photos to attach to time entries.",
           "microphonePermission": false
         }
-      ]
+      ],
+      "expo-status-bar"
     ],
     "extra": {
       "router": {},
