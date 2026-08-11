@@ -132,7 +132,10 @@ jest.mock('@/components/PrimaryActionButton', () => ({
 jest.mock('react-native', () => {
   const React = require('react');
   return {
+    NativeModules: {},
+    Platform: { select: (values: any) => values.ios ?? values.default },
     StyleSheet: { create: (value: unknown) => value },
+    TurboModuleRegistry: { get: () => null },
     View: ({ children }: any) => React.createElement('view', {}, children),
     Text: ({ children }: any) => React.createElement('text', {}, children),
     TextInput: ({ value, onChangeText, testID, placeholder }: any) => React.createElement('textinput', { value, onChangeText, testID, placeholder }),

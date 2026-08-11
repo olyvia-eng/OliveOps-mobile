@@ -65,7 +65,6 @@ jest.mock('expo-image-picker', () => ({
   requestMediaLibraryPermissionsAsync: jest.fn().mockResolvedValue({ granted: true }),
   launchCameraAsync: jest.fn().mockResolvedValue({ canceled: true, assets: [] }),
   launchImageLibraryAsync: jest.fn().mockResolvedValue({ canceled: true, assets: [] }),
-  MediaTypeOptions: { Images: 'Images' },
 }));
 
 jest.mock('@/hooks/useClockingActions', () => ({
@@ -115,7 +114,10 @@ jest.mock('@/components/PrimaryActionButton', () => ({
 jest.mock('react-native', () => {
   const React = require('react');
   return {
+    NativeModules: {},
+    Platform: { select: (values: any) => values.ios ?? values.default },
     StyleSheet: { create: (value: unknown) => value },
+    TurboModuleRegistry: { get: () => null },
     Alert: { alert: jest.fn() },
     ActivityIndicator: () => React.createElement('activity-indicator', {}),
     Image: () => React.createElement('image', {}),

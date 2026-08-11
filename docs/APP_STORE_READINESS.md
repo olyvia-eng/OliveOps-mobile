@@ -11,10 +11,10 @@ See also:
 
 - App name: `OliveOps Mobile`
 - Expo slug: `oliveops-mobile`
-- Expo SDK: `54`
+- Expo SDK: `57`
+- Required Node.js: `22.13.0` or newer
 - App version: `1.0.0`
-- iOS build-number seed: `1`
-- iOS bundle identifier: `ca.oliveops.mobile`
+- iOS bundle identifier: `ca.oliveops.app`
 - Android package: `ca.oliveops.mobile`
 - iPhone-only v1: `supportsTablet: false`
 - Custom URL scheme: not configured; current app flows do not require one
@@ -73,7 +73,7 @@ Production branding paths are configured in `app.json`. The approved iOS source 
 
 - `assets/icon.png`: configured as the global, iOS, and legacy Android icon.
 - `assets/adaptive-icon-foreground.png`: transparent Android adaptive foreground derived from the approved leaf.
-- `assets/splash-icon.png`: configured through the SDK 54 `expo-splash-screen` plugin.
+- `assets/splash-icon.png`: configured through the SDK 57 `expo-splash-screen` plugin.
 - `assets/fulllogo.png`: retained as the reusable high-resolution full OliveOps logo.
 - `assets/OliveOpsLogo.jpg`: retained because the Login screen still references it.
 - Old `android-icon-background.png`, `android-icon-foreground.png`, and `android-icon-monochrome.png` files remain in the repository but are no longer referenced by production configuration.
@@ -87,9 +87,9 @@ Production branding paths are configured in `app.json`. The approved iOS source 
 ### Splash Screen
 
 - `assets/splash-icon.png` is a 1024 x 1024 OliveOps logo/wordmark asset.
-- The SDK 54 `expo-splash-screen` config plugin uses `imageWidth: 300`, `resizeMode: contain`, and warm off-white `#F5EFE7`.
+- The SDK 57 `expo-splash-screen` config plugin uses `imageWidth: 300`, `resizeMode: contain`, and warm off-white `#F5EFE7`.
 - `contain` preserves the logo aspect ratio without cropping or stretching.
-- Configuration is ready. Verify final scale and background blending in a preview or production build because Expo Go and development clients cannot fully reproduce the native SDK 54 splash.
+- Configuration is ready. Verify final scale and background blending in a preview or production build because Expo Go and development clients cannot fully reproduce the native SDK 57 splash.
 
 ### Android Adaptive Icon
 
@@ -118,10 +118,10 @@ Production branding paths are configured in `app.json`. The approved iOS source 
 
 - [ ] Confirm the OliveOps Apple Developer Program membership is active and agreements are accepted.
 - [ ] Confirm the release operator has permission to manage identifiers, certificates, App Store Connect records, and TestFlight builds.
-- [ ] Register an explicit App ID for `ca.oliveops.mobile` under the correct OliveOps team.
+- [ ] Confirm the existing App ID for `ca.oliveops.app` remains registered under the correct OliveOps team.
 - [ ] Do not enable capabilities that the app does not use. Camera and photo-library access are privacy permissions, not App ID capabilities.
 - [ ] During the first production build, allow EAS to create or select the iOS distribution certificate and App Store provisioning profile, or deliberately select existing valid remote credentials.
-- [ ] Verify generated signing assets use `ca.oliveops.mobile` and the intended Apple team.
+- [ ] Verify generated signing assets use `ca.oliveops.app` and the intended Apple team.
 
 ## App Store Connect App Record
 
@@ -129,7 +129,7 @@ Production branding paths are configured in `app.json`. The approved iOS source 
 - [ ] App name: confirm availability of `OliveOps Mobile`; choose the final name manually if unavailable.
 - [ ] Primary language: select the language used by the listing and support process.
 - [ ] SKU: choose a unique internal identifier. It is not customer-facing and cannot be changed later.
-- [ ] Bundle ID: select the registered `ca.oliveops.mobile` identifier.
+- [ ] Bundle ID: select the registered `ca.oliveops.app` identifier.
 - [ ] Privacy Policy URL: `https://www.oliveops.ca/privacy`.
 - [ ] Support URL: provide a public HTTPS support page. The in-app `mailto:support@oliveops.ca` link does not satisfy this App Store Connect URL field, and no HTTPS support URL is currently documented.
 - [ ] Marketing URL: optional; provide only if an approved public page exists.

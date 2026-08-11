@@ -5,13 +5,19 @@ import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals
 jest.mock('react-native', () => {
   const ReactModule = require('react');
   return {
+    NativeModules: {},
+    Platform: { select: (values: any) => values.ios ?? values.default },
     StyleSheet: { create: (value: unknown) => value },
-    SafeAreaView: ({ children }: any) => ReactModule.createElement('safe-area', null, children),
+    TurboModuleRegistry: { get: () => null },
     View: ({ children }: any) => ReactModule.createElement('view', null, children),
     Text: ({ children }: any) => ReactModule.createElement('text', null, children),
     Pressable: ({ children, onPress }: any) => ReactModule.createElement('pressable', { onPress }, children),
   };
 });
+
+jest.mock('react-native-safe-area-context', () => ({
+  SafeAreaView: ({ children }: any) => require('react').createElement('safe-area', null, children),
+}));
 
 import { AppErrorBoundary } from '@/components/AppErrorBoundary';
 

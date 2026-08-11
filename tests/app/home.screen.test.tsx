@@ -95,7 +95,10 @@ jest.mock('@/components/PrimaryActionButton', () => ({
 jest.mock('react-native', () => {
   const React = require('react');
   return {
+    NativeModules: {},
+    Platform: { select: (values: any) => values.ios ?? values.default },
     StyleSheet: { create: (value: unknown) => value },
+    TurboModuleRegistry: { get: () => null },
     View: ({ children }: any) => React.createElement('view', {}, children),
     Text: ({ children }: any) => React.createElement('text', {}, children),
     Pressable: ({ children, onPress }: any) => React.createElement('pressable', { onPress }, children),

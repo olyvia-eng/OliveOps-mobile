@@ -21,6 +21,10 @@ jest.mock('@/components/OfflineNotice', () => ({
   OfflineNotice: () => require('react').createElement('offline-notice'),
 }));
 
+jest.mock('react-native-safe-area-context', () => ({
+  SafeAreaView: ({ children, ...props }: any) => require('react').createElement('safe-area-view', props, children),
+}));
+
 jest.mock('react-native', () => {
   const ReactModule = require('react');
   const container = (name: string) => ({ children, ...props }: any) =>
@@ -30,18 +34,19 @@ jest.mock('react-native', () => {
     Image: container('image'),
     Keyboard: { dismiss: jest.fn() },
     KeyboardAvoidingView: container('keyboard-avoiding-view'),
+    NativeModules: {},
     Platform: { select: (values: any) => values.ios },
     Pressable: ({ children, ...props }: any) => ReactModule.createElement(
       'pressable',
       props,
       typeof children === 'function' ? children({ pressed: false }) : children
     ),
-    SafeAreaView: container('safe-area-view'),
     ScrollView: container('scroll-view'),
     StyleSheet: { create: (value: unknown) => value },
     Text: container('text'),
     TextInput: container('text-input'),
     TouchableWithoutFeedback: container('touchable-without-feedback'),
+    TurboModuleRegistry: { get: () => null },
     View: container('view'),
   };
 });

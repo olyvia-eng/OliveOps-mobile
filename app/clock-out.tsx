@@ -144,14 +144,14 @@ export default function ClockOutScreen() {
     const result = source === 'camera'
       ? await ImagePicker.launchCameraAsync({
         allowsEditing: false,
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ['images'],
         quality: 0.8,
       })
       : await ImagePicker.launchImageLibraryAsync({
         allowsEditing: false,
         allowsMultipleSelection: true,
         selectionLimit: remainingSlots,
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ['images'],
         quality: 0.8,
       });
 
