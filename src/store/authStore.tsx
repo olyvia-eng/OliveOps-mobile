@@ -1,6 +1,8 @@
 import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
 import * as authApi from '@/api/authApi';
+import { DIAGNOSTIC_SKIP_SESSION_BOOTSTRAP } from '@/config/startupDiagnostics';
 import { clearStoredSession, readStoredSession, writeStoredSession } from '@/services/sessionStorage';
+import { recordStartupCheckpoint } from '@/services/startupDiagnostics';
 import type { SessionUser } from '@/types/domain';
 import { ApiError } from '@/types/errors';
 
@@ -53,53 +55,65 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [warning, setWarning] = useState<string | undefined>(undefined);
 
   const bootstrap = useCallback(async () => {
+    recordStartupCheckpoint('SESSION_BOOTSTRAP_START');
     setStatus('checking');
     setWarning(undefined);
 
-    let stored;
     try {
-      stored = await readStoredSession();
-    } catch {
-      setUser(null);
-      setAccessToken(undefined);
-      setWarning("We couldn't restore your secure session. Please try again.");
-      setStatus('error');
-      return;
-    }
-
-    setAccessToken(stored.accessToken);
-
-    if (!stored.accessToken) {
-      setStatus('unauthenticated');
-      return;
-    }
-
-    try {
-      const session = await authApi.getSession(stored.accessToken);
-      if (!session.user) {
-        await clearStoredSessionSafely();
+      if (DIAGNOSTIC_SKIP_SESSION_BOOTSTRAP) {
         setUser(null);
         setAccessToken(undefined);
-        setWarning('Session expired. Please log in again.');
         setStatus('unauthenticated');
         return;
       }
 
-      setUser(session.user);
-      setStatus('authenticated');
-    } catch (error) {
-      setUser(null);
-      if (isUnauthorizedError(error)) {
-        await clearStoredSessionSafely();
+      let stored;
+      try {
+        stored = await readStoredSession();
+      } catch {
+        setUser(null);
         setAccessToken(undefined);
-        setWarning('Session expired. Please log in again.');
-        setStatus('unauthenticated');
+        setWarning("We couldn't restore your secure session. Please try again.");
+        setStatus('error');
         return;
       }
 
       setAccessToken(stored.accessToken);
-      setWarning("We couldn't verify your session. Check your connection and try again.");
-      setStatus('error');
+
+      if (!stored.accessToken) {
+        setStatus('unauthenticated');
+        return;
+      }
+
+      try {
+        const session = await authApi.getSession(stored.accessToken);
+        if (!session.user) {
+          await clearStoredSessionSafely();
+          setUser(null);
+          setAccessToken(undefined);
+          setWarning('Session expired. Please log in again.');
+          setStatus('unauthenticated');
+          return;
+        }
+
+        setUser(session.user);
+        setStatus('authenticated');
+      } catch (error) {
+        setUser(null);
+        if (isUnauthorizedError(error)) {
+          await clearStoredSessionSafely();
+          setAccessToken(undefined);
+          setWarning('Session expired. Please log in again.');
+          setStatus('unauthenticated');
+          return;
+        }
+
+        setAccessToken(stored.accessToken);
+        setWarning("We couldn't verify your session. Check your connection and try again.");
+        setStatus('error');
+      }
+    } finally {
+      recordStartupCheckpoint('AUTH_BOOTSTRAP_COMPLETE');
     }
   }, []);
 

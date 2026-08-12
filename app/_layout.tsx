@@ -2,9 +2,14 @@ import { Stack } from 'expo-router';
 import { AppErrorBoundary } from '@/components/AppErrorBoundary';
 import { AuthProvider } from '@/store/authStore';
 import { ClockingProvider } from '@/store/clockingStore';
+import { recordStartupCheckpoint } from '@/services/startupDiagnostics';
 import { colors } from '@/theme/colors';
 
+recordStartupCheckpoint('ROOT_LAYOUT_MODULE_LOADED');
+
 export default function RootLayout() {
+  recordStartupCheckpoint('ROOT_LAYOUT_RENDER');
+
   return (
     <AppErrorBoundary>
       <AuthProvider>
