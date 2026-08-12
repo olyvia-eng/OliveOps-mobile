@@ -1,4 +1,4 @@
-# OliveOps Mobile App Store Privacy Inventory
+# OliveOps App Store Privacy Inventory
 
 This is a code-observed worksheet for completing App Store Connect privacy questions. It is not legal advice. Confirm retention, backend processing, subprocessors, deletion practices, and policy language with OliveOps privacy and backend owners before publishing answers.
 

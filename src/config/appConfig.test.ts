@@ -4,6 +4,7 @@ import { describe, expect, it } from '@jest/globals';
 
 type ExpoConfig = {
   expo: {
+    name: string;
     ios: {
       bundleIdentifier: string;
       supportsTablet: boolean;
@@ -38,6 +39,7 @@ function readPngMetadata(relativePath: string) {
 
 describe('release app config', () => {
   it('keeps production identifiers and compliance settings explicit', () => {
+    expect(config.expo.name).toBe('OliveOps');
     expect(config.expo.ios.bundleIdentifier).toBe('ca.oliveops.app');
     expect(config.expo.android.package).toBe('ca.oliveops.mobile');
     expect(config.expo.ios).not.toHaveProperty('buildNumber');

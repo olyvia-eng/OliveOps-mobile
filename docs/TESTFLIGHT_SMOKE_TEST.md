@@ -1,4 +1,4 @@
-# OliveOps Mobile TestFlight Smoke Test
+# OliveOps TestFlight Smoke Test
 
 Run this checklist against a production-profile build installed from TestFlight on physical iPhones. Do not use Expo Go for release acceptance.
 
@@ -26,7 +26,7 @@ Prepare synthetic data only.
 
 ## Install and Cold Launch
 
-- [ ] Install or update OliveOps Mobile from TestFlight.
+- [ ] Install or update OliveOps from TestFlight.
 - [ ] Confirm the app name and approved icon are correct.
 - [ ] Cold-launch after force-closing the app.
 - [ ] Confirm the launch screen uses approved branding with no Expo placeholder.

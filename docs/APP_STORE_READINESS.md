@@ -1,4 +1,4 @@
-# OliveOps Mobile App Store Readiness
+# OliveOps App Store Readiness
 
 This checklist prepares the managed Expo app for its first production EAS iOS build and TestFlight workflow. App Store listing content belongs in App Store Connect, not `app.json`.
 
@@ -9,7 +9,7 @@ See also:
 
 ## Verified Release Configuration
 
-- App name: `OliveOps Mobile`
+- App name and home-screen label: `OliveOps`
 - Expo slug: `oliveops-mobile`
 - Expo SDK: `57`
 - Required Node.js: `22.13.0` or newer
@@ -101,6 +101,7 @@ Production branding paths are configured in `app.json`. The approved iOS source 
 
 ## Runtime Resilience
 
+- Temporary native-shell isolation: set `EXPO_PUBLIC_DIAGNOSTIC_MINIMAL_BOOT=true` to bypass Expo Router and all OliveOps route/application imports and show only a static React Native diagnostic screen. The default is `false`; remove this entry branch after the launch crash is isolated.
 - SecureStore restoration finishes before startup redirects, preventing a Login flash for restorable sessions.
 - Temporary TestFlight isolation: set `EXPO_PUBLIC_DIAGNOSTIC_SKIP_SESSION_BOOTSTRAP=true` to skip the initial SecureStore read and API session validation and route directly to Login. The default is `false`; remove this flag after the startup crash is identified.
 - Startup checkpoints use fixed names and never include credentials, stored session values, API responses, or personal data.
@@ -128,7 +129,7 @@ Production branding paths are configured in `app.json`. The approved iOS source 
 ## App Store Connect App Record
 
 - [ ] Create the iOS app record under the correct provider/team.
-- [ ] App name: confirm availability of `OliveOps Mobile`; choose the final name manually if unavailable.
+- [ ] App name: confirm availability of `OliveOps`; choose the final name manually if unavailable.
 - [ ] Primary language: select the language used by the listing and support process.
 - [ ] SKU: choose a unique internal identifier. It is not customer-facing and cannot be changed later.
 - [ ] Bundle ID: select the registered `ca.oliveops.app` identifier.
