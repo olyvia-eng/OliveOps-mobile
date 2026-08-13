@@ -16,6 +16,9 @@
     "production": {
       "distribution": "store",
       "environment": "production",
+      "env": {
+        "EXPO_PUBLIC_DIAGNOSTIC_NATIVE_STARTUP": "true"
+      },
       "autoIncrement": true
     }
   },
