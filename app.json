@@ -54,7 +54,8 @@
           "organization": "oliveops",
           "project": "oliveops-mobile"
         }
-      ]
+      ],
+      "./plugins/withSentryNativeInit"
     ],
     "extra": {
       "router": {},
