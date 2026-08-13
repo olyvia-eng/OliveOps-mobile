@@ -1,6 +1,6 @@
-const { getDefaultConfig } = require('expo/metro-config');
+const { getSentryExpoConfig } = require('@sentry/react-native/metro');
 
-const config = getDefaultConfig(__dirname);
+const config = getSentryExpoConfig(__dirname);
 
 // Keep test tooling and test sources out of runtime resolution for Expo/Hermes bundles.
 config.resolver.blockList = [

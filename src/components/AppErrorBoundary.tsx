@@ -1,6 +1,7 @@
 import React, { Component, type ErrorInfo, type ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as Sentry from '@sentry/react-native';
 import { colors } from '@/theme/colors';
 
 type Props = {
@@ -19,6 +20,12 @@ export class AppErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
+    Sentry.captureException(error, {
+      contexts: {
+        react: { componentStack: info.componentStack },
+      },
+    });
+
     if (__DEV__) {
       console.error('Unexpected app render error.', error, info.componentStack);
     }

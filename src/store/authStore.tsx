@@ -1,8 +1,6 @@
 import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
 import * as authApi from '@/api/authApi';
-import { DIAGNOSTIC_SKIP_SESSION_BOOTSTRAP } from '@/config/startupDiagnostics';
 import { clearStoredSession, readStoredSession, writeStoredSession } from '@/services/sessionStorage';
-import { recordStartupCheckpoint } from '@/services/startupDiagnostics';
 import type { SessionUser } from '@/types/domain';
 import { ApiError } from '@/types/errors';
 
@@ -55,18 +53,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [warning, setWarning] = useState<string | undefined>(undefined);
 
   const bootstrap = useCallback(async () => {
-    recordStartupCheckpoint('SESSION_BOOTSTRAP_START');
     setStatus('checking');
     setWarning(undefined);
 
     try {
-      if (DIAGNOSTIC_SKIP_SESSION_BOOTSTRAP) {
-        setUser(null);
-        setAccessToken(undefined);
-        setStatus('unauthenticated');
-        return;
-      }
-
       let stored;
       try {
         stored = await readStoredSession();
@@ -113,7 +103,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setStatus('error');
       }
     } finally {
-      recordStartupCheckpoint('AUTH_BOOTSTRAP_COMPLETE');
+      // Bootstrap state is resolved in each success and failure branch.
     }
   }, []);
 

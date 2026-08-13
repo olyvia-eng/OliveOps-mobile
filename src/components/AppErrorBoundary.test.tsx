@@ -19,6 +19,11 @@ jest.mock('react-native-safe-area-context', () => ({
   SafeAreaView: ({ children }: any) => require('react').createElement('safe-area', null, children),
 }));
 
+jest.mock('@sentry/react-native', () => ({
+  captureException: jest.fn(),
+  wrap: (component: unknown) => component,
+}));
+
 import { AppErrorBoundary } from '@/components/AppErrorBoundary';
 
 describe('AppErrorBoundary', () => {

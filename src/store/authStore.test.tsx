@@ -6,7 +6,6 @@ import { ApiError } from '@/types/errors';
 const mockGetSession = jest.fn();
 const mockReadStoredSession = jest.fn();
 const mockClearStoredSession = jest.fn();
-let mockSkipSessionBootstrap = false;
 
 jest.mock('@/api/authApi', () => ({
   getSession: (...args: unknown[]) => mockGetSession(...args),
@@ -18,16 +17,6 @@ jest.mock('@/services/sessionStorage', () => ({
   readStoredSession: () => mockReadStoredSession(),
   clearStoredSession: () => mockClearStoredSession(),
   writeStoredSession: jest.fn(),
-}));
-
-jest.mock('@/config/startupDiagnostics', () => ({
-  get DIAGNOSTIC_SKIP_SESSION_BOOTSTRAP() {
-    return mockSkipSessionBootstrap;
-  },
-}));
-
-jest.mock('@/services/startupDiagnostics', () => ({
-  recordStartupCheckpoint: jest.fn(),
 }));
 
 import { AuthProvider, useAuthStore } from '@/store/authStore';
@@ -48,7 +37,6 @@ describe('AuthProvider bootstrap', () => {
   let tree: ReactTestRenderer;
 
   beforeEach(async () => {
-    mockSkipSessionBootstrap = false;
     mockGetSession.mockReset();
     mockReadStoredSession.mockReset();
     mockClearStoredSession.mockReset();
@@ -70,18 +58,6 @@ describe('AuthProvider bootstrap', () => {
 
     expect(tree.root.findByType('auth-probe').props.status).toBe('unauthenticated');
     expect(mockReadStoredSession).toHaveBeenCalledTimes(1);
-    expect(mockGetSession).not.toHaveBeenCalled();
-  });
-
-  it('bypasses storage and API validation when startup diagnostics request it', async () => {
-    mockSkipSessionBootstrap = true;
-
-    await act(async () => {
-      await currentAuth.bootstrap();
-    });
-
-    expect(tree.root.findByType('auth-probe').props.status).toBe('unauthenticated');
-    expect(mockReadStoredSession).not.toHaveBeenCalled();
     expect(mockGetSession).not.toHaveBeenCalled();
   });
 

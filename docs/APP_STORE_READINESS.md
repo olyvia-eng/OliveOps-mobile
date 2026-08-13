@@ -101,9 +101,7 @@ Production branding paths are configured in `app.json`. The approved iOS source 
 
 ## Runtime Resilience
 
-- Temporary native-shell isolation: set `EXPO_PUBLIC_DIAGNOSTIC_MINIMAL_BOOT=true` to bypass Expo Router and all OliveOps route/application imports and show only a static React Native diagnostic screen. The default is `false`; remove this entry branch after the launch crash is isolated.
 - SecureStore restoration finishes before startup redirects, preventing a Login flash for restorable sessions.
-- Temporary TestFlight isolation: set `EXPO_PUBLIC_DIAGNOSTIC_SKIP_SESSION_BOOTSTRAP=true` to skip the initial SecureStore read and API session validation and route directly to Login. The default is `false`; remove this flag after the startup crash is identified.
 - Startup checkpoints use fixed names and never include credentials, stored session values, API responses, or personal data.
 - Confirmed expired or invalid sessions are cleared and routed safely to Login.
 - Transient network, backend, or SecureStore verification failures show a retryable startup state rather than deleting a potentially valid session.

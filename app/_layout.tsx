@@ -1,15 +1,11 @@
 import { Stack } from 'expo-router';
+import * as Sentry from '@sentry/react-native';
 import { AppErrorBoundary } from '@/components/AppErrorBoundary';
 import { AuthProvider } from '@/store/authStore';
 import { ClockingProvider } from '@/store/clockingStore';
-import { recordStartupCheckpoint } from '@/services/startupDiagnostics';
 import { colors } from '@/theme/colors';
 
-recordStartupCheckpoint('ROOT_LAYOUT_MODULE_LOADED');
-
-export default function RootLayout() {
-  recordStartupCheckpoint('ROOT_LAYOUT_RENDER');
-
+function RootLayout() {
   return (
     <AppErrorBoundary>
       <AuthProvider>
@@ -40,3 +36,5 @@ export default function RootLayout() {
     </AppErrorBoundary>
   );
 }
+
+export default Sentry.wrap(RootLayout);

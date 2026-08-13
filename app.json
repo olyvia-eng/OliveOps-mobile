@@ -46,7 +46,15 @@
           "microphonePermission": false
         }
       ],
-      "expo-status-bar"
+      "expo-status-bar",
+      [
+        "@sentry/react-native/expo",
+        {
+          "url": "https://sentry.io/",
+          "organization": "oliveops",
+          "project": "oliveops-mobile"
+        }
+      ]
     ],
     "extra": {
       "router": {},

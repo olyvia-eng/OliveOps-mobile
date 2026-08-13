@@ -4,11 +4,9 @@ import { PrimaryActionButton } from '@/components/PrimaryActionButton';
 import { Screen } from '@/components/Screen';
 import { StatusBanner } from '@/components/StatusBanner';
 import { useSessionBootstrap } from '@/hooks/useSessionBootstrap';
-import { recordStartupCheckpoint } from '@/services/startupDiagnostics';
 import { useAuthStore } from '@/store/authStore';
 
 export default function IndexScreen() {
-  recordStartupCheckpoint('INDEX_RENDER');
   useSessionBootstrap();
   const { bootstrap, status, warning } = useAuthStore();
 

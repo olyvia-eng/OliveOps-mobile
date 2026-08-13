@@ -1,5 +1,4 @@
 import * as SecureStore from 'expo-secure-store';
-import { recordStartupCheckpoint } from '@/services/startupDiagnostics';
 
 const ACCESS_TOKEN_KEY = 'oliveops.accessToken';
 const REFRESH_TOKEN_KEY = 'oliveops.refreshToken';
@@ -28,24 +27,15 @@ async function runSecureStoreOperation<T>(
 }
 
 export async function readStoredSession(): Promise<StoredSession> {
-  recordStartupCheckpoint('SECURE_STORE_READ_START');
+  const [accessToken, refreshToken] = await Promise.all([
+    runSecureStoreOperation('read', () => SecureStore.getItemAsync(ACCESS_TOKEN_KEY)),
+    runSecureStoreOperation('read', () => SecureStore.getItemAsync(REFRESH_TOKEN_KEY)),
+  ]);
 
-  try {
-    const [accessToken, refreshToken] = await Promise.all([
-      runSecureStoreOperation('read', () => SecureStore.getItemAsync(ACCESS_TOKEN_KEY)),
-      runSecureStoreOperation('read', () => SecureStore.getItemAsync(REFRESH_TOKEN_KEY)),
-    ]);
-
-    recordStartupCheckpoint('SECURE_STORE_READ_SUCCESS');
-
-    return {
-      accessToken: accessToken || undefined,
-      refreshToken: refreshToken || undefined,
-    };
-  } catch (error) {
-    recordStartupCheckpoint('SECURE_STORE_READ_FAILED');
-    throw error;
-  }
+  return {
+    accessToken: accessToken || undefined,
+    refreshToken: refreshToken || undefined,
+  };
 }
 
 export async function writeStoredSession(next: StoredSession): Promise<void> {
