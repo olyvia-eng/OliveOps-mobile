@@ -59,7 +59,8 @@
           "organization": "oliveops",
           "project": "oliveops-mobile"
         }
-      ]
+      ],
+      "./plugins/withDiagnosticPlainJsBundle"
     ],
     "extra": {
       "router": {},
