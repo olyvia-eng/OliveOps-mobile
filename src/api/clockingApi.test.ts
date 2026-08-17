@@ -33,6 +33,59 @@ describe('clockingApi', () => {
     expect(payload.timeEntries?.[0]?.employeeId).toBe('emp-1');
   });
 
+  it('shares one in-flight bootstrap request for simultaneous callers', async () => {
+    let resolveFetch!: (response: any) => void;
+    const pendingFetch = new Promise<any>((resolve) => {
+      resolveFetch = resolve;
+    });
+    const fetchMock = jest.fn().mockReturnValue(pendingFetch);
+    (global as any).fetch = fetchMock;
+
+    const first = loadBootstrap('token-1');
+    const second = loadBootstrap('token-1');
+    const third = loadBootstrap('token-1');
+
+    expect(first).toBe(second);
+    expect(second).toBe(third);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    resolveFetch(mockResponse(200, { ok: true, jobs: [] }));
+    await expect(Promise.all([first, second, third])).resolves.toEqual([
+      { ok: true, jobs: [] },
+      { ok: true, jobs: [] },
+      { ok: true, jobs: [] },
+    ]);
+
+    await loadBootstrap('token-1');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('clears a failed bootstrap request and keeps sessions isolated', async () => {
+    let rejectFetch!: (error: Error) => void;
+    const pendingFetch = new Promise<any>((_resolve, reject) => {
+      rejectFetch = reject;
+    });
+    const fetchMock = jest.fn()
+      .mockReturnValueOnce(pendingFetch)
+      .mockResolvedValue(mockResponse(200, { ok: true, jobs: [] }));
+    (global as any).fetch = fetchMock;
+
+    const first = loadBootstrap('token-1');
+    const shared = loadBootstrap('token-1');
+    const otherSession = loadBootstrap('token-2');
+
+    expect(first).toBe(shared);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await expect(otherSession).resolves.toEqual({ ok: true, jobs: [] });
+
+    rejectFetch(new Error('network unavailable'));
+    await expect(first).rejects.toThrow('network unavailable');
+    await expect(shared).rejects.toThrow('network unavailable');
+
+    await loadBootstrap('token-1');
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
   it('submits clock-in successfully', async () => {
     (global as any).fetch = jest.fn().mockResolvedValue(
       mockResponse(200, {

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
 import type { ActivityConfig } from '@/types/api';
 import type { Job, TimeCorrectionRequest, TimeEntry, UnbillableCategory } from '@/types/domain';
 
@@ -50,14 +50,14 @@ export function ClockingProvider({ children }: { children: React.ReactNode }) {
   });
   const [activityConfigs, setActivityConfigs] = useState<ActivityConfig[] | undefined>(undefined);
 
-  function setActiveShiftWarnings(next?: Partial<ActiveShiftWarnings>) {
+  const setActiveShiftWarnings = useCallback((next?: Partial<ActiveShiftWarnings>) => {
     setActiveShiftWarningsState({
       possibleForgottenClockOut: next?.possibleForgottenClockOut === true,
       thresholdHours: Number.isFinite(next?.thresholdHours) ? Math.max(1, Number(next?.thresholdHours)) : 12,
     });
-  }
+  }, []);
 
-  function upsertTimeEntry(entry: TimeEntry) {
+  const upsertTimeEntry = useCallback((entry: TimeEntry) => {
     setTimeEntries((current) => {
       const exists = current.some((item) => item.id === entry.id);
       if (exists) {
@@ -65,22 +65,22 @@ export function ClockingProvider({ children }: { children: React.ReactNode }) {
       }
       return [entry, ...current];
     });
-  }
+  }, []);
 
-  function setUnbillableCategories(items: UnbillableCategory[], businessId: string) {
+  const setUnbillableCategories = useCallback((items: UnbillableCategory[], businessId: string) => {
     setUnbillableCategoriesState(items);
     setUnbillableCategoriesBusinessId(businessId);
     setUnbillableCategoriesLoadedAt(Date.now());
     setUnbillableCategoriesError(null);
-  }
+  }, []);
 
-  function resetUnbillableCategories() {
+  const resetUnbillableCategories = useCallback(() => {
     setUnbillableCategoriesState([]);
     setUnbillableCategoriesLoading(false);
     setUnbillableCategoriesError(null);
     setUnbillableCategoriesLoadedAt(null);
     setUnbillableCategoriesBusinessId(null);
-  }
+  }, []);
 
   const value = useMemo<ClockingState>(
     () => ({
@@ -112,6 +112,9 @@ export function ClockingProvider({ children }: { children: React.ReactNode }) {
       activityConfigs,
       currentActiveEntryId,
       jobs,
+      resetUnbillableCategories,
+      setActiveShiftWarnings,
+      setUnbillableCategories,
       timeCorrections,
       timeEntries,
       unbillableCategories,
@@ -119,6 +122,7 @@ export function ClockingProvider({ children }: { children: React.ReactNode }) {
       unbillableCategoriesError,
       unbillableCategoriesLoadedAt,
       unbillableCategoriesLoading,
+      upsertTimeEntry,
     ]
   );
 

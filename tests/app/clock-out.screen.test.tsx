@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 
 const mockClockOut = jest.fn();
 const mockRefresh = jest.fn().mockResolvedValue({ ok: true });
+let activeShiftClosed = false;
 
 const mockUseClockingActions = jest.fn(() => ({
   clockOut: mockClockOut,
@@ -25,8 +26,8 @@ const mockUseAuthStore = jest.fn(() => ({
 }));
 
 const mockUseClockingStore = jest.fn(() => ({
-  currentActiveEntryId: 'entry-1',
-  timeEntries: [
+  currentActiveEntryId: activeShiftClosed ? null : 'entry-1',
+  timeEntries: activeShiftClosed ? [] : [
     {
       id: 'entry-2',
       employeeId: 'emp-1',
@@ -137,6 +138,7 @@ import { completeUpload, deleteUploadedFile, prepareUpload, uploadUriToS3 } from
 
 describe('ClockOutScreen', () => {
   beforeEach(() => {
+    activeShiftClosed = false;
     (Alert.alert as jest.Mock).mockReset();
     (router.replace as jest.Mock).mockReset();
     mockClockOut.mockReset();
@@ -154,6 +156,33 @@ describe('ClockOutScreen', () => {
       ok: true,
       blob: async () => ({ size: 1024 }),
     });
+  });
+
+  it('does not flash the no-active-shift banner after successful clock-out', async () => {
+    mockClockOut.mockImplementation(async () => {
+      activeShiftClosed = true;
+      return { ok: true };
+    });
+    (Alert.alert as jest.Mock).mockImplementation((_title: string, _message: string, actions: Array<{ onPress?: () => void }>) => {
+      actions?.[1]?.onPress?.();
+    });
+
+    let tree: any;
+    await act(async () => {
+      tree = create(React.createElement(ClockOutScreen));
+    });
+
+    const confirm = tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Clock Out');
+    await act(async () => {
+      confirm.props.onPress();
+    });
+
+    const noShiftBanners = tree.root.findAllByType('status-banner').filter(
+      (node: any) => node.props.message === 'No active shift found. Refresh and try again.'
+    );
+    expect(noShiftBanners).toHaveLength(0);
+    expect(mockClockOut).toHaveBeenCalledTimes(1);
+    expect(router.replace).toHaveBeenCalledWith('/home');
   });
 
   it('shows offline notice and keeps confirm enabled when active shift exists', async () => {

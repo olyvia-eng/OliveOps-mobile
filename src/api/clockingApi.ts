@@ -9,11 +9,33 @@ import type {
 } from '@/types/api';
 import type { TimeEntry } from '@/types/domain';
 
-export async function loadBootstrap(accessToken?: string): Promise<BootstrapResponse> {
-  return apiRequest<BootstrapResponse>(ENDPOINTS.bootstrap, {
+const bootstrapRequests = new Map<string, Promise<BootstrapResponse>>();
+
+export function loadBootstrap(accessToken?: string): Promise<BootstrapResponse> {
+  const requestKey = accessToken ?? '';
+  const inFlightRequest = bootstrapRequests.get(requestKey);
+  if (inFlightRequest) return inFlightRequest;
+
+  const request = apiRequest<BootstrapResponse>(ENDPOINTS.bootstrap, {
     method: 'GET',
     accessToken,
   });
+
+  bootstrapRequests.set(requestKey, request);
+  void request.then(
+    () => {
+      if (bootstrapRequests.get(requestKey) === request) {
+        bootstrapRequests.delete(requestKey);
+      }
+    },
+    () => {
+      if (bootstrapRequests.get(requestKey) === request) {
+        bootstrapRequests.delete(requestKey);
+      }
+    }
+  );
+
+  return request;
 }
 
 export async function clockIn(payload: ClockInRequest, accessToken?: string): Promise<{ ok: boolean; timeEntry: TimeEntry }> {

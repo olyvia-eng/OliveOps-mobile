@@ -60,6 +60,7 @@ export default function ClockOutScreen() {
   const [retryMeta, setRetryMeta] = useState<{ requestId: string; idempotencyKey: string } | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [navigatingAfterSuccess, setNavigatingAfterSuccess] = useState(false);
   const attachmentsRef = useRef<PhotoAttachment[]>([]);
   const submittedRef = useRef(false);
   const cleanedFileIdsRef = useRef<Set<string>>(new Set());
@@ -337,6 +338,7 @@ export default function ClockOutScreen() {
     setRetryMeta(null);
     submittedRef.current = true;
     setSuccess('Clock-out submitted successfully.');
+    setNavigatingAfterSuccess(true);
     router.replace('/home');
   }
 
@@ -426,7 +428,7 @@ export default function ClockOutScreen() {
 
       {success ? <StatusBanner tone="success" message={success} /> : null}
       {error ? <StatusBanner tone="error" message={error} /> : null}
-      {!activeEntry ? <StatusBanner tone="info" message="No active shift found. Refresh and try again." /> : null}
+      {!activeEntry && !navigatingAfterSuccess ? <StatusBanner tone="info" message="No active shift found. Refresh and try again." /> : null}
 
       <PrimaryActionButton
         label={loading ? 'Clocking out...' : 'Clock Out'}
