@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 
 const mockClockOut = jest.fn();
 const mockRefresh = jest.fn().mockResolvedValue({ ok: true });
+const mockOpenSettings = jest.fn().mockResolvedValue(undefined);
 let activeShiftClosed = false;
 
 const mockUseClockingActions = jest.fn(() => ({
@@ -119,6 +120,7 @@ jest.mock('react-native', () => {
     Platform: { select: (values: any) => values.ios ?? values.default },
     StyleSheet: { create: (value: unknown) => value },
     TurboModuleRegistry: { get: () => null },
+    Linking: { openSettings: (...args: unknown[]) => mockOpenSettings(...args) },
     Alert: { alert: jest.fn() },
     ActivityIndicator: () => React.createElement('activity-indicator', {}),
     Image: () => React.createElement('image', {}),
@@ -149,6 +151,7 @@ describe('ClockOutScreen', () => {
     (deleteUploadedFile as jest.Mock).mockReset();
     (ImagePicker.requestCameraPermissionsAsync as jest.Mock).mockReset();
     (ImagePicker.requestCameraPermissionsAsync as jest.Mock).mockResolvedValue({ granted: true });
+    mockOpenSettings.mockClear();
     (ImagePicker.requestMediaLibraryPermissionsAsync as jest.Mock).mockReset();
     (ImagePicker.launchCameraAsync as jest.Mock).mockReset();
     (ImagePicker.launchImageLibraryAsync as jest.Mock).mockReset();
@@ -378,6 +381,34 @@ describe('ClockOutScreen', () => {
       ['file-1', 'file-2', 'file-3', 'file-4', 'file-5'],
       { requestId: 'req-2', idempotencyKey: 'key-2' }
     );
+  });
+
+  it('offers app settings when camera permission cannot be requested again', async () => {
+    (ImagePicker.requestCameraPermissionsAsync as jest.Mock).mockResolvedValue({
+      granted: false,
+      canAskAgain: false,
+    });
+    (Alert.alert as jest.Mock).mockImplementation((title: string, _message: string, actions: Array<{ onPress?: () => void }>) => {
+      if (title === 'Add Photo') actions?.[0]?.onPress?.();
+    });
+
+    let tree: any;
+    await act(async () => {
+      tree = create(React.createElement(ClockOutScreen));
+    });
+    const addPhoto = tree.root.findAllByType('pressable').find((node: any) =>
+      (node.children ?? []).some((child: any) => child?.props?.children === 'Add Photo')
+    );
+    await act(async () => {
+      addPhoto.props.onPress();
+    });
+
+    const openSettings = tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Open Settings');
+    expect(openSettings).toBeTruthy();
+    await act(async () => {
+      openSettings.props.onPress();
+    });
+    expect(mockOpenSettings).toHaveBeenCalledTimes(1);
   });
 
   it('deletes uploaded unsaved attachment when removed', async () => {

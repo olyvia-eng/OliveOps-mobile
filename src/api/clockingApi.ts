@@ -11,9 +11,12 @@ import type { TimeEntry } from '@/types/domain';
 
 const bootstrapRequests = new Map<string, Promise<BootstrapResponse>>();
 
-export function loadBootstrap(accessToken?: string): Promise<BootstrapResponse> {
+export function loadBootstrap(
+  accessToken?: string,
+  options: { force?: boolean } = {},
+): Promise<BootstrapResponse> {
   const requestKey = accessToken ?? '';
-  const inFlightRequest = bootstrapRequests.get(requestKey);
+  const inFlightRequest = options.force ? undefined : bootstrapRequests.get(requestKey);
   if (inFlightRequest) return inFlightRequest;
 
   const request = apiRequest<BootstrapResponse>(ENDPOINTS.bootstrap, {
@@ -21,15 +24,17 @@ export function loadBootstrap(accessToken?: string): Promise<BootstrapResponse> 
     accessToken,
   });
 
-  bootstrapRequests.set(requestKey, request);
+  if (!options.force) {
+    bootstrapRequests.set(requestKey, request);
+  }
   void request.then(
     () => {
-      if (bootstrapRequests.get(requestKey) === request) {
+      if (!options.force && bootstrapRequests.get(requestKey) === request) {
         bootstrapRequests.delete(requestKey);
       }
     },
     () => {
-      if (bootstrapRequests.get(requestKey) === request) {
+      if (!options.force && bootstrapRequests.get(requestKey) === request) {
         bootstrapRequests.delete(requestKey);
       }
     }

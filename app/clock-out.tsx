@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Image, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, Linking, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { OfflineNotice } from '@/components/OfflineNotice';
@@ -60,6 +60,7 @@ export default function ClockOutScreen() {
   const [retryMeta, setRetryMeta] = useState<{ requestId: string; idempotencyKey: string } | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [permissionSettingsRequired, setPermissionSettingsRequired] = useState(false);
   const [navigatingAfterSuccess, setNavigatingAfterSuccess] = useState(false);
   const attachmentsRef = useRef<PhotoAttachment[]>([]);
   const submittedRef = useRef(false);
@@ -128,13 +129,26 @@ export default function ClockOutScreen() {
   }
 
   async function choosePhoto(source: 'camera' | 'library') {
+    try {
+      await choosePhotoFromSource(source);
+    } catch {
+      setError('Could not open that photo source. Check app permissions and try again.');
+    }
+  }
+
+  async function choosePhotoFromSource(source: 'camera' | 'library') {
     if (source === 'camera') {
       const permission = await ImagePicker.requestCameraPermissionsAsync();
       if (!permission.granted) {
-        setError('Camera permission is required to capture a clock-out photo.');
+        setPermissionSettingsRequired(permission.canAskAgain === false);
+        setError(permission.canAskAgain === false
+          ? 'Camera access is disabled. Open Settings to allow camera access.'
+          : 'Camera permission is required to capture a clock-out photo.');
         return;
       }
     }
+
+    setPermissionSettingsRequired(false);
 
     const remainingSlots = MAX_TIME_ENTRY_PHOTOS - attachments.length;
     if (remainingSlots <= 0) {
@@ -428,6 +442,13 @@ export default function ClockOutScreen() {
 
       {success ? <StatusBanner tone="success" message={success} /> : null}
       {error ? <StatusBanner tone="error" message={error} /> : null}
+      {permissionSettingsRequired ? (
+        <PrimaryActionButton
+          label="Open Settings"
+          disabled={loading}
+          onPress={() => { void Linking.openSettings(); }}
+        />
+      ) : null}
       {!activeEntry && !navigatingAfterSuccess ? <StatusBanner tone="info" message="No active shift found. Refresh and try again." /> : null}
 
       <PrimaryActionButton

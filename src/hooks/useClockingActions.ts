@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import * as clockingApi from '@/api/clockingApi';
 import { scopeJobsForSession, scopeTimeEntriesForSession } from '@/features/clocking/scoping';
 import { beginRequest, createRequestMeta, endRequest } from '@/services/requestGuards';
@@ -9,7 +9,7 @@ import type { TimeEntryWorkType } from '@/types/domain';
 import { toUserFacingError } from '@/utils/userFacingError';
 
 export function useClockingActions() {
-  const { accessToken, user } = useAuthStore();
+  const { accessToken, status, user } = useAuthStore();
   const {
     upsertTimeEntry,
     setActiveShiftWarnings,
@@ -20,11 +20,27 @@ export function useClockingActions() {
     setTimeEntries,
   } = useClockingStore();
   const [loading, setLoading] = useState(false);
+  const authIdentity = status === 'authenticated' && user
+    ? `${user.businessId}:${user.id}:${user.employeeId ?? ''}:${accessToken ?? ''}`
+    : '';
+  const currentAuthIdentityRef = useRef(authIdentity);
+  const latestBootstrapGenerationRef = useRef(0);
+  currentAuthIdentityRef.current = authIdentity;
 
-  async function syncWorkContextFromBootstrap() {
+  async function syncWorkContextFromBootstrap(force = false) {
     if (!user) return;
 
-    const payload = await clockingApi.loadBootstrap(accessToken);
+    const requestAuthIdentity = authIdentity;
+    const generation = latestBootstrapGenerationRef.current + 1;
+    latestBootstrapGenerationRef.current = generation;
+    const payload = await clockingApi.loadBootstrap(accessToken, { force });
+    if (
+      currentAuthIdentityRef.current !== requestAuthIdentity
+      || latestBootstrapGenerationRef.current !== generation
+    ) {
+      return;
+    }
+
     setJobs(scopeJobsForSession(payload.jobs ?? [], user));
     setTimeEntries(scopeTimeEntriesForSession(payload.timeEntries ?? [], user));
     setTimeCorrections(payload.timeCorrections ?? []);
@@ -41,9 +57,9 @@ export function useClockingActions() {
       unbillableCategoryId?: string,
       requestMeta?: { requestId: string; idempotencyKey: string }
     ) {
-      const key = `clock-in:${employeeId}`;
+      const key = `clocking:${employeeId}`;
       if (!beginRequest(key)) {
-        return { ok: false, error: 'Clock-in already in progress.' };
+        return { ok: false, error: 'Another clocking action is already in progress.' };
       }
 
       setLoading(true);
@@ -66,6 +82,11 @@ export function useClockingActions() {
 
         upsertTimeEntry(result.timeEntry);
         setCurrentActiveEntryId(result.timeEntry.id);
+        try {
+          await syncWorkContextFromBootstrap(true);
+        } catch {
+          // Preserve successful clock-in even if reconciliation fails.
+        }
         return { ok: true };
       } catch (error) {
         return {
@@ -84,9 +105,9 @@ export function useClockingActions() {
       photoAttachmentFileIds?: string[],
       requestMeta?: { requestId: string; idempotencyKey: string }
     ) {
-      const key = `clock-out:${entryId}`;
+      const key = `clocking:${user?.employeeId ?? entryId}`;
       if (!beginRequest(key)) {
-        return { ok: false, error: 'Clock-out already in progress.' };
+        return { ok: false, error: 'Another clocking action is already in progress.' };
       }
 
       setLoading(true);
@@ -113,7 +134,7 @@ export function useClockingActions() {
           upsertTimeEntry(result.timeEntry);
           setCurrentActiveEntryId(null);
           try {
-            await syncWorkContextFromBootstrap();
+            await syncWorkContextFromBootstrap(true);
           } catch {
             // Preserve successful clock-out even if refresh fails.
           }
@@ -142,9 +163,9 @@ export function useClockingActions() {
         return { ok: false, error: 'Employee profile is not linked to this account.' };
       }
 
-      const key = `switch-activity:${employeeId}`;
+      const key = `clocking:${employeeId}`;
       if (!beginRequest(key)) {
-        return { ok: false, error: 'Switch activity already in progress.' };
+        return { ok: false, error: 'Another clocking action is already in progress.' };
       }
 
       setLoading(true);
@@ -167,7 +188,7 @@ export function useClockingActions() {
         upsertTimeEntry(result.timeEntry);
         setCurrentActiveEntryId(result.timeEntry.id);
         try {
-          await syncWorkContextFromBootstrap();
+          await syncWorkContextFromBootstrap(true);
         } catch {
           // Preserve successful switch even if refresh fails.
         }
@@ -202,6 +223,7 @@ export function useClockingActions() {
     },
   }), [
     accessToken,
+    authIdentity,
     setActivityConfigs,
     setActiveShiftWarnings,
     setCurrentActiveEntryId,

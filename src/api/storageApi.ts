@@ -1,6 +1,10 @@
 import { ENDPOINTS } from '@/api/endpoints';
 import { apiRequest } from '@/api/client';
+import { fetchWithTimeout } from '@/services/fetchWithTimeout';
 import type { PrepareUploadRequest, PrepareUploadResponse } from '@/types/api';
+
+const FILE_READ_TIMEOUT_MS = 30_000;
+const UPLOAD_TIMEOUT_MS = 90_000;
 
 export async function prepareUpload(payload: PrepareUploadRequest, accessToken?: string): Promise<PrepareUploadResponse> {
   return apiRequest<PrepareUploadResponse>(ENDPOINTS.storage, {
@@ -16,11 +20,11 @@ export async function uploadToS3(uploadUrl: string, file: Blob, requiredHeaders?
     headers.set('Content-Type', file.type);
   }
 
-  const response = await fetch(uploadUrl, {
+  const response = await fetchWithTimeout(uploadUrl, {
     method: 'PUT',
     headers,
     body: file,
-  });
+  }, UPLOAD_TIMEOUT_MS);
 
   if (!response.ok) {
     throw new Error('Direct S3 upload failed.');
@@ -33,7 +37,7 @@ export async function uploadUriToS3(
   mimeType: string,
   requiredHeaders?: Record<string, string>
 ): Promise<void> {
-  const fileResponse = await fetch(fileUri);
+  const fileResponse = await fetchWithTimeout(fileUri, {}, FILE_READ_TIMEOUT_MS);
   if (!fileResponse.ok) {
     throw new Error('Could not read selected photo.');
   }

@@ -26,6 +26,8 @@ describe('timeCorrectionsApi', () => {
     );
 
     const response = await createTimeCorrection({
+      requestId: 'request-1',
+      idempotencyKey: 'correction-key-1',
       timeEntryId: 'entry-1',
       requestType: 'wrong_time',
       reason: 'Wrong end time',
@@ -38,6 +40,10 @@ describe('timeCorrectionsApi', () => {
         method: 'POST',
       }),
     );
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({
+      requestId: 'request-1',
+      idempotencyKey: 'correction-key-1',
+    });
   });
 
   it('lists my correction requests from backend list endpoint', async () => {

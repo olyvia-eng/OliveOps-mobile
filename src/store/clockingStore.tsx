@@ -1,4 +1,5 @@
-import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { useAuthStore } from '@/store/authStore';
 import type { ActivityConfig } from '@/types/api';
 import type { Job, TimeCorrectionRequest, TimeEntry, UnbillableCategory } from '@/types/domain';
 
@@ -30,11 +31,13 @@ type ClockingState = {
   setActiveShiftWarnings: (warnings?: Partial<ActiveShiftWarnings>) => void;
   setActivityConfigs: (configs?: ActivityConfig[]) => void;
   upsertTimeEntry: (entry: TimeEntry) => void;
+  resetClockingState: () => void;
 };
 
 const ClockingContext = createContext<ClockingState | undefined>(undefined);
 
 export function ClockingProvider({ children }: { children: React.ReactNode }) {
+  const { status, user } = useAuthStore();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [timeEntries, setTimeEntries] = useState<TimeEntry[]>([]);
   const [timeCorrections, setTimeCorrections] = useState<TimeCorrectionRequest[]>([]);
@@ -49,6 +52,7 @@ export function ClockingProvider({ children }: { children: React.ReactNode }) {
     thresholdHours: 12,
   });
   const [activityConfigs, setActivityConfigs] = useState<ActivityConfig[] | undefined>(undefined);
+  const previousIdentityRef = useRef<string | null>(null);
 
   const setActiveShiftWarnings = useCallback((next?: Partial<ActiveShiftWarnings>) => {
     setActiveShiftWarningsState({
@@ -82,6 +86,34 @@ export function ClockingProvider({ children }: { children: React.ReactNode }) {
     setUnbillableCategoriesBusinessId(null);
   }, []);
 
+  const resetClockingState = useCallback(() => {
+    setJobs([]);
+    setTimeEntries([]);
+    setTimeCorrections([]);
+    setUnbillableCategoriesState([]);
+    setUnbillableCategoriesLoading(false);
+    setUnbillableCategoriesError(null);
+    setUnbillableCategoriesLoadedAt(null);
+    setUnbillableCategoriesBusinessId(null);
+    setCurrentActiveEntryId(null);
+    setActiveShiftWarningsState({
+      possibleForgottenClockOut: false,
+      thresholdHours: 12,
+    });
+    setActivityConfigs(undefined);
+  }, []);
+
+  useEffect(() => {
+    const nextIdentity = status === 'authenticated' && user
+      ? `${user.businessId}:${user.id}:${user.employeeId ?? ''}`
+      : null;
+
+    if (previousIdentityRef.current !== nextIdentity) {
+      resetClockingState();
+      previousIdentityRef.current = nextIdentity;
+    }
+  }, [resetClockingState, status, user]);
+
   const value = useMemo<ClockingState>(
     () => ({
       jobs,
@@ -106,12 +138,14 @@ export function ClockingProvider({ children }: { children: React.ReactNode }) {
       setActiveShiftWarnings,
       setActivityConfigs,
       upsertTimeEntry,
+      resetClockingState,
     }),
     [
       activeShiftWarnings,
       activityConfigs,
       currentActiveEntryId,
       jobs,
+      resetClockingState,
       resetUnbillableCategories,
       setActiveShiftWarnings,
       setUnbillableCategories,

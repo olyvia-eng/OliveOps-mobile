@@ -35,12 +35,13 @@ jest.mock('@/store/authStore', () => ({
 }));
 
 import { useClockingActions } from '@/hooks/useClockingActions';
-import { ClockingProvider } from '@/store/clockingStore';
+import { ClockingProvider, useClockingStore } from '@/store/clockingStore';
 
 let currentActions: ReturnType<typeof useClockingActions>;
 
 function ActionsProbe({ refreshOnMount = false }: { refreshOnMount?: boolean }) {
   currentActions = useClockingActions();
+  const { currentActiveEntryId } = useClockingStore();
 
   useEffect(() => {
     if (refreshOnMount) {
@@ -48,7 +49,7 @@ function ActionsProbe({ refreshOnMount = false }: { refreshOnMount?: boolean }) 
     }
   }, [refreshOnMount, currentActions.refreshWorkContext]);
 
-  return React.createElement('actions-probe');
+  return React.createElement('actions-probe', { currentActiveEntryId });
 }
 
 function activeEntry(id = 'entry-1') {
@@ -120,7 +121,7 @@ describe('useClockingActions bootstrap behavior', () => {
     expect(mockLoadBootstrap).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps the recorded workflow at seven intentional bootstrap requests', async () => {
+  it('reconciles after each mutation without retriggering mount refreshes', async () => {
     await act(async () => {
       tree = create(
         React.createElement(ClockingProvider, null, React.createElement(ActionsProbe))
@@ -138,9 +139,80 @@ describe('useClockingActions bootstrap behavior', () => {
       await currentActions.refreshWorkContext();
     });
 
-    expect(mockLoadBootstrap).toHaveBeenCalledTimes(7);
+    expect(mockLoadBootstrap).toHaveBeenCalledTimes(8);
     expect(mockClockIn).toHaveBeenCalledTimes(1);
     expect(mockSwitchActivity).toHaveBeenCalledTimes(1);
     expect(mockClockOut).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not let a pre-mutation bootstrap overwrite newer clock-in state', async () => {
+    let resolveStaleBootstrap!: (value: ReturnType<typeof bootstrapPayload>) => void;
+    const staleBootstrap = new Promise<ReturnType<typeof bootstrapPayload>>((resolve) => {
+      resolveStaleBootstrap = resolve;
+    });
+    mockLoadBootstrap
+      .mockReturnValueOnce(staleBootstrap)
+      .mockResolvedValueOnce(bootstrapPayload(activeEntry('entry-new')));
+    mockClockIn.mockResolvedValue({ ok: true, timeEntry: activeEntry('entry-new') });
+
+    await act(async () => {
+      tree = create(
+        React.createElement(ClockingProvider, null, React.createElement(ActionsProbe))
+      );
+    });
+
+    const staleRefresh = currentActions.refreshWorkContext();
+    await act(async () => {
+      await currentActions.clockIn('emp-1', 'job', ['job-1']);
+    });
+
+    resolveStaleBootstrap(bootstrapPayload(activeEntry('entry-old')));
+    await act(async () => {
+      await staleRefresh;
+    });
+
+    expect(tree.root.findByType('actions-probe').props.currentActiveEntryId).toBe('entry-new');
+  });
+
+  it('rejects switch activity while clock-out is in progress', async () => {
+    let resolveClockOut!: (value: { ok: boolean; timeEntry: ReturnType<typeof activeEntry> }) => void;
+    mockClockOut.mockReturnValue(new Promise((resolve) => {
+      resolveClockOut = resolve;
+    }));
+    mockLoadBootstrap.mockResolvedValue(bootstrapPayload({
+      ...activeEntry('entry-1'),
+      status: 'clocked_out',
+      clockOut: '2026-08-17T14:00:00.000Z',
+    }));
+
+    await act(async () => {
+      tree = create(
+        React.createElement(ClockingProvider, null, React.createElement(ActionsProbe))
+      );
+    });
+
+    let pendingClockOut!: ReturnType<typeof currentActions.clockOut>;
+    await act(async () => {
+      pendingClockOut = currentActions.clockOut('entry-1', '', []);
+      await Promise.resolve();
+    });
+    const switchResult = await currentActions.switchActivity('job', ['job-1']);
+    expect(switchResult).toEqual({
+      ok: false,
+      error: 'Another clocking action is already in progress.',
+    });
+    expect(mockSwitchActivity).not.toHaveBeenCalled();
+
+    resolveClockOut({
+      ok: true,
+      timeEntry: {
+        ...activeEntry('entry-1'),
+        status: 'clocked_out',
+        clockOut: '2026-08-17T14:00:00.000Z',
+      },
+    });
+    await act(async () => {
+      await pendingClockOut;
+    });
   });
 });

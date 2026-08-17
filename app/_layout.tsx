@@ -1,15 +1,42 @@
+import { useEffect, useRef } from 'react';
+import { AppState, type AppStateStatus } from 'react-native';
 import { Stack } from 'expo-router';
 import * as Sentry from '@sentry/react-native';
 import { AppErrorBoundary } from '@/components/AppErrorBoundary';
+import { useClockingActions } from '@/hooks/useClockingActions';
+import { useAuthStore } from '@/store/authStore';
 import { AuthProvider } from '@/store/authStore';
 import { ClockingProvider } from '@/store/clockingStore';
 import { colors } from '@/theme/colors';
+
+function AppLifecycleSync() {
+  const { status } = useAuthStore();
+  const { refreshWorkContext } = useClockingActions();
+  const previousStateRef = useRef<AppStateStatus>(AppState.currentState);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      const wasBackgrounded = previousStateRef.current === 'background'
+        || previousStateRef.current === 'inactive';
+      previousStateRef.current = nextState;
+
+      if (nextState === 'active' && wasBackgrounded && status === 'authenticated') {
+        void refreshWorkContext();
+      }
+    });
+
+    return () => subscription.remove();
+  }, [refreshWorkContext, status]);
+
+  return null;
+}
 
 function RootLayout() {
   return (
     <AppErrorBoundary>
       <AuthProvider>
         <ClockingProvider>
+          <AppLifecycleSync />
           <Stack
             screenOptions={{
               headerStyle: { backgroundColor: colors.background },

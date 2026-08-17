@@ -58,6 +58,7 @@ export default function RequestTimeCorrectionScreen() {
   const [requestedJobId, setRequestedJobId] = useState<string>('');
   const [requestedUnbillableCategoryId, setRequestedUnbillableCategoryId] = useState<string>('');
   const [reason, setReason] = useState('');
+  const [retryMeta, setRetryMeta] = useState<{ requestId: string; idempotencyKey: string } | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -99,8 +100,9 @@ export default function RequestTimeCorrectionScreen() {
 
   const submitting = loading || clockingLoading;
 
-  function getPayload(): CreateTimeCorrectionRequest | null {
+  function getPayload(meta: { requestId: string; idempotencyKey: string }): CreateTimeCorrectionRequest | null {
     const payload: CreateTimeCorrectionRequest = {
+      ...meta,
       requestType,
       reason: reason.trim(),
     };
@@ -150,7 +152,7 @@ export default function RequestTimeCorrectionScreen() {
     return payload;
   }
 
-  async function submitRequest() {
+  async function submitRequest(metaOverride?: { requestId: string; idempotencyKey: string }) {
     setError(null);
     setStatus(null);
 
@@ -213,7 +215,11 @@ export default function RequestTimeCorrectionScreen() {
       }
     }
 
-    const payload = getPayload();
+    const meta = metaOverride
+      ?? retryMeta
+      ?? createRequestMeta(targetEntry?.id ?? user?.employeeId ?? requestType);
+    setRetryMeta(meta);
+    const payload = getPayload(meta);
     if (!payload) {
       setError('Could not build correction request payload.');
       return;
@@ -225,7 +231,8 @@ export default function RequestTimeCorrectionScreen() {
       return;
     }
 
-    setStatus('Correction request submitted');
+    setRetryMeta(null);
+    setStatus(result.warning || 'Correction request submitted');
     setTimeout(() => {
       router.replace('/time-history');
     }, 500);
@@ -432,6 +439,13 @@ export default function RequestTimeCorrectionScreen() {
         }
         onPress={() => { void submitRequest(); }}
       />
+      {error && retryMeta ? (
+        <PrimaryActionButton
+          label="Retry Request"
+          disabled={submitting}
+          onPress={() => { void submitRequest(retryMeta); }}
+        />
+      ) : null}
       {submitting ? <ActivityIndicator size="small" color={colors.primary} /> : null}
       <Text style={styles.footerHint}>Request type: {getCorrectionTypeLabel(requestType)}</Text>
     </Screen>

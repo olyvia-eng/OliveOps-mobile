@@ -3,6 +3,18 @@ import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { describe, expect, it } from '@jest/globals';
 import { ClockingProvider, useClockingStore } from '@/store/clockingStore';
 
+let mockAuthState: {
+  status: 'authenticated' | 'unauthenticated';
+  user: { id: string; businessId: string; employeeId: string } | null;
+} = {
+  status: 'authenticated',
+  user: { id: 'user-1', businessId: 'business-1', employeeId: 'employee-1' },
+};
+
+jest.mock('@/store/authStore', () => ({
+  useAuthStore: () => mockAuthState,
+}));
+
 let currentStore: ReturnType<typeof useClockingStore>;
 
 function ClockingProbe() {
@@ -68,5 +80,51 @@ describe('ClockingProvider', () => {
     expect(currentStore.upsertTimeEntry).toBe(initialActions.upsertTimeEntry);
     expect(tree.root.findByType('clocking-probe').props.jobCount).toBe(1);
     expect(tree.root.findByType('clocking-probe').props.timeEntryCount).toBe(1);
+  });
+
+  it('clears employee-scoped state when the authenticated identity changes', async () => {
+    mockAuthState = {
+      status: 'authenticated',
+      user: { id: 'user-1', businessId: 'business-1', employeeId: 'employee-1' },
+    };
+
+    let tree!: ReactTestRenderer;
+    await act(async () => {
+      tree = create(
+        React.createElement(ClockingProvider, null, React.createElement(ClockingProbe))
+      );
+    });
+
+    await act(async () => {
+      currentStore.setJobs([
+        { id: 'job-1', title: 'User 1 Job', status: 'scheduled', assignedEmployeeIds: ['employee-1'] },
+      ]);
+      currentStore.setTimeEntries([
+        {
+          id: 'entry-1',
+          employeeId: 'employee-1',
+          workType: 'job',
+          jobIds: ['job-1'],
+          clockIn: '2026-08-17T10:00:00.000Z',
+          breakMinutes: 0,
+          notes: '',
+          status: 'clocked_in',
+        },
+      ]);
+    });
+
+    mockAuthState = {
+      status: 'authenticated',
+      user: { id: 'user-2', businessId: 'business-1', employeeId: 'employee-2' },
+    };
+    await act(async () => {
+      tree.update(
+        React.createElement(ClockingProvider, null, React.createElement(ClockingProbe))
+      );
+    });
+
+    const probe = tree.root.findByType('clocking-probe');
+    expect(probe.props.jobCount).toBe(0);
+    expect(probe.props.timeEntryCount).toBe(0);
   });
 });

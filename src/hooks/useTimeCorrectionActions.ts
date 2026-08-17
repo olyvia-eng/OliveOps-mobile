@@ -14,7 +14,7 @@ export function useTimeCorrectionActions() {
 
   const actions = useMemo(() => ({
     async submitCorrection(payload: CreateTimeCorrectionRequest) {
-      const key = `time-correction:${payload.timeEntryId ?? payload.requestType}:${payload.requestedClockInAt ?? ''}:${payload.requestedClockOutAt ?? ''}`;
+      const key = `time-correction:${payload.idempotencyKey}`;
       if (!beginRequest(key)) {
         return { ok: false, error: 'Correction request already in progress.' };
       }
@@ -27,11 +27,20 @@ export function useTimeCorrectionActions() {
         }
 
         const result = await createTimeCorrection(payload, accessToken);
-        const corrections = await listMyTimeCorrections(accessToken);
-        setTimeCorrections(corrections.items ?? []);
-
-        const effectiveEntries = await listEffectiveTimeEntries(accessToken);
-        setTimeEntries(effectiveEntries.items ?? []);
+        try {
+          const [corrections, effectiveEntries] = await Promise.all([
+            listMyTimeCorrections(accessToken),
+            listEffectiveTimeEntries(accessToken),
+          ]);
+          setTimeCorrections(corrections.items ?? []);
+          setTimeEntries(effectiveEntries.items ?? []);
+        } catch {
+          return {
+            ok: true,
+            correction: result.correction,
+            warning: 'Correction request was submitted, but the list could not be refreshed.',
+          };
+        }
 
         return { ok: true, correction: result.correction };
       } catch (error) {

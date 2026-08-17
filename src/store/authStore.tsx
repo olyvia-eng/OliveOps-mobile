@@ -1,5 +1,6 @@
-import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import * as authApi from '@/api/authApi';
+import { registerSessionExpiryHandler } from '@/services/sessionExpiry';
 import { clearStoredSession, readStoredSession, writeStoredSession } from '@/services/sessionStorage';
 import type { SessionUser } from '@/types/domain';
 import { ApiError } from '@/types/errors';
@@ -51,6 +52,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [accessToken, setAccessToken] = useState<string | undefined>(undefined);
   const [warning, setWarning] = useState<string | undefined>(undefined);
+
+  useEffect(() => registerSessionExpiryHandler(() => {
+    void clearStoredSessionSafely();
+    setUser(null);
+    setAccessToken(undefined);
+    setWarning('Session expired. Please log in again.');
+    setStatus('unauthenticated');
+  }), []);
 
   const bootstrap = useCallback(async () => {
     setStatus('checking');

@@ -48,6 +48,8 @@ export interface BootstrapResponse {
 }
 
 export interface CreateTimeCorrectionRequest {
+  requestId: string;
+  idempotencyKey: string;
   timeEntryId?: string;
   employeeId?: string;
   requestType: TimeCorrectionRequestType;

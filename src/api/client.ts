@@ -1,5 +1,9 @@
 import { ENV } from '@/config/env';
+import { fetchWithTimeout } from '@/services/fetchWithTimeout';
+import { notifySessionExpired } from '@/services/sessionExpiry';
 import { ApiError } from '@/types/errors';
+
+const API_REQUEST_TIMEOUT_MS = 30_000;
 
 type RequestInitWithAuth = RequestInit & {
   accessToken?: string;
@@ -34,15 +38,18 @@ export async function apiRequest<T>(path: string, init: RequestInitWithAuth = {}
     headers.set('Authorization', `Bearer ${init.accessToken}`);
   }
 
-  const response = await fetch(url, {
+  const response = await fetchWithTimeout(url, {
     ...init,
     headers,
     credentials: 'include',
-  });
+  }, API_REQUEST_TIMEOUT_MS);
 
   const payload = await readJson(response);
 
   if (!response.ok || payload?.ok === false) {
+    if (response.status === 401 && init.accessToken) {
+      notifySessionExpired();
+    }
     const message =
       typeof payload?.error === 'string'
         ? payload.error
