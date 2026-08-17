@@ -16,16 +16,7 @@
     "production": {
       "distribution": "store",
       "environment": "production",
-      "env": {
-        "EXPO_PUBLIC_DIAGNOSTIC_NATIVE_STARTUP": "true"
-      },
       "autoIncrement": true
-    },
-    "diagnostic-plain-js": {
-      "extends": "production",
-      "env": {
-        "OLIVEOPS_IOS_PLAIN_JS_BUNDLE": "true"
-      }
     }
   },
   "submit": {

@@ -12,6 +12,7 @@ export function initializeSentry() {
     beforeBreadcrumb: () => null,
     beforeSend: sanitizeSentryEvent,
     enableNative: true,
+    autoInitializeNativeSdk: true,
     enableNativeCrashHandling: true,
     patchGlobalPromise: true,
     enableAutoSessionTracking: false,

@@ -4,7 +4,7 @@
   "engines": {
     "node": ">=22.13.0"
   },
-  "main": "expo-router/entry",
+  "main": "index.ts",
   "dependencies": {
     "@react-native-community/netinfo": "12.0.1",
     "@sentry/react-native": "~7.11.0",
