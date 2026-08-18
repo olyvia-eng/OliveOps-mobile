@@ -106,6 +106,7 @@ jest.mock('react-native', () => {
 });
 
 import HomeScreen from '../../app/home';
+import { router } from 'expo-router';
 
 describe('HomeScreen', () => {
   let tree: any;
@@ -131,6 +132,19 @@ describe('HomeScreen', () => {
     const renderedText = tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ');
     expect(renderedText).toContain('Front Walkway');
     expect(renderedText).not.toContain('Current job: Warehouse');
+  });
+
+  it('opens Forms as a primary employee feature', async () => {
+    await act(async () => {
+      tree = create(React.createElement(HomeScreen));
+    });
+
+    const formsRow = tree.root.findAllByType('pressable').find((node: any) => {
+      const text = node.findAllByType('text').map((child: any) => String(child.props.children)).join(' ');
+      return text.includes('Forms');
+    });
+    await act(async () => formsRow.props.onPress());
+    expect(router.push).toHaveBeenCalledWith('/forms');
   });
 
   it('shows long-shift warning actions when possible forgotten clock-out is flagged', async () => {

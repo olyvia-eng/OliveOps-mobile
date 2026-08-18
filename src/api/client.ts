@@ -54,7 +54,12 @@ export async function apiRequest<T>(path: string, init: RequestInitWithAuth = {}
       typeof payload?.error === 'string'
         ? payload.error
         : `Request failed with status ${response.status}`;
-    throw new ApiError(message, response.status, payload?.code);
+    throw new ApiError(
+      message,
+      response.status,
+      typeof payload?.code === 'string' ? payload.code : undefined,
+      typeof payload?.fieldId === 'string' ? payload.fieldId : undefined,
+    );
   }
 
   return payload as T;

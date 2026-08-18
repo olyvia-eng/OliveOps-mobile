@@ -142,6 +142,7 @@ export default function HomeScreen() {
       <View style={styles.quickSection}>
         <SectionHeader title="Quick Actions" />
         <View style={styles.quickList}>
+          <ListRow title="Forms" subtitle="Complete required and available forms" onPress={() => router.push('/forms')} />
           <ListRow title="Time History" subtitle="Review entries and weekly totals" onPress={() => router.push('/time-history')} />
           <ListRow title="Correction Requests" subtitle="View or request a time correction" onPress={() => router.push('/my-correction-requests')} />
         </View>
