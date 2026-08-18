@@ -111,8 +111,13 @@ jest.mock('react-native', () => {
     TurboModuleRegistry: { get: () => null },
     View: ({ children }: any) => React.createElement('view', {}, children),
     Text: ({ children }: any) => React.createElement('text', {}, children),
-    Pressable: ({ children, onPress }: any) =>
-      React.createElement('pressable', { onPress }, typeof children === 'function' ? children({ pressed: false }) : children),
+    Pressable: ({ children, onPress, testID, accessibilityState, style }: any) =>
+      React.createElement('pressable', {
+        onPress,
+        testID,
+        accessibilityState,
+        style: typeof style === 'function' ? style({ pressed: false }) : style,
+      }, typeof children === 'function' ? children({ pressed: false }) : children),
   };
 });
 
@@ -176,6 +181,12 @@ describe('ClockInScreen', () => {
     await act(async () => {
       jobPress.props.onPress();
     });
+
+    const selectedJob = tree.root.findAllByType('pressable').find((node: any) => node.props.testID === 'job-option-job-1');
+    expect(selectedJob.props.accessibilityState).toEqual({ selected: true });
+    expect(selectedJob.props.style).toEqual(expect.arrayContaining([
+      expect.objectContaining({ backgroundColor: '#EBF1E7', borderColor: '#56734A' }),
+    ]));
 
     const enabledSubmit = tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Clock In');
     expect(enabledSubmit?.props.disabled).toBe(false);

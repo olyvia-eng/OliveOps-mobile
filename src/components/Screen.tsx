@@ -5,7 +5,7 @@ import { colors, spacing } from '@/theme/colors';
 
 export function Screen({ children, testID }: PropsWithChildren<{ testID?: string }>) {
   return (
-    <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
+    <SafeAreaView style={styles.safe} edges={['left', 'right']}>
       <ScrollView
         testID={testID}
         contentContainerStyle={styles.content}
@@ -29,7 +29,7 @@ const styles = StyleSheet.create({
   inner: {
     flex: 1,
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
+    paddingTop: spacing.sm,
     paddingBottom: spacing.xxl,
     gap: spacing.md,
   },

@@ -53,7 +53,7 @@ jest.mock('react-native', () => {
     TurboModuleRegistry: { get: () => null },
     View: ({ children }: any) => React.createElement('view', {}, children),
     Text: ({ children }: any) => React.createElement('text', {}, children),
-    Pressable: ({ children, onPress }: any) => React.createElement('pressable', { onPress }, children),
+    Pressable: ({ children, onPress, testID }: any) => React.createElement('pressable', { onPress, testID }, children),
     FlatList: ({ data, ListHeaderComponent, renderItem, ListEmptyComponent }: any) => {
       const children = [];
       if (ListHeaderComponent) {
@@ -159,6 +159,16 @@ describe('TimeHistoryScreen', () => {
         notes: '',
         status: 'clocked_out',
       },
+      {
+        id: 'entry-drive',
+        employeeId: 'emp-1',
+        workType: 'drive_time',
+        clockIn: new Date(now.getTime() - 8 * 60 * 1000).toISOString(),
+        clockOut: new Date(now.getTime() - 7 * 60 * 1000).toISOString(),
+        breakMinutes: 0,
+        notes: '',
+        status: 'clocked_out',
+      },
     ];
   });
 
@@ -221,6 +231,36 @@ describe('TimeHistoryScreen', () => {
     const renderedText = tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ');
     expect(renderedText).toContain('Archived Category Name');
     expect(renderedText).not.toContain('cat-archived');
+  });
+
+  it('omits the meaningless General work fallback for Drive Time', async () => {
+    let tree: any;
+    await act(async () => {
+      tree = create(React.createElement(TimeHistoryScreen));
+    });
+
+    const renderedText = tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ');
+    expect(renderedText).toContain('Drive Time');
+    expect(renderedText).not.toContain('General work');
+  });
+
+  it('opens the existing correction workflow from the compact row action', async () => {
+    const { router } = require('expo-router');
+    router.push.mockClear();
+
+    let tree: any;
+    await act(async () => {
+      tree = create(React.createElement(TimeHistoryScreen));
+    });
+
+    await act(async () => {
+      tree.root.findByProps({ testID: 'request-correction-entry-complete' }).props.onPress();
+    });
+
+    expect(router.push).toHaveBeenCalledWith({
+      pathname: '/request-time-correction',
+      params: { timeEntryId: 'entry-complete', requestType: 'wrong_time' },
+    });
   });
 
   it('shows human-friendly weekly total label instead of decimal hours', async () => {

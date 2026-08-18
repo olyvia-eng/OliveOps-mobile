@@ -18,7 +18,7 @@ import {
 import { useAuthStore } from '@/store/authStore';
 import { useClockingStore } from '@/store/clockingStore';
 import { getTodayEntries, getWeekTotalHours } from '@/api/timeEntriesApi';
-import { colors } from '@/theme/colors';
+import { colors, spacing } from '@/theme/colors';
 
 export default function TimeHistoryScreen() {
   const { user } = useAuthStore();
@@ -41,7 +41,7 @@ export default function TimeHistoryScreen() {
   const authoritativeActiveEntryId = activeEntry?.id ?? null;
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
+    <SafeAreaView style={styles.safe} edges={['left', 'right']}>
       <FlatList
         data={orderedEntries}
         keyExtractor={(item) => item.id}
@@ -67,7 +67,7 @@ export default function TimeHistoryScreen() {
             <View style={styles.entryTopRow}>
               <View style={styles.entryHeading}>
                 <Text style={styles.entryActivity}>{getWorkTypeLabel(item.workType)}</Text>
-                <Text style={styles.entryJob}>{resolveEntryPrimaryLabel(item, jobs)}</Text>
+                {item.workType !== 'drive_time' ? <Text style={styles.entryJob}>{resolveEntryPrimaryLabel(item, jobs)}</Text> : null}
               </View>
               {item.clockOut ? (
                 <Text style={styles.entryDuration}>{formatDurationForEntry(item)}</Text>
@@ -91,6 +91,9 @@ export default function TimeHistoryScreen() {
             </View>
             <Text style={styles.entryRange}>Today · {formatEntryTimeRange(item, isAuthoritativeActiveEntry(item.id, authoritativeActiveEntryId))}</Text>
             <Pressable
+              testID={`request-correction-${item.id}`}
+              accessibilityRole="button"
+              accessibilityLabel={`Request correction for ${getWorkTypeLabel(item.workType)}`}
               style={styles.requestAction}
               onPress={() => router.push({
                 pathname: '/request-time-correction',
@@ -100,7 +103,7 @@ export default function TimeHistoryScreen() {
                 },
               })}
             >
-              <Text style={styles.requestActionLabel}>Request Time Correction</Text>
+              <Text style={styles.requestActionLabel}>Request correction →</Text>
             </Pressable>
           </View>
         )}
@@ -117,8 +120,8 @@ const styles = StyleSheet.create({
   },
   listContent: {
     flexGrow: 1,
-    paddingHorizontal: 20,
-    paddingTop: 18,
+    paddingHorizontal: spacing.lg,
+    paddingTop: 8,
     paddingBottom: 24,
     gap: 0,
   },

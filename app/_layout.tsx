@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
-import { AppState, type AppStateStatus } from 'react-native';
-import { Stack } from 'expo-router';
+import { AppState, Pressable, StyleSheet, Text, type AppStateStatus } from 'react-native';
+import { router, Stack } from 'expo-router';
 import * as Sentry from '@sentry/react-native';
 import { AppErrorBoundary } from '@/components/AppErrorBoundary';
 import { useClockingActions } from '@/hooks/useClockingActions';
@@ -8,6 +8,30 @@ import { useAuthStore } from '@/store/authStore';
 import { AuthProvider } from '@/store/authStore';
 import { ClockingProvider } from '@/store/clockingStore';
 import { colors } from '@/theme/colors';
+
+function CompactBackButton() {
+  if (!router.canGoBack()) return null;
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Back"
+      hitSlop={4}
+      onPress={() => router.back()}
+      style={({ pressed }) => [styles.backButton, pressed && styles.backButtonPressed]}
+    >
+      <Text style={styles.backChevron}>‹</Text>
+    </Pressable>
+  );
+}
+
+function secondaryScreenOptions(title: string) {
+  return {
+    title,
+    headerBackVisible: false,
+    headerLeft: () => <CompactBackButton />,
+  };
+}
 
 function AppLifecycleSync() {
   const { status } = useAuthStore();
@@ -50,14 +74,14 @@ function RootLayout() {
             <Stack.Screen name="index" options={{ headerShown: false }} />
             <Stack.Screen name="login" options={{ headerShown: false }} />
             <Stack.Screen name="home" options={{ title: 'Home', headerBackVisible: false, gestureEnabled: false }} />
-            <Stack.Screen name="clock-in" options={{ title: 'Clock In' }} />
-            <Stack.Screen name="switch-activity" options={{ title: 'Switch Activity' }} />
-            <Stack.Screen name="active-shift" options={{ title: 'Active Shift' }} />
-            <Stack.Screen name="clock-out" options={{ title: 'Clock Out' }} />
-            <Stack.Screen name="time-history" options={{ title: 'Time History' }} />
-            <Stack.Screen name="request-time-correction" options={{ title: 'Request Time Correction' }} />
-            <Stack.Screen name="my-correction-requests" options={{ title: 'My Correction Requests' }} />
-            <Stack.Screen name="settings" options={{ title: 'Settings' }} />
+            <Stack.Screen name="clock-in" options={secondaryScreenOptions('Clock In')} />
+            <Stack.Screen name="switch-activity" options={secondaryScreenOptions('Switch Activity')} />
+            <Stack.Screen name="active-shift" options={secondaryScreenOptions('Active Shift')} />
+            <Stack.Screen name="clock-out" options={secondaryScreenOptions('Clock Out')} />
+            <Stack.Screen name="time-history" options={secondaryScreenOptions('Time History')} />
+            <Stack.Screen name="request-time-correction" options={secondaryScreenOptions('Request Time Correction')} />
+            <Stack.Screen name="my-correction-requests" options={secondaryScreenOptions('Correction Requests')} />
+            <Stack.Screen name="settings" options={secondaryScreenOptions('Settings')} />
           </Stack>
         </ClockingProvider>
       </AuthProvider>
@@ -66,3 +90,20 @@ function RootLayout() {
 }
 
 export default Sentry.wrap(RootLayout);
+
+const styles = StyleSheet.create({
+  backButton: {
+    width: 44,
+    height: 44,
+    marginLeft: -8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  backButtonPressed: { opacity: 0.5 },
+  backChevron: {
+    color: colors.primary,
+    fontSize: 28,
+    fontWeight: '400',
+    lineHeight: 30,
+  },
+});

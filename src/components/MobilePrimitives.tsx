@@ -117,7 +117,7 @@ const styles = StyleSheet.create({
   actionCardSelected: { borderColor: colors.primary, backgroundColor: colors.oliveTint },
   pressed: { opacity: 0.72 },
   listRow: { minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: spacing.md, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.divider },
-  listRowSelected: { paddingHorizontal: spacing.md, borderBottomWidth: 0, borderRadius: radii.md, backgroundColor: colors.oliveTint },
+  listRowSelected: { paddingHorizontal: spacing.md, borderWidth: 1, borderColor: colors.primary, borderRadius: radii.md, backgroundColor: colors.oliveTint },
   rowText: { flex: 1, gap: 2 },
   rowTitle: { color: colors.textPrimary, fontSize: typography.body, fontWeight: typography.semibold },
   rowSubtitle: { color: colors.textSecondary, fontSize: typography.bodySmall, lineHeight: 19 },

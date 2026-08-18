@@ -49,7 +49,7 @@ export const typography = {
   bodySmall: 14,
   body: 16,
   title: 20,
-  screenTitle: 28,
+  screenTitle: 24,
   display: 36,
   regular: '400' as const,
   medium: '500' as const,

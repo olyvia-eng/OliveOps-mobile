@@ -409,7 +409,7 @@ export default function ClockOutScreen() {
             ))}
             <View style={styles.totalRow}>
               <Text style={styles.totalLabel}>Total Shift Time</Text>
-              <Text style={styles.totalValue}>{formatDurationMinutes(totalShiftMinutes)}</Text>
+              <Text testID="total-shift-time-value" style={styles.totalValue}>{formatDurationMinutes(totalShiftMinutes)}</Text>
             </View>
           </View>
         ) : null}
@@ -528,7 +528,7 @@ const styles = StyleSheet.create({
   segmentMeta: { color: colors.textSecondary, fontSize: 14, marginTop: 2 },
   totalRow: { flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: colors.divider, paddingTop: 12 },
   totalLabel: { color: colors.textPrimary, fontSize: 16, fontWeight: '700' },
-  totalValue: { color: colors.primary, fontSize: 18, fontWeight: '700' },
+  totalValue: { minWidth: 72, color: colors.primary, fontSize: 18, fontWeight: '700', textAlign: 'right' },
   formSection: { gap: 10 },
   optional: { color: colors.textMuted, fontWeight: '400' },
   photoHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },

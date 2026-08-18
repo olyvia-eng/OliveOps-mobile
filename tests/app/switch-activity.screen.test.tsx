@@ -125,8 +125,13 @@ jest.mock('react-native', () => {
     TurboModuleRegistry: { get: () => null },
     View: ({ children }: any) => React.createElement('view', {}, children),
     Text: ({ children }: any) => React.createElement('text', {}, children),
-    Pressable: ({ children, onPress, testID }: any) =>
-      React.createElement('pressable', { onPress, testID }, typeof children === 'function' ? children({ pressed: false }) : children),
+    Pressable: ({ children, onPress, testID, accessibilityState, style }: any) =>
+      React.createElement('pressable', {
+        onPress,
+        testID,
+        accessibilityState,
+        style: typeof style === 'function' ? style({ pressed: false }) : style,
+      }, typeof children === 'function' ? children({ pressed: false }) : children),
   };
 });
 
@@ -159,6 +164,26 @@ describe('SwitchActivityScreen', () => {
       retry: jest.fn(),
     });
     mockSwitchActivity.mockResolvedValue({ ok: true });
+  });
+
+  it('marks the chosen job with the shared selected state', async () => {
+    let tree: any;
+    await act(async () => {
+      tree = create(React.createElement(SwitchActivityScreen));
+    });
+
+    await act(async () => {
+      tree.root.findAllByProps({ testID: 'switch-activity-option-job' })[0].props.onPress();
+    });
+    await act(async () => {
+      tree.root.findAllByProps({ testID: 'switch-job-option-job-2' })[0].props.onPress();
+    });
+
+    const selectedJob = tree.root.findAllByType('pressable').find((node: any) => node.props.testID === 'switch-job-option-job-2');
+    expect(selectedJob.props.accessibilityState).toEqual({ selected: true });
+    expect(selectedJob.props.style).toEqual(expect.arrayContaining([
+      expect.objectContaining({ backgroundColor: '#EBF1E7', borderColor: '#56734A' }),
+    ]));
   });
 
   it('loads categories from shared source for unbillable switch', async () => {

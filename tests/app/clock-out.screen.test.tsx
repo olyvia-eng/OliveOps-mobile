@@ -127,7 +127,7 @@ jest.mock('react-native', () => {
     Pressable: ({ children, onPress }: any) =>
       React.createElement('pressable', { onPress }, typeof children === 'function' ? children({ pressed: false }) : children),
     View: ({ children }: any) => React.createElement('view', {}, children),
-    Text: ({ children }: any) => React.createElement('text', {}, children),
+    Text: ({ children, testID }: any) => React.createElement('text', { testID }, children),
     TextInput: ({ onChangeText, value, placeholder }: any) => React.createElement('textinput', { onChangeText, value, placeholder }),
   };
 });
@@ -159,6 +159,23 @@ describe('ClockOutScreen', () => {
       ok: true,
       blob: async () => ({ size: 1024 }),
     });
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('renders Total Shift Time from authoritative shift segments', async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-08-06T11:48:00.000Z'));
+
+    let tree: any;
+    await act(async () => {
+      tree = create(React.createElement(ClockOutScreen));
+    });
+
+    const total = tree.root.findByProps({ testID: 'total-shift-time-value' });
+    expect(total.props.children).toBe('1h 48m');
   });
 
   it('does not flash the no-active-shift banner after successful clock-out', async () => {
