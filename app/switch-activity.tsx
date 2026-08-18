@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { OfflineNotice } from '@/components/OfflineNotice';
@@ -10,6 +10,7 @@ import { ActivitySelector } from '@/components/ActivitySelector';
 import { ListRow, ScreenHeader, SectionHeader } from '@/components/MobilePrimitives';
 import { getWorkTypeLabel, resolveCurrentActiveEntry, resolveJobTitle } from '@/features/clocking/presentation';
 import { useClockingActions } from '@/hooks/useClockingActions';
+import { useFormsActions } from '@/hooks/useFormsActions';
 import { useUnbillableCategories } from '@/hooks/useUnbillableCategories';
 import { createRequestMeta } from '@/services/requestGuards';
 import { useAuthStore } from '@/store/authStore';
@@ -28,6 +29,7 @@ export default function SwitchActivityScreen() {
   const { user } = useAuthStore();
   const { currentActiveEntryId, jobs, timeEntries } = useClockingStore();
   const { loading, refreshWorkContext, switchActivity } = useClockingActions();
+  const { getRequiredForms } = useFormsActions();
   const {
     categories: unbillableCategories,
     loading: unbillableCategoriesLoading,
@@ -42,6 +44,10 @@ export default function SwitchActivityScreen() {
   const [retryMeta, setRetryMeta] = useState<{ requestId: string; idempotencyKey: string } | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [advisoryFormCount, setAdvisoryFormCount] = useState(0);
+  const [checkingForms, setCheckingForms] = useState(false);
+  const advisoryAcceptedRef = useRef(false);
+  const checkingFormsRef = useRef(false);
 
   useEffect(() => {
     void refreshWorkContext();
@@ -129,7 +135,10 @@ export default function SwitchActivityScreen() {
     selectedUnbillableCategoryId,
   ]);
 
-  async function submitSwitch(metaOverride?: { requestId: string; idempotencyKey: string }) {
+  async function submitSwitch(
+    metaOverride?: { requestId: string; idempotencyKey: string },
+    continuePastAdvisory = false,
+  ) {
     if (!activeEntry || !user?.employeeId) {
       setError('No active shift found.');
       return;
@@ -167,6 +176,22 @@ export default function SwitchActivityScreen() {
     setStatus(null);
     setError(null);
 
+    const previousJobId = activeEntry.jobIds?.[0] ?? activeEntry.jobId;
+    const nextJobId = selectedWorkType === 'job' ? selectedJobId : undefined;
+    if (!continuePastAdvisory && !advisoryAcceptedRef.current && !metaOverride && nextJobId && nextJobId !== previousJobId) {
+      if (checkingFormsRef.current) return;
+      checkingFormsRef.current = true;
+      setCheckingForms(true);
+      const advisory = await getRequiredForms('before_starting_job', { jobId: nextJobId });
+      checkingFormsRef.current = false;
+      setCheckingForms(false);
+      if (advisory.ok && advisory.forms.length > 0) {
+        setAdvisoryFormCount(advisory.forms.length);
+        return;
+      }
+      advisoryAcceptedRef.current = true;
+    }
+
     const meta = metaOverride ?? retryMeta ?? createRequestMeta(user.employeeId);
     setRetryMeta(meta);
 
@@ -187,6 +212,13 @@ export default function SwitchActivityScreen() {
 
     setRetryMeta(null);
     setStatus('Activity switched successfully.');
+    if (previousJobId && previousJobId !== nextJobId) {
+      const advisory = await getRequiredForms('after_completing_job', { jobId: previousJobId });
+      if (advisory.ok && advisory.forms.length > 0) {
+        router.replace('/forms');
+        return;
+      }
+    }
     router.replace('/active-shift');
   }
 
@@ -207,6 +239,8 @@ export default function SwitchActivityScreen() {
                 setActivityChosen(true);
                 setSelectedJobId('');
                 setSelectedUnbillableCategoryId('');
+                setAdvisoryFormCount(0);
+                advisoryAcceptedRef.current = false;
               }}
             />
 
@@ -231,7 +265,11 @@ export default function SwitchActivityScreen() {
                           title={job.title || 'Untitled Job'}
                           subtitle={job.status.replace('_', ' ')}
                           selected={selected}
-                          onPress={() => setSelectedJobId(job.id)}
+                          onPress={() => {
+                            setSelectedJobId(job.id);
+                            setAdvisoryFormCount(0);
+                            advisoryAcceptedRef.current = false;
+                          }}
                         />
                       );
                     })}
@@ -261,12 +299,19 @@ export default function SwitchActivityScreen() {
         )}
 
       {status ? <StatusBanner tone="success" message={status} /> : null}
+      {advisoryFormCount > 0 ? (
+        <StatusBanner tone="info" message={`${advisoryFormCount} Form${advisoryFormCount === 1 ? '' : 's'} available before you start this job. You can complete them now or continue switching.`} />
+      ) : null}
       {error ? <StatusBanner tone="error" message={error} /> : null}
 
+      {advisoryFormCount > 0 ? (
+        <PrimaryActionButton label="View Forms" onPress={() => router.push('/forms')} />
+      ) : null}
+
       <PrimaryActionButton
-        label={loading ? 'Switching...' : 'Switch Activity'}
-        disabled={!canSubmit || loading}
-        onPress={() => void submitSwitch()}
+        label={loading ? 'Switching...' : checkingForms ? 'Checking Forms...' : advisoryFormCount > 0 ? 'Continue Switch' : 'Switch Activity'}
+        disabled={!canSubmit || loading || checkingForms}
+        onPress={() => void submitSwitch(undefined, advisoryFormCount > 0)}
       />
 
       {error && retryMeta ? (

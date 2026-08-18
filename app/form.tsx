@@ -16,6 +16,8 @@ import {
   validateFormValues,
 } from '@/features/forms/formValidation';
 import { useFormsActions } from '@/hooks/useFormsActions';
+import { createRequestMeta } from '@/services/requestGuards';
+import { useAuthStore } from '@/store/authStore';
 import { useFormsStore } from '@/store/formsStore';
 import { colors, spacing, typography } from '@/theme/colors';
 import type { EmployeeForm } from '@/types/forms';
@@ -31,6 +33,7 @@ function matchesParams(form: EmployeeForm, params: Record<string, string | strin
 export default function FormScreen() {
   const params = useLocalSearchParams<{ list?: string; formId?: string; trigger?: string; jobId?: string; equipmentId?: string; divisionId?: string }>();
   const navigation = useNavigation();
+  const { user } = useAuthStore();
   const { toDo, available } = useFormsStore();
   const { refreshForms, submitForm, submitting } = useFormsActions();
   const candidates = params.list === 'available' ? available : toDo;
@@ -41,7 +44,18 @@ export default function FormScreen() {
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const submittedRef = useRef(false);
+  const clientSubmissionRef = useRef<{ identity: string; value: string } | null>(null);
   const refreshedMissingRef = useRef(false);
+  const submissionIdentity = form && user
+    ? `${user.businessId}:${user.id}:${user.employeeId ?? ''}:${form.id}:${form.trigger}:${form.context?.jobId ?? ''}:${form.context?.equipmentId ?? ''}:${form.context?.divisionId ?? ''}`
+    : '';
+
+  if (submissionIdentity && clientSubmissionRef.current?.identity !== submissionIdentity) {
+    clientSubmissionRef.current = {
+      identity: submissionIdentity,
+      value: createRequestMeta(submissionIdentity).idempotencyKey,
+    };
+  }
 
   useEffect(() => {
     setValues(initialValues);
@@ -94,6 +108,7 @@ export default function FormScreen() {
     }
 
     const result = await submitForm({
+      clientSubmissionId: clientSubmissionRef.current?.value ?? createRequestMeta(submissionIdentity).idempotencyKey,
       formId: form.id,
       trigger: form.trigger,
       jobId: form.context?.jobId,

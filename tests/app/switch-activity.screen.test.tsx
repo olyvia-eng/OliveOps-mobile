@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 
 const mockSwitchActivity = jest.fn();
 const mockRefresh = jest.fn().mockResolvedValue({ ok: true });
+const mockGetRequiredForms = jest.fn().mockResolvedValue({ ok: true, forms: [] });
 const mockLoadUnbillableCategoriesIfNeeded = jest.fn().mockResolvedValue(undefined);
 
 const mockUseClockingActions = jest.fn(() => ({
@@ -76,11 +77,16 @@ const mockUseClockingStore = jest.fn(() => ({
 jest.mock('expo-router', () => ({
   router: {
     replace: jest.fn(),
+    push: jest.fn(),
   },
 }));
 
 jest.mock('@/hooks/useClockingActions', () => ({
   useClockingActions: () => mockUseClockingActions(),
+}));
+
+jest.mock('@/hooks/useFormsActions', () => ({
+  useFormsActions: () => ({ getRequiredForms: mockGetRequiredForms }),
 }));
 
 jest.mock('@/hooks/useUnbillableCategories', () => ({
@@ -143,6 +149,7 @@ describe('SwitchActivityScreen', () => {
     (router.replace as jest.Mock).mockReset();
     mockSwitchActivity.mockReset();
     mockRefresh.mockClear();
+    mockGetRequiredForms.mockReset().mockResolvedValue({ ok: true, forms: [] });
     mockLoadUnbillableCategoriesIfNeeded.mockClear();
     mockUseUnbillableCategories.mockReset();
     mockUseUnbillableCategories.mockReturnValue({
@@ -236,6 +243,37 @@ describe('SwitchActivityScreen', () => {
 
     expect(mockSwitchActivity).toHaveBeenCalledWith('non_billable', [], 'cat-training', { requestId: 'req-switch-1', idempotencyKey: 'key-switch-1' });
     expect(router.replace).toHaveBeenCalledWith('/active-shift');
+  });
+
+  it('surfaces before-starting Forms and continues the job switch non-blocking', async () => {
+    mockGetRequiredForms
+      .mockResolvedValueOnce({ ok: true, forms: [{ id: 'before-job' }] })
+      .mockResolvedValue({ ok: true, forms: [] });
+    let tree: any;
+    await act(async () => { tree = create(<SwitchActivityScreen />); });
+    await act(async () => tree.root.findByProps({ testID: 'switch-activity-option-job' }).props.onPress());
+    await act(async () => tree.root.findByProps({ testID: 'switch-job-option-job-2' }).props.onPress());
+    await act(async () => tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Switch Activity').props.onPress());
+
+    expect(mockGetRequiredForms).toHaveBeenCalledWith('before_starting_job', { jobId: 'job-2' });
+    expect(mockSwitchActivity).not.toHaveBeenCalled();
+
+    await act(async () => tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Continue Switch').props.onPress());
+    expect(mockSwitchActivity).toHaveBeenCalledTimes(1);
+    expect(mockGetRequiredForms).toHaveBeenCalledWith('after_completing_job', { jobId: 'job-1' });
+    expect(router.replace).toHaveBeenCalledWith('/active-shift');
+  });
+
+  it('surfaces after-completing Forms only after a successful switch', async () => {
+    mockGetRequiredForms.mockResolvedValue({ ok: true, forms: [{ id: 'after-job' }] });
+    let tree: any;
+    await act(async () => { tree = create(<SwitchActivityScreen />); });
+    await act(async () => tree.root.findByProps({ testID: 'switch-activity-option-drive_time' }).props.onPress());
+    await act(async () => tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Switch Activity').props.onPress());
+
+    expect(mockSwitchActivity).toHaveBeenCalledTimes(1);
+    expect(mockGetRequiredForms).toHaveBeenCalledWith('after_completing_job', { jobId: 'job-1' });
+    expect(router.replace).toHaveBeenCalledWith('/forms');
   });
 
   it('offers Drive Time without capability data and submits its canonical work type', async () => {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { OfflineNotice } from '@/components/OfflineNotice';
@@ -9,6 +9,7 @@ import { UnbillableCategorySelector } from '@/components/UnbillableCategorySelec
 import { ActivitySelector } from '@/components/ActivitySelector';
 import { ListRow, ScreenHeader, SectionHeader } from '@/components/MobilePrimitives';
 import { useClockingActions } from '@/hooks/useClockingActions';
+import { useFormsActions } from '@/hooks/useFormsActions';
 import { useUnbillableCategories } from '@/hooks/useUnbillableCategories';
 import { createRequestMeta } from '@/services/requestGuards';
 import { useAuthStore } from '@/store/authStore';
@@ -27,6 +28,7 @@ export default function ClockInScreen() {
   const { user } = useAuthStore();
   const { jobs } = useClockingStore();
   const { clockIn, loading, refreshWorkContext } = useClockingActions();
+  const { getRequiredForms } = useFormsActions();
   const {
     categories: unbillableCategories,
     loading: unbillableCategoriesLoading,
@@ -41,6 +43,10 @@ export default function ClockInScreen() {
   const [retryMeta, setRetryMeta] = useState<{ requestId: string; idempotencyKey: string } | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [advisoryFormCount, setAdvisoryFormCount] = useState(0);
+  const [checkingForms, setCheckingForms] = useState(false);
+  const advisoryAcceptedRef = useRef(false);
+  const checkingFormsRef = useRef(false);
 
   useEffect(() => {
     void refreshWorkContext();
@@ -124,7 +130,10 @@ export default function ClockInScreen() {
     selectedUnbillableCategoryId,
   ]);
 
-  async function submitClockIn(metaOverride?: { requestId: string; idempotencyKey: string }) {
+  async function submitClockIn(
+    metaOverride?: { requestId: string; idempotencyKey: string },
+    continuePastAdvisory = false,
+  ) {
     if (!user?.employeeId) {
       setError('Employee profile is not linked to this account.');
       return;
@@ -161,6 +170,25 @@ export default function ClockInScreen() {
 
     setStatus(null);
     setError(null);
+
+    if (!continuePastAdvisory && !advisoryAcceptedRef.current && !metaOverride) {
+      if (checkingFormsRef.current) return;
+      checkingFormsRef.current = true;
+      setCheckingForms(true);
+      const checks = [getRequiredForms('before_clock_in')];
+      if (selectedWorkType === 'job' && selectedJobId) {
+        checks.push(getRequiredForms('before_starting_job', { jobId: selectedJobId }));
+      }
+      const results = await Promise.all(checks);
+      checkingFormsRef.current = false;
+      setCheckingForms(false);
+      const forms = results.flatMap((result) => result.ok ? result.forms : []);
+      if (forms.length > 0) {
+        setAdvisoryFormCount(forms.length);
+        return;
+      }
+      advisoryAcceptedRef.current = true;
+    }
 
     const meta = metaOverride ?? retryMeta ?? createRequestMeta(user.employeeId);
     setRetryMeta(meta);
@@ -199,6 +227,8 @@ export default function ClockInScreen() {
           setActivityChosen(true);
           setSelectedJobId('');
           setSelectedUnbillableCategoryId('');
+          setAdvisoryFormCount(0);
+          advisoryAcceptedRef.current = false;
         }}
       />
 
@@ -223,7 +253,11 @@ export default function ClockInScreen() {
                       title={job.title || 'Untitled Job'}
                       subtitle={job.status.replace('_', ' ')}
                       selected={selected}
-                      onPress={() => setSelectedJobId(job.id)}
+                      onPress={() => {
+                        setSelectedJobId(job.id);
+                        setAdvisoryFormCount(0);
+                        advisoryAcceptedRef.current = false;
+                      }}
                     />
                   );
                 })}
@@ -251,12 +285,19 @@ export default function ClockInScreen() {
         ) : null}
 
       {status ? <StatusBanner tone="success" message={status} /> : null}
+      {advisoryFormCount > 0 ? (
+        <StatusBanner tone="info" message={`${advisoryFormCount} Form${advisoryFormCount === 1 ? '' : 's'} available before you start. You can complete them now or continue clocking in.`} />
+      ) : null}
       {error ? <StatusBanner tone="error" message={error} /> : null}
 
+      {advisoryFormCount > 0 ? (
+        <PrimaryActionButton label="View Forms" onPress={() => router.push('/forms')} />
+      ) : null}
+
       <PrimaryActionButton
-        label={loading ? 'Clocking in...' : 'Clock In'}
-        disabled={!canSubmit || loading}
-        onPress={() => void submitClockIn()}
+        label={loading ? 'Clocking in...' : checkingForms ? 'Checking Forms...' : advisoryFormCount > 0 ? 'Continue Clock In' : 'Clock In'}
+        disabled={!canSubmit || loading || checkingForms}
+        onPress={() => void submitClockIn(undefined, advisoryFormCount > 0)}
       />
 
       {error && retryMeta ? (

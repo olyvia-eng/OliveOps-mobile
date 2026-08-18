@@ -20,6 +20,7 @@ import {
   resolveJobTitle,
 } from '@/features/clocking/presentation';
 import { useClockingActions } from '@/hooks/useClockingActions';
+import { useFormsActions } from '@/hooks/useFormsActions';
 import { isOnline } from '@/services/connectivity';
 import { createRequestMeta } from '@/services/requestGuards';
 import { useAuthStore } from '@/store/authStore';
@@ -64,6 +65,7 @@ export default function ClockOutScreen() {
   const { user, accessToken } = useAuthStore();
   const { currentActiveEntryId, timeEntries, jobs } = useClockingStore();
   const { clockOut, loading, refreshWorkContext } = useClockingActions();
+  const { getRequiredForms } = useFormsActions();
 
   const [notes, setNotes] = useState('');
   const [attachments, setAttachments] = useState<PhotoAttachment[]>([]);
@@ -373,6 +375,16 @@ export default function ClockOutScreen() {
     submittedRef.current = true;
     setSuccess('Clock-out submitted successfully.');
     setNavigatingAfterSuccess(true);
+    const completedJobId = activeEntry.jobIds?.[0] ?? activeEntry.jobId;
+    const checks = [getRequiredForms('after_clock_out')];
+    if (completedJobId) {
+      checks.push(getRequiredForms('after_completing_job', { jobId: completedJobId }));
+    }
+    const results = await Promise.all(checks);
+    if (results.some((advisory) => advisory.ok && advisory.forms.length > 0)) {
+      router.replace('/forms');
+      return;
+    }
     router.replace('/home');
   }
 

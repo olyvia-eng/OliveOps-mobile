@@ -81,6 +81,7 @@ describe('formsApi', () => {
     }));
 
     await submitEmployeeForm({
+      clientSubmissionId: 'form-attempt-1',
       formId: 'form-1',
       trigger: 'daily',
       jobId: 'job-1',
@@ -90,6 +91,7 @@ describe('formsApi', () => {
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(fetchMock.mock.calls[0][0]).toBe('https://app.oliveops.ca/api/employee?action=submit');
     expect(body).toEqual({
+      clientSubmissionId: 'form-attempt-1',
       formId: 'form-1',
       trigger: 'daily',
       jobId: 'job-1',
@@ -139,6 +141,7 @@ describe('formsApi', () => {
     }));
 
     await expect(submitEmployeeForm({
+      clientSubmissionId: 'form-attempt-2',
       formId: 'form-1',
       trigger: 'daily',
       responses: [],
@@ -155,6 +158,7 @@ describe('formsApi', () => {
     }));
 
     await expect(submitEmployeeForm({
+      clientSubmissionId: 'form-attempt-3',
       formId: 'form-1',
       trigger: 'daily',
       responses: [],

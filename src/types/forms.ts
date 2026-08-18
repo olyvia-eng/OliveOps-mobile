@@ -81,6 +81,7 @@ export interface EmployeeForm {
 
 export interface EmployeeFormSubmission {
   submissionId: string;
+  clientSubmissionId?: string;
   formId: string;
   formName: string;
   submittedAt: string;
@@ -111,6 +112,7 @@ export interface EmployeeFormResponse {
 }
 
 export interface SubmitEmployeeFormRequest {
+  clientSubmissionId: string;
   formId: string;
   trigger: EmployeeFormTrigger;
   jobId?: string;
@@ -121,6 +123,7 @@ export interface SubmitEmployeeFormRequest {
 
 export interface SubmittedEmployeeForm {
   id: string;
+  clientSubmissionId?: string;
   formId: string;
   employeeId: string;
   trigger: EmployeeFormTrigger;

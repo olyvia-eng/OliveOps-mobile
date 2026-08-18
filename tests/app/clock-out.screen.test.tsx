@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 
 const mockClockOut = jest.fn();
 const mockRefresh = jest.fn().mockResolvedValue({ ok: true });
+const mockGetRequiredForms = jest.fn().mockResolvedValue({ ok: true, forms: [] });
 const mockOpenSettings = jest.fn().mockResolvedValue(undefined);
 let activeShiftClosed = false;
 
@@ -71,6 +72,10 @@ jest.mock('expo-image-picker', () => ({
 
 jest.mock('@/hooks/useClockingActions', () => ({
   useClockingActions: () => mockUseClockingActions(),
+}));
+
+jest.mock('@/hooks/useFormsActions', () => ({
+  useFormsActions: () => ({ getRequiredForms: mockGetRequiredForms }),
 }));
 
 jest.mock('@/store/authStore', () => ({
@@ -145,6 +150,7 @@ describe('ClockOutScreen', () => {
     (router.replace as jest.Mock).mockReset();
     mockClockOut.mockReset();
     mockClockOut.mockResolvedValue({ ok: true });
+    mockGetRequiredForms.mockReset().mockResolvedValue({ ok: true, forms: [] });
     (prepareUpload as jest.Mock).mockReset();
     (uploadUriToS3 as jest.Mock).mockReset();
     (completeUpload as jest.Mock).mockReset();
@@ -203,6 +209,23 @@ describe('ClockOutScreen', () => {
     expect(noShiftBanners).toHaveLength(0);
     expect(mockClockOut).toHaveBeenCalledTimes(1);
     expect(router.replace).toHaveBeenCalledWith('/home');
+  });
+
+  it('surfaces post-clock Forms after clock-out remains successful', async () => {
+    mockGetRequiredForms
+      .mockResolvedValueOnce({ ok: true, forms: [{ id: 'after-clock' }] })
+      .mockResolvedValueOnce({ ok: true, forms: [] });
+    (Alert.alert as jest.Mock).mockImplementation((_title: string, _message: string, actions: Array<{ onPress?: () => void }>) => {
+      actions?.[1]?.onPress?.();
+    });
+    let tree: any;
+    await act(async () => { tree = create(<ClockOutScreen />); });
+    await act(async () => tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Clock Out').props.onPress());
+
+    expect(mockClockOut).toHaveBeenCalledTimes(1);
+    expect(mockGetRequiredForms).toHaveBeenNthCalledWith(1, 'after_clock_out');
+    expect(mockGetRequiredForms).toHaveBeenNthCalledWith(2, 'after_completing_job', { jobId: 'job-1' });
+    expect(router.replace).toHaveBeenCalledWith('/forms');
   });
 
   it('shows offline notice and keeps confirm enabled when active shift exists', async () => {

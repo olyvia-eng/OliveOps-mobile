@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 
 const mockClockIn = jest.fn();
 const mockRefresh = jest.fn().mockResolvedValue({ ok: true });
+const mockGetRequiredForms = jest.fn().mockResolvedValue({ ok: true, forms: [] });
 const mockLoadUnbillableCategoriesIfNeeded = jest.fn().mockResolvedValue(undefined);
 const mockRetryUnbillableCategories = jest.fn().mockResolvedValue(undefined);
 
@@ -69,6 +70,10 @@ jest.mock('@/hooks/useClockingActions', () => ({
   useClockingActions: () => mockUseClockingActions(),
 }));
 
+jest.mock('@/hooks/useFormsActions', () => ({
+  useFormsActions: () => ({ getRequiredForms: mockGetRequiredForms }),
+}));
+
 jest.mock('@/hooks/useUnbillableCategories', () => ({
   useUnbillableCategories: () => mockUseUnbillableCategories(),
 }));
@@ -129,6 +134,7 @@ describe('ClockInScreen', () => {
     (router.replace as jest.Mock).mockReset();
     mockClockIn.mockReset();
     mockRefresh.mockClear();
+    mockGetRequiredForms.mockReset().mockResolvedValue({ ok: true, forms: [] });
     mockLoadUnbillableCategoriesIfNeeded.mockClear();
     mockRetryUnbillableCategories.mockClear();
     mockUseUnbillableCategories.mockReset();
@@ -211,6 +217,27 @@ describe('ClockInScreen', () => {
     });
 
     expect(mockClockIn).toHaveBeenCalledWith('emp-1', 'job', ['job-1'], undefined, { requestId: 'req-1', idempotencyKey: 'key-1' });
+    expect(router.replace).toHaveBeenCalledWith('/active-shift');
+  });
+
+  it('surfaces advisory Forms before clock in without blocking Continue', async () => {
+    mockGetRequiredForms
+      .mockResolvedValueOnce({ ok: true, forms: [{ id: 'form-clock' }] })
+      .mockResolvedValueOnce({ ok: true, forms: [{ id: 'form-job' }] });
+    let tree: any;
+    await act(async () => { tree = create(<ClockInScreen />); });
+    await act(async () => tree.root.findByProps({ testID: 'activity-option-job' }).props.onPress());
+    await act(async () => tree.root.findByProps({ testID: 'job-option-job-1' }).props.onPress());
+
+    await act(async () => tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Clock In').props.onPress());
+
+    expect(mockGetRequiredForms).toHaveBeenNthCalledWith(1, 'before_clock_in');
+    expect(mockGetRequiredForms).toHaveBeenNthCalledWith(2, 'before_starting_job', { jobId: 'job-1' });
+    expect(mockClockIn).not.toHaveBeenCalled();
+    expect(tree.root.findByType('status-banner').props.message).toContain('2 Forms available');
+
+    await act(async () => tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Continue Clock In').props.onPress());
+    expect(mockClockIn).toHaveBeenCalledTimes(1);
     expect(router.replace).toHaveBeenCalledWith('/active-shift');
   });
 

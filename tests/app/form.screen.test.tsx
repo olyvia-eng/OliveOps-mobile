@@ -32,8 +32,14 @@ jest.mock('expo-router', () => ({
 jest.mock('@/store/formsStore', () => ({
   useFormsStore: () => ({ toDo: [mockForm], available: [] }),
 }));
+jest.mock('@/store/authStore', () => ({
+  useAuthStore: () => ({ user: { businessId: 'biz-1', id: 'user-1', employeeId: 'emp-1' } }),
+}));
 jest.mock('@/hooks/useFormsActions', () => ({
   useFormsActions: () => ({ refreshForms: mockRefreshForms, submitForm: mockSubmitForm, submitting: false }),
+}));
+jest.mock('@/services/requestGuards', () => ({
+  createRequestMeta: () => ({ requestId: 'form-request-1', idempotencyKey: 'form-submission-1' }),
 }));
 jest.mock('@/components/Screen', () => ({ Screen: ({ children }: any) => require('react').createElement('screen', {}, children) }));
 jest.mock('@/components/StatusBanner', () => ({ StatusBanner: ({ message }: any) => require('react').createElement('status-banner', { message }) }));
@@ -82,6 +88,7 @@ describe('FormScreen', () => {
     await act(async () => tree.root.findByProps({ testID: 'form-field-damage-option-no' }).props.onPress());
     await act(async () => tree.root.findByType('primary-button').props.onPress());
     expect(mockSubmitForm).toHaveBeenCalledWith({
+      clientSubmissionId: 'form-submission-1',
       formId: 'form-1',
       trigger: 'daily',
       equipmentId: 'eq-1',
@@ -105,6 +112,21 @@ describe('FormScreen', () => {
     expect(tree.root.findByProps({ testID: 'form-field-condition' }).props.value).toBe('Good');
     expect(tree.root.findByType('primary-button').props.label).toBe('Retry Submit');
     expect(mockReplace).not.toHaveBeenCalled();
+  });
+
+  it('reuses the same client submission ID for an explicit retry', async () => {
+    mockSubmitForm
+      .mockResolvedValueOnce({ ok: false, error: 'Submission could not be confirmed.', uncertain: true })
+      .mockResolvedValueOnce({ ok: true, submission: { id: 'sub-1' } });
+    let tree: any;
+    await act(async () => { tree = create(<FormScreen />); });
+    await act(async () => tree.root.findByProps({ testID: 'form-field-condition' }).props.onChangeText('Good'));
+    await act(async () => tree.root.findByType('primary-button').props.onPress());
+    await act(async () => tree.root.findByType('primary-button').props.onPress());
+
+    expect(mockSubmitForm).toHaveBeenCalledTimes(2);
+    expect(mockSubmitForm.mock.calls[0][0].clientSubmissionId).toBe('form-submission-1');
+    expect(mockSubmitForm.mock.calls[1][0].clientSubmissionId).toBe('form-submission-1');
   });
 
   it('disables submission when a required unsupported field exists', async () => {

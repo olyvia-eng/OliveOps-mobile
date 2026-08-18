@@ -141,7 +141,6 @@ export function useFormsActions() {
     if (!beginRequest(key)) return { ok: false as const, error: 'This form is already being submitted.' };
 
     const requestIdentity = authIdentity;
-    const attemptStartedAt = Date.now();
     setSubmitting(true);
     try {
       if (!await isOnline()) {
@@ -172,7 +171,7 @@ export function useFormsActions() {
             item.formId === payload.formId
             && item.trigger === payload.trigger
             && contextMatches(item.context, payload)
-            && (payload.trigger !== 'on_demand' || Date.parse(item.submittedAt) >= attemptStartedAt - 5_000)
+            && (payload.trigger !== 'on_demand' || item.clientSubmissionId === payload.clientSubmissionId)
           ));
           if (completed) {
             setFlashMessage('Form submitted successfully.');
@@ -193,7 +192,9 @@ export function useFormsActions() {
       }
       return {
         ok: false as const,
-        error: toFormsError(error, 'Could not submit this form. Your answers are still here.'),
+        error: shouldReconcile
+          ? 'Submission could not be confirmed. Your answers are still here. Retry when ready.'
+          : toFormsError(error, 'Could not submit this form. Your answers are still here.'),
         uncertain: shouldReconcile,
       };
     } finally {
