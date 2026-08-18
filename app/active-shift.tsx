@@ -2,12 +2,18 @@ import { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { PrimaryActionButton } from '@/components/PrimaryActionButton';
+import { SecondaryButton } from '@/components/SecondaryButton';
 import { Screen } from '@/components/Screen';
 import { StatusBanner } from '@/components/StatusBanner';
+import { EmptyState, ScreenHeader, SectionHeader, StatusBadge } from '@/components/MobilePrimitives';
 import {
+  formatDurationForEntry,
   formatElapsedClock,
+  formatEntryTimeRange,
   formatLongShiftWarning,
+  getCurrentShiftSegments,
   getWorkTypeLabel,
+  resolveEntryPrimaryLabel,
   resolveCurrentActiveEntry,
   resolveJobTitle,
   resolveUnbillableCategoryName,
@@ -47,6 +53,11 @@ export default function ActiveShiftScreen() {
     return resolveUnbillableCategoryName(entry);
   }, [entry]);
 
+  const shiftSegments = useMemo(
+    () => getCurrentShiftSegments(timeEntries, user?.employeeId, currentActiveEntryId),
+    [currentActiveEntryId, timeEntries, user?.employeeId],
+  );
+
   const showLongShiftWarning = Boolean(entry && activeShiftWarnings.possibleForgottenClockOut);
   const longShiftWarning = useMemo(() => {
     if (!entry) return '';
@@ -55,36 +66,47 @@ export default function ActiveShiftScreen() {
 
   return (
     <Screen>
-      <View style={styles.card}>
-        {!entry ? (
-          <>
-            <Text style={styles.emptyTitle}>No active shift</Text>
-            <Text style={styles.text}>You're not currently clocked in.</Text>
-          </>
-        ) : (
-          <>
-            <Text style={styles.sectionLabel}>Current Shift</Text>
-            <View style={styles.statusRow}>
-              <Text style={styles.statusDot}>●</Text>
-              <Text style={styles.statusValue}>Clocked in</Text>
-            </View>
-            <Text style={styles.jobTitle}>{jobLabel}</Text>
-            {entry.workType === 'non_billable' ? (
-              <View style={styles.activityStack}>
-                <Text style={styles.activityText}>Unbillable</Text>
-                <Text style={styles.activityCategoryText}>{unbillableCategoryLabel}</Text>
-              </View>
-            ) : (
-              <Text style={styles.activityText}>Activity: {activityLabel}</Text>
-            )}
+      <ScreenHeader title="Active Shift" subtitle="Live shift details" />
+      {!entry ? (
+        <EmptyState
+          title="No active shift"
+          message="You're not currently clocked in."
+          action={<PrimaryActionButton label="Clock In" onPress={() => router.push('/clock-in')} />}
+        />
+      ) : (
+        <>
+          <View style={styles.hero}>
+            <StatusBadge label="Clocked in" tone="active" />
+            <Text style={styles.heroLabel}>Current Activity</Text>
+            <Text style={styles.heroActivity}>{entry.workType === 'non_billable' ? unbillableCategoryLabel : activityLabel}</Text>
+            {entry.workType === 'job' ? <Text style={styles.heroJob}>{jobLabel}</Text> : null}
             <Text style={styles.elapsedClock}>{formatElapsedClock(entry.clockIn, now)}</Text>
-            <Text style={styles.elapsedLabel}>Elapsed</Text>
-            <View style={styles.metaRow}>
-              <Text style={styles.metaLabel}>Started at {new Date(entry.clockIn).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</Text>
+            <Text style={styles.heroMeta}>Started {new Date(entry.clockIn).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</Text>
+          </View>
+
+          <View style={styles.timelineSection}>
+            <SectionHeader title="Today's Shift" />
+            <View style={styles.timeline}>
+              {shiftSegments.map((segment, index) => (
+                <View key={segment.id} style={styles.segmentRow}>
+                  <View style={styles.timelineRail}>
+                    <View style={[styles.timelineDot, segment.id === entry.id && styles.timelineDotActive]} />
+                    {index < shiftSegments.length - 1 ? <View style={styles.timelineLine} /> : null}
+                  </View>
+                  <View style={styles.segmentContent}>
+                    <View style={styles.segmentTop}>
+                      <Text style={styles.segmentTitle}>{getWorkTypeLabel(segment.workType)}{segment.workType === 'job' ? ` — ${resolveEntryPrimaryLabel(segment, jobs)}` : ''}</Text>
+                      <Text style={styles.segmentDuration}>{formatDurationForEntry(segment, now)}</Text>
+                    </View>
+                    <Text style={styles.segmentTime}>{formatEntryTimeRange(segment, segment.id === entry.id)}</Text>
+                    {segment.workType === 'non_billable' ? <Text style={styles.segmentMeta}>{resolveEntryPrimaryLabel(segment, jobs)}</Text> : null}
+                  </View>
+                </View>
+              ))}
             </View>
-          </>
-        )}
-      </View>
+          </View>
+        </>
+      )}
 
       {showLongShiftWarning ? (
         <View style={styles.warningBlock}>
@@ -97,18 +119,40 @@ export default function ActiveShiftScreen() {
       ) : null}
 
       {entry ? (
-        <>
+        <View style={styles.actions}>
+          <SecondaryButton label="Switch Activity" onPress={() => router.push('/switch-activity')} />
           <PrimaryActionButton label="Clock Out" onPress={() => router.push('/clock-out')} />
-          <PrimaryActionButton label="Switch Activity" onPress={() => router.push('/switch-activity')} />
-        </>
-      ) : (
-        <PrimaryActionButton label="Clock In" onPress={() => router.push('/clock-in')} />
-      )}
+        </View>
+      ) : null}
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
+  hero: {
+    borderRadius: 12,
+    backgroundColor: colors.primary,
+    padding: 18,
+    gap: 5,
+  },
+  heroLabel: { color: '#D7E2D2', fontSize: 12, fontWeight: '700', textTransform: 'uppercase', marginTop: 6 },
+  heroActivity: { color: colors.primaryText, fontSize: 24, fontWeight: '700' },
+  heroJob: { color: '#E7EFE3', fontSize: 15, fontWeight: '600' },
+  heroMeta: { color: '#D7E2D2', fontSize: 14 },
+  timelineSection: { gap: 8 },
+  timeline: { borderTopWidth: 1, borderTopColor: colors.divider, paddingTop: 6 },
+  segmentRow: { flexDirection: 'row', minHeight: 70 },
+  timelineRail: { width: 24, alignItems: 'center' },
+  timelineDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.border, marginTop: 6 },
+  timelineDotActive: { backgroundColor: colors.primary },
+  timelineLine: { width: 1, flex: 1, backgroundColor: colors.divider, marginVertical: 3 },
+  segmentContent: { flex: 1, paddingBottom: 14 },
+  segmentTop: { flexDirection: 'row', justifyContent: 'space-between', gap: 8 },
+  segmentTitle: { flex: 1, color: colors.textPrimary, fontSize: 15, fontWeight: '700' },
+  segmentDuration: { color: colors.textPrimary, fontSize: 14, fontWeight: '700' },
+  segmentTime: { color: colors.textSecondary, fontSize: 14, marginTop: 3 },
+  segmentMeta: { color: colors.textMuted, fontSize: 13, marginTop: 2 },
+  actions: { gap: 8 },
   card: {
     borderRadius: 14,
     borderWidth: 1,
@@ -156,10 +200,10 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   elapsedClock: {
-    color: colors.textPrimary,
+    color: colors.primaryText,
     fontSize: 36,
     fontWeight: '700',
-    letterSpacing: -0.6,
+    marginTop: 10,
   },
   elapsedLabel: {
     color: colors.textSecondary,

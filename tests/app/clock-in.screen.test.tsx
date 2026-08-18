@@ -169,6 +169,9 @@ describe('ClockInScreen', () => {
     const submitButton = tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Clock In');
     expect(submitButton?.props.disabled).toBe(true);
 
+    await act(async () => {
+      tree.root.findAllByProps({ testID: 'activity-option-job' })[0].props.onPress();
+    });
     const jobPress = tree.root.findAllByProps({ testID: 'job-option-job-1' })[0];
     await act(async () => {
       jobPress.props.onPress();
@@ -184,6 +187,9 @@ describe('ClockInScreen', () => {
       tree = create(React.createElement(ClockInScreen));
     });
 
+    await act(async () => {
+      tree.root.findAllByProps({ testID: 'activity-option-job' })[0].props.onPress();
+    });
     await act(async () => {
       tree.root.findAllByProps({ testID: 'job-option-job-1' })[0].props.onPress();
     });
@@ -227,6 +233,9 @@ describe('ClockInScreen', () => {
       tree = create(React.createElement(ClockInScreen));
     });
 
+    await act(async () => {
+      tree.root.findAllByProps({ testID: 'activity-option-job' })[0].props.onPress();
+    });
     await act(async () => {
       tree.root.findAllByProps({ testID: 'job-option-job-1' })[0].props.onPress();
     });

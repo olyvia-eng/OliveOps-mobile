@@ -6,9 +6,19 @@ import { OfflineNotice } from '@/components/OfflineNotice';
 import { PrimaryActionButton } from '@/components/PrimaryActionButton';
 import { Screen } from '@/components/Screen';
 import { StatusBanner } from '@/components/StatusBanner';
+import { ScreenHeader, SectionHeader, StatusBadge } from '@/components/MobilePrimitives';
 import { completeUpload, deleteUploadedFile, prepareUpload, uploadUriToS3 } from '@/api/storageApi';
 import { MAX_TIME_ENTRY_PHOTOS } from '@/features/clocking/constants';
-import { formatElapsedShort, resolveCurrentActiveEntry, resolveJobTitle } from '@/features/clocking/presentation';
+import {
+  formatDurationForEntry,
+  formatDurationMinutes,
+  formatEntryTimeRange,
+  getCurrentShiftSegments,
+  getWorkTypeLabel,
+  resolveCurrentActiveEntry,
+  resolveEntryPrimaryLabel,
+  resolveJobTitle,
+} from '@/features/clocking/presentation';
 import { useClockingActions } from '@/hooks/useClockingActions';
 import { isOnline } from '@/services/connectivity';
 import { createRequestMeta } from '@/services/requestGuards';
@@ -96,6 +106,16 @@ export default function ClockOutScreen() {
     if (!activeEntry) return 'No active shift';
     return resolveJobTitle(activeEntry, jobs);
   }, [activeEntry, jobs]);
+
+  const shiftSegments = useMemo(
+    () => getCurrentShiftSegments(timeEntries, user?.employeeId, currentActiveEntryId),
+    [currentActiveEntryId, timeEntries, user?.employeeId],
+  );
+  const totalShiftMinutes = useMemo(() => shiftSegments.reduce((total, segment) => {
+    const startedAt = Date.parse(segment.clockIn);
+    const endedAt = segment.clockOut ? Date.parse(segment.clockOut) : Date.now();
+    return total + Math.max(0, (endedAt - startedAt) / 60000 - (segment.breakMinutes || 0));
+  }, 0), [shiftSegments]);
 
   function updateAttachment(localId: string, updater: (previous: PhotoAttachment) => PhotoAttachment) {
     setAttachments((previous) => previous.map((attachment) => {
@@ -366,16 +386,37 @@ export default function ClockOutScreen() {
   return (
     <Screen>
       <OfflineNotice />
-      <View style={styles.card}>
-        <Text style={styles.title}>Shift summary</Text>
+      <ScreenHeader title="Clock Out" subtitle="Review your shift before submitting" />
+      <View style={styles.summarySection}>
+        <SectionHeader title="Shift Summary" />
         {activeEntry ? (
-          <View style={styles.shiftSummary}>
-            <Text style={styles.shiftJob}>{shiftLabel}</Text>
-            <Text style={styles.shiftMeta}>Started {new Date(activeEntry.clockIn).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</Text>
-            <Text style={styles.shiftMeta}>Duration {formatElapsedShort(activeEntry.clockIn)}</Text>
+          <View style={styles.timeline}>
+            {shiftSegments.map((segment, index) => (
+              <View key={segment.id} style={styles.segmentRow}>
+                <View style={styles.timelineRail}>
+                  <View style={[styles.timelineDot, segment.id === activeEntry.id && styles.timelineDotActive]} />
+                  {index < shiftSegments.length - 1 ? <View style={styles.timelineLine} /> : null}
+                </View>
+                <View style={styles.segmentContent}>
+                  <Text style={styles.segmentTime}>{formatEntryTimeRange(segment, segment.id === activeEntry.id)}</Text>
+                  <View style={styles.segmentHeading}>
+                    <Text style={styles.segmentTitle}>{getWorkTypeLabel(segment.workType)}</Text>
+                    <Text style={styles.segmentDuration}>{formatDurationForEntry(segment)}</Text>
+                  </View>
+                  {segment.workType !== 'drive_time' ? <Text style={styles.segmentMeta}>{resolveEntryPrimaryLabel(segment, jobs)}</Text> : null}
+                </View>
+              </View>
+            ))}
+            <View style={styles.totalRow}>
+              <Text style={styles.totalLabel}>Total Shift Time</Text>
+              <Text style={styles.totalValue}>{formatDurationMinutes(totalShiftMinutes)}</Text>
+            </View>
           </View>
         ) : null}
-        <Text style={styles.label}>Notes</Text>
+      </View>
+
+      <View style={styles.formSection}>
+        <Text style={styles.label}>Notes <Text style={styles.optional}>(optional)</Text></Text>
         <TextInput
           multiline
           numberOfLines={4}
@@ -387,15 +428,18 @@ export default function ClockOutScreen() {
         />
 
         <View style={styles.photoCard}>
-          <Text style={styles.photoLabel}>Photo</Text>
-          <Text style={styles.photoMeta}>Optional - attach up to {MAX_TIME_ENTRY_PHOTOS} photos of completed work. ({attachments.length}/{MAX_TIME_ENTRY_PHOTOS})</Text>
+          <View style={styles.photoHeading}>
+            <Text style={styles.photoLabel}>Photo <Text style={styles.optional}>(optional)</Text></Text>
+            <StatusBadge label={`${attachments.length}/${MAX_TIME_ENTRY_PHOTOS}`} />
+          </View>
+          <Text style={styles.photoMeta}>Attach photos of completed work.</Text>
 
           {attachments.map((attachment) => (
             <View key={attachment.localId} style={styles.photoPreviewBlock}>
               <Image source={{ uri: attachment.uri }} style={styles.photoPreview} />
               <Text style={styles.photoName}>{attachment.name || 'Photo attached'}</Text>
               <Text style={styles.photoStatus}>
-                {attachment.status === 'uploading' ? 'Uploading...' : attachment.status === 'uploaded' ? 'Attached' : attachment.error || 'Upload failed'}
+                {attachment.status === 'uploading' ? 'Uploading' : attachment.status === 'uploaded' ? 'Uploaded' : attachment.error || 'Failed'}
               </Text>
               <View style={styles.photoActionsRow}>
                 {attachment.status === 'failed' ? (
@@ -469,6 +513,25 @@ export default function ClockOutScreen() {
 }
 
 const styles = StyleSheet.create({
+  summarySection: { gap: 8 },
+  timeline: { borderTopWidth: 1, borderTopColor: colors.divider, paddingTop: 8 },
+  segmentRow: { flexDirection: 'row', minHeight: 76 },
+  timelineRail: { width: 24, alignItems: 'center' },
+  timelineDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.border, marginTop: 5 },
+  timelineDotActive: { backgroundColor: colors.primary },
+  timelineLine: { width: 1, flex: 1, backgroundColor: colors.divider, marginVertical: 3 },
+  segmentContent: { flex: 1, paddingBottom: 14 },
+  segmentTime: { color: colors.textSecondary, fontSize: 13 },
+  segmentHeading: { flexDirection: 'row', justifyContent: 'space-between', gap: 8, marginTop: 3 },
+  segmentTitle: { color: colors.textPrimary, fontSize: 16, fontWeight: '700' },
+  segmentDuration: { color: colors.textPrimary, fontSize: 14, fontWeight: '700' },
+  segmentMeta: { color: colors.textSecondary, fontSize: 14, marginTop: 2 },
+  totalRow: { flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: colors.divider, paddingTop: 12 },
+  totalLabel: { color: colors.textPrimary, fontSize: 16, fontWeight: '700' },
+  totalValue: { color: colors.primary, fontSize: 18, fontWeight: '700' },
+  formSection: { gap: 10 },
+  optional: { color: colors.textMuted, fontWeight: '400' },
+  photoHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   card: {
     borderRadius: 14,
     borderWidth: 1,

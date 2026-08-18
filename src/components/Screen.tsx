@@ -1,12 +1,17 @@
 import { PropsWithChildren } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ScrollView, StyleSheet, View } from 'react-native';
-import { colors } from '@/theme/colors';
+import { colors, spacing } from '@/theme/colors';
 
-export function Screen({ children }: PropsWithChildren) {
+export function Screen({ children, testID }: PropsWithChildren<{ testID?: string }>) {
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        testID={testID}
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+        automaticallyAdjustKeyboardInsets
+      >
         <View style={styles.inner}>{children}</View>
       </ScrollView>
     </SafeAreaView>
@@ -23,9 +28,9 @@ const styles = StyleSheet.create({
   },
   inner: {
     flex: 1,
-    paddingHorizontal: 20,
-    paddingTop: 18,
-    paddingBottom: 24,
-    gap: 14,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.xxl,
+    gap: spacing.md,
   },
 });

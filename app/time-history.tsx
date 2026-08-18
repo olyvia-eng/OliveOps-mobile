@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
+import { EmptyState, ScreenHeader, StatusBadge } from '@/components/MobilePrimitives';
 import {
   buildEffectiveTimeEntries,
   formatDurationForEntry,
@@ -46,10 +47,8 @@ export default function TimeHistoryScreen() {
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}
         ListHeaderComponent={(
-          <View style={styles.headerCard}>
-            <Text style={styles.title}>Today's entries</Text>
-            <Text style={styles.meta}>Today entries: {todayEntries.length}</Text>
-            <Text style={styles.meta}>This week total: {weekTotalLabel}</Text>
+          <View style={styles.headerBlock}>
+            <ScreenHeader title="Time History" subtitle={`${todayEntries.length} entries today · This week total: ${weekTotalLabel}`} />
             <View style={styles.headerActionsRow}>
               <Pressable
                 style={styles.headerAction}
@@ -64,20 +63,18 @@ export default function TimeHistoryScreen() {
           </View>
         )}
         renderItem={({ item }) => (
-          <View style={styles.entryCard}>
+          <View style={styles.entryRow}>
             <View style={styles.entryTopRow}>
-              <Text style={styles.entryJob}>{resolveEntryPrimaryLabel(item, jobs)}</Text>
+              <View style={styles.entryHeading}>
+                <Text style={styles.entryActivity}>{getWorkTypeLabel(item.workType)}</Text>
+                <Text style={styles.entryJob}>{resolveEntryPrimaryLabel(item, jobs)}</Text>
+              </View>
               {item.clockOut ? (
                 <Text style={styles.entryDuration}>{formatDurationForEntry(item)}</Text>
               ) : isAuthoritativeActiveEntry(item.id, authoritativeActiveEntryId) ? (
-                <View style={styles.activeBadge}>
-                  <Text style={styles.activeDot}>●</Text>
-                  <Text style={styles.activeLabel}>Active</Text>
-                </View>
+                <StatusBadge label="Active" tone="active" />
               ) : (
-                <View style={styles.incompleteBadge}>
-                  <Text style={styles.incompleteLabel}>Incomplete record</Text>
-                </View>
+                <StatusBadge label="Incomplete record" />
               )}
             </View>
             <View style={styles.badgeRow}>
@@ -92,9 +89,7 @@ export default function TimeHistoryScreen() {
                 </View>
               ) : null}
             </View>
-            <Text style={styles.entryType}>{getWorkTypeLabel(item.workType)}</Text>
-            <Text style={styles.entryDateLabel}>Today</Text>
-            <Text style={styles.entryRange}>{formatEntryTimeRange(item, isAuthoritativeActiveEntry(item.id, authoritativeActiveEntryId))}</Text>
+            <Text style={styles.entryRange}>Today · {formatEntryTimeRange(item, isAuthoritativeActiveEntry(item.id, authoritativeActiveEntryId))}</Text>
             <Pressable
               style={styles.requestAction}
               onPress={() => router.push({
@@ -109,7 +104,7 @@ export default function TimeHistoryScreen() {
             </Pressable>
           </View>
         )}
-        ListEmptyComponent={<Text style={styles.empty}>No time entries for today.</Text>}
+        ListEmptyComponent={<EmptyState title="No time entries today" message="Your completed and active work will appear here." />}
       />
     </SafeAreaView>
   );
@@ -125,8 +120,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 18,
     paddingBottom: 24,
-    gap: 10,
+    gap: 0,
   },
+  headerBlock: { gap: 10, paddingBottom: 12 },
   headerCard: {
     borderRadius: 14,
     borderWidth: 1,
@@ -135,6 +131,9 @@ const styles = StyleSheet.create({
     padding: 16,
     gap: 6,
   },
+  entryRow: { borderTopWidth: 1, borderTopColor: colors.divider, paddingVertical: 14, gap: 5 },
+  entryHeading: { flex: 1, gap: 2 },
+  entryActivity: { color: colors.textPrimary, fontSize: 16, fontWeight: '700' },
   title: {
     color: colors.textPrimary,
     fontSize: 24,

@@ -41,14 +41,15 @@ function RootLayout() {
             screenOptions={{
               headerStyle: { backgroundColor: colors.background },
               headerTintColor: colors.textPrimary,
-              headerTitleStyle: { fontWeight: '700' },
+              headerTitleStyle: { fontSize: 17, fontWeight: '700' },
+              headerBackButtonDisplayMode: 'minimal',
               headerShadowVisible: false,
               contentStyle: { backgroundColor: colors.background },
             }}
           >
             <Stack.Screen name="index" options={{ headerShown: false }} />
             <Stack.Screen name="login" options={{ headerShown: false }} />
-            <Stack.Screen name="home" options={{ title: 'Home' }} />
+            <Stack.Screen name="home" options={{ title: 'Home', headerBackVisible: false, gestureEnabled: false }} />
             <Stack.Screen name="clock-in" options={{ title: 'Clock In' }} />
             <Stack.Screen name="switch-activity" options={{ title: 'Switch Activity' }} />
             <Stack.Screen name="active-shift" options={{ title: 'Active Shift' }} />

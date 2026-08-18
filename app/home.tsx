@@ -2,9 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { PrimaryActionButton } from '@/components/PrimaryActionButton';
+import { SecondaryButton } from '@/components/SecondaryButton';
 import { Screen } from '@/components/Screen';
 import { OfflineNotice } from '@/components/OfflineNotice';
 import { StatusBanner } from '@/components/StatusBanner';
+import { ActionCard, ListRow, ScreenHeader, SectionHeader, StatusBadge } from '@/components/MobilePrimitives';
 import {
   formatLongShiftWarning,
   formatElapsedShort,
@@ -56,13 +58,6 @@ export default function HomeScreen() {
     return getWorkTypeLabel(activeShift.workType);
   }, [activeShift]);
 
-  const runningHours = useMemo(() => {
-    if (!activeShift) return '0.00';
-    const started = new Date(activeShift.clockIn).getTime();
-    const hours = Math.max(0, (now - started) / (1000 * 60 * 60));
-    return hours.toFixed(2);
-  }, [activeShift, now]);
-
   const runningDuration = useMemo(() => {
     if (!activeShift) return '0h 0m';
     return formatElapsedShort(activeShift.clockIn, now);
@@ -80,92 +75,146 @@ export default function HomeScreen() {
     [now]
   );
 
-  const todaysWork = useMemo(
-    () => jobs.filter((job) => job.status === 'scheduled' || job.status === 'in_progress'),
-    [jobs]
-  );
-
-  const dominantLabel = activeShift ? 'Clock Out' : 'Clock In';
-
-  function onDominantPress() {
-    if (activeShift) {
-      router.push('/clock-out');
-      return;
-    }
-    router.push('/clock-in');
-  }
-
   return (
-    <Screen>
+    <Screen testID="home-scroll">
       <OfflineNotice />
 
       <View style={styles.topRow}>
-        <View style={styles.brandPill}>
-          <Text style={styles.brandDot}>●</Text>
-          <Text style={styles.brandText}>OliveOps</Text>
-        </View>
+        <Text style={styles.brandText}>OliveOps</Text>
         <Pressable accessibilityRole="button" onPress={() => router.push('/settings')}>
           <Text style={styles.settingsLink}>Settings</Text>
         </Pressable>
       </View>
 
-      <View style={styles.headerBlock}>
-        <Text style={styles.greeting}>{greeting}</Text>
-        <Text style={styles.today}>{todayLabel}</Text>
-      </View>
-
-      <View style={styles.statusCard}>
-        <Text style={styles.sectionLabel}>{activeShift ? 'Current Shift' : 'Current Status'}</Text>
-        <View style={styles.statusRow}>
-          <Text style={[styles.statusDot, activeShift ? styles.statusDotActive : styles.statusDotIdle]}>●</Text>
-          <Text style={styles.statusValue}>{activeShift ? 'Clocked in' : 'Not clocked in'}</Text>
-        </View>
-        <Text style={styles.metaText}>Current job: {currentJobLabel}</Text>
-        <Text style={styles.metaText}>Current activity: {currentActivityLabel}</Text>
-        <Text style={styles.metaText}>Running shift hours: {runningHours}</Text>
-        {activeShift ? <Text style={styles.metaText}>Elapsed: {runningDuration}</Text> : null}
-      </View>
+      <ScreenHeader title={greeting} subtitle={todayLabel} />
 
       {loadError ? <StatusBanner tone="error" message={loadError} /> : null}
+
+      {activeShift ? (
+        <View style={styles.activeCard}>
+          <StatusBadge label="Active Shift" tone="active" />
+          <Text style={styles.activeTitle}>You're clocked in</Text>
+          <Text style={styles.activeJob}>{currentJobLabel}</Text>
+          <Text style={styles.activeActivity}>{currentActivityLabel}</Text>
+          <View style={styles.shiftMetrics}>
+            <View>
+              <Text style={styles.metricLabel}>Total shift</Text>
+              <Text style={styles.metricValue}>{runningDuration}</Text>
+            </View>
+            <View>
+              <Text style={styles.metricLabel}>Started</Text>
+              <Text style={styles.metricValue}>{new Date(activeShift.clockIn).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</Text>
+            </View>
+          </View>
+          <Pressable accessibilityRole="button" onPress={() => router.push('/active-shift')}>
+            <Text style={styles.detailsLink}>View Details ›</Text>
+          </Pressable>
+        </View>
+      ) : (
+        <ActionCard>
+          <StatusBadge label="Not clocked in" />
+          <Text style={styles.idleTitle}>Ready to start your shift?</Text>
+          <Text style={styles.idleText}>Choose what you're working on and clock in.</Text>
+        </ActionCard>
+      )}
 
       {showLongShiftWarning ? (
         <View style={styles.warningBlock}>
           <StatusBanner tone="info" message={longShiftWarning} />
-          <PrimaryActionButton label="Clock Out Now" onPress={() => router.push('/clock-out')} />
-          <Pressable style={styles.warningSecondary} onPress={() => router.push({ pathname: '/request-time-correction', params: { requestType: 'forgot_clock_out' } })}>
-            <Text style={styles.warningSecondaryText}>Clock Out & Request Correction</Text>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => router.push({ pathname: '/request-time-correction', params: { requestType: 'forgot_clock_out' } })}
+          >
+            <Text style={styles.warningLink}>Clock Out & Request Correction</Text>
           </Pressable>
         </View>
       ) : null}
 
-      <PrimaryActionButton label={dominantLabel} onPress={onDominantPress} />
-
-      <Pressable style={styles.secondaryCard} onPress={() => router.push('/active-shift')}>
-        <Text style={styles.secondaryTitle}>Active Shift</Text>
-        <Text style={styles.secondaryMeta}>View live shift details and elapsed time.</Text>
-      </Pressable>
-
-      {todaysWork.length > 0 ? (
-        <View style={styles.sectionBlock}>
-          <Text style={styles.sectionTitle}>Today's Work</Text>
-          {todaysWork.slice(0, 4).map((job) => (
-            <View key={job.id} style={styles.jobCard}>
-              <Text style={styles.jobTitle}>{job.title || 'Untitled Job'}</Text>
-              <Text style={styles.jobMeta}>{job.status.replace('_', ' ')}</Text>
-            </View>
-          ))}
+      {activeShift ? (
+        <View style={styles.actionStack}>
+          <SecondaryButton label="Switch Activity" onPress={() => router.push('/switch-activity')} />
+          <PrimaryActionButton label={showLongShiftWarning ? 'Clock Out Now' : 'Clock Out'} onPress={() => router.push('/clock-out')} />
         </View>
-      ) : null}
+      ) : (
+        <PrimaryActionButton label="Clock In" onPress={() => router.push('/clock-in')} />
+      )}
 
-      <Pressable style={styles.secondaryCard} onPress={() => router.push('/time-history')}>
-        <Text style={styles.secondaryTitle}>Time History</Text>
-        <Text style={styles.secondaryMeta}>Review your recent entries and weekly total.</Text>
-      </Pressable>
+      <View style={styles.quickSection}>
+        <SectionHeader title="Quick Actions" />
+        <View style={styles.quickList}>
+          <ListRow title="Time History" subtitle="Review entries and weekly totals" onPress={() => router.push('/time-history')} />
+          <ListRow title="Correction Requests" subtitle="View or request a time correction" onPress={() => router.push('/my-correction-requests')} />
+        </View>
+      </View>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
+  activeCard: {
+    borderRadius: 12,
+    backgroundColor: colors.primary,
+    padding: 18,
+    gap: 6,
+  },
+  activeTitle: {
+    color: colors.primaryText,
+    fontSize: 24,
+    fontWeight: '700',
+    marginTop: 4,
+  },
+  activeJob: {
+    color: colors.primaryText,
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  activeActivity: {
+    color: '#E7EFE3',
+    fontSize: 14,
+  },
+  shiftMetrics: {
+    flexDirection: 'row',
+    gap: 32,
+    marginTop: 10,
+  },
+  metricLabel: {
+    color: '#D7E2D2',
+    fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+  },
+  metricValue: {
+    color: colors.primaryText,
+    fontSize: 18,
+    fontWeight: '700',
+    marginTop: 2,
+  },
+  detailsLink: {
+    color: colors.primaryText,
+    fontSize: 14,
+    fontWeight: '700',
+    marginTop: 8,
+  },
+  idleTitle: {
+    color: colors.textPrimary,
+    fontSize: 20,
+    fontWeight: '700',
+  },
+  idleText: {
+    color: colors.textSecondary,
+    fontSize: 14,
+  },
+  actionStack: {
+    gap: 8,
+  },
+  quickSection: {
+    gap: 6,
+    marginTop: 4,
+  },
+  quickList: {
+    borderTopWidth: 1,
+    borderTopColor: colors.divider,
+  },
   topRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -245,6 +294,11 @@ const styles = StyleSheet.create({
   },
   warningBlock: {
     gap: 8,
+  },
+  warningLink: {
+    color: colors.primary,
+    fontSize: 14,
+    fontWeight: '700',
   },
   warningSecondary: {
     minHeight: 48,

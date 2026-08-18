@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { FlatList, StyleSheet, Text, View } from 'react-native';
 import { Screen } from '@/components/Screen';
 import { StatusBanner } from '@/components/StatusBanner';
+import { EmptyState, ScreenHeader, StatusBadge } from '@/components/MobilePrimitives';
+import { PrimaryActionButton } from '@/components/PrimaryActionButton';
 import { getCorrectionTypeLabel } from '@/features/clocking/presentation';
 import { useTimeCorrectionActions } from '@/hooks/useTimeCorrectionActions';
 import { useClockingStore } from '@/store/clockingStore';
@@ -9,7 +11,7 @@ import { colors } from '@/theme/colors';
 
 export default function MyCorrectionRequestsScreen() {
   const { timeCorrections } = useClockingStore();
-  const { refreshMyCorrections } = useTimeCorrectionActions();
+  const { loading, refreshMyCorrections } = useTimeCorrectionActions();
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -25,21 +27,16 @@ export default function MyCorrectionRequestsScreen() {
 
   return (
     <Screen>
-      <Text style={styles.title}>My Correction Requests</Text>
+      <ScreenHeader title="Correction Requests" subtitle="Track requested changes to your time" />
       {error ? <StatusBanner tone="error" message={error} /> : null}
+      {error ? <PrimaryActionButton label="Retry" disabled={loading} onPress={() => { void refreshMyCorrections(); }} /> : null}
 
       <FlatList
         data={ordered}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}
-        ListEmptyComponent={<Text style={styles.empty}>No correction requests yet.</Text>}
+        ListEmptyComponent={<EmptyState title="No correction requests" message="Requests you submit will appear here." />}
         renderItem={({ item }) => {
-          const statusTone = item.status === 'approved'
-            ? styles.badgeApproved
-            : item.status === 'rejected'
-              ? styles.badgeRejected
-              : styles.badgePending;
-
           const requestedSummary = [
             item.requestedClockInAt ? `Start: ${new Date(item.requestedClockInAt).toLocaleString()}` : null,
             item.requestedClockOutAt ? `End: ${new Date(item.requestedClockOutAt).toLocaleString()}` : null,
@@ -48,16 +45,17 @@ export default function MyCorrectionRequestsScreen() {
           ].filter(Boolean).join(' • ') || 'Details in request note';
 
           return (
-            <View style={styles.card}>
+            <View style={styles.requestRow}>
               <View style={styles.rowBetween}>
-                <Text style={styles.dateText}>{new Date(item.submittedAt).toLocaleDateString()}</Text>
-                <View style={[styles.badge, statusTone]}>
-                  <Text style={styles.badgeLabel}>{item.status[0].toUpperCase() + item.status.slice(1)}</Text>
-                </View>
+                <Text style={styles.typeText}>{getCorrectionTypeLabel(item.requestType)}</Text>
+                <StatusBadge
+                  label={item.status[0].toUpperCase() + item.status.slice(1)}
+                  tone={item.status === 'approved' ? 'success' : item.status === 'rejected' ? 'error' : 'neutral'}
+                />
               </View>
-              <Text style={styles.typeText}>{getCorrectionTypeLabel(item.requestType)}</Text>
               <Text style={styles.summaryText}>{requestedSummary}</Text>
               <Text style={styles.reasonText}>{item.reason}</Text>
+              <Text style={styles.dateText}>Submitted {new Date(item.submittedAt).toLocaleDateString()}</Text>
             </View>
           );
         }}
@@ -73,9 +71,10 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   listContent: {
-    gap: 10,
+    gap: 0,
     paddingBottom: 20,
   },
+  requestRow: { borderTopWidth: 1, borderTopColor: colors.divider, paddingVertical: 14, gap: 5 },
   empty: {
     color: colors.textSecondary,
     fontSize: 14,

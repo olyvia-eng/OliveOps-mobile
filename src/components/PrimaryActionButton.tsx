@@ -1,18 +1,21 @@
 import { Pressable, StyleSheet, Text } from 'react-native';
-import { colors } from '@/theme/colors';
+import { colors, radii, typography } from '@/theme/colors';
 
 export function PrimaryActionButton({
   label,
   disabled,
   onPress,
+  accessibilityLabel,
 }: {
   label: string;
   disabled?: boolean;
   onPress: () => void;
+  accessibilityLabel?: string;
 }) {
   return (
     <Pressable
       accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel ?? label}
       accessibilityState={{ disabled: !!disabled }}
       style={({ pressed }) => [styles.button, disabled && styles.disabled, pressed && !disabled && styles.pressed]}
       onPress={onPress}
@@ -25,8 +28,8 @@ export function PrimaryActionButton({
 
 const styles = StyleSheet.create({
   button: {
-    minHeight: 53,
-    borderRadius: 13,
+    minHeight: 50,
+    borderRadius: radii.md,
     backgroundColor: colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
@@ -39,8 +42,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primaryPressed,
   },
   text: {
-    color: colors.surface,
-    fontSize: 17,
-    fontWeight: '700',
+    color: colors.primaryText,
+    fontSize: typography.body,
+    fontWeight: typography.bold,
   },
 });

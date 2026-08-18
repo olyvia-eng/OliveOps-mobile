@@ -6,6 +6,8 @@ import { PrimaryActionButton } from '@/components/PrimaryActionButton';
 import { Screen } from '@/components/Screen';
 import { StatusBanner } from '@/components/StatusBanner';
 import { UnbillableCategorySelector } from '@/components/UnbillableCategorySelector';
+import { ActivitySelector } from '@/components/ActivitySelector';
+import { ListRow, ScreenHeader, SectionHeader } from '@/components/MobilePrimitives';
 import { getWorkTypeLabel, resolveCurrentActiveEntry, resolveJobTitle } from '@/features/clocking/presentation';
 import { useClockingActions } from '@/hooks/useClockingActions';
 import { useUnbillableCategories } from '@/hooks/useUnbillableCategories';
@@ -34,6 +36,7 @@ export default function SwitchActivityScreen() {
     retry: retryUnbillableCategories,
   } = useUnbillableCategories();
   const [selectedWorkType, setSelectedWorkType] = useState<TimeEntryWorkType>('job');
+  const [activityChosen, setActivityChosen] = useState(false);
   const [selectedJobId, setSelectedJobId] = useState('');
   const [selectedUnbillableCategoryId, setSelectedUnbillableCategoryId] = useState('');
   const [retryMeta, setRetryMeta] = useState<{ requestId: string; idempotencyKey: string } | null>(null);
@@ -84,9 +87,9 @@ export default function SwitchActivityScreen() {
     [activityOptions, selectedWorkType]
   );
 
-  const showJobSelection = selectedWorkType === 'job' || selectedWorkType === 'drive_time';
-  const requiresJobSelection = selectedActivity?.requiresJob === true;
-  const requiresUnbillableCategory = selectedWorkType === 'non_billable';
+  const showJobSelection = activityChosen && selectedWorkType === 'job';
+  const requiresJobSelection = activityChosen && selectedActivity?.requiresJob === true;
+  const requiresUnbillableCategory = activityChosen && selectedWorkType === 'non_billable';
 
   useEffect(() => {
     if (!requiresUnbillableCategory) return;
@@ -104,6 +107,7 @@ export default function SwitchActivityScreen() {
   }, [requiresUnbillableCategory, selectedUnbillableCategoryId, unbillableCategories]);
 
   const canSubmit = useMemo(() => {
+    if (!activityChosen) return false;
     if (!activeEntry) return false;
     if (requiresJobSelection) return Boolean(selectedJobId);
     if (requiresUnbillableCategory) {
@@ -115,6 +119,7 @@ export default function SwitchActivityScreen() {
     return true;
   }, [
     activeEntry,
+    activityChosen,
     requiresJobSelection,
     selectedJobId,
     requiresUnbillableCategory,
@@ -127,6 +132,11 @@ export default function SwitchActivityScreen() {
   async function submitSwitch(metaOverride?: { requestId: string; idempotencyKey: string }) {
     if (!activeEntry || !user?.employeeId) {
       setError('No active shift found.');
+      return;
+    }
+
+    if (!activityChosen) {
+      setError('Choose what you are switching to.');
       return;
     }
 
@@ -183,41 +193,26 @@ export default function SwitchActivityScreen() {
   return (
     <Screen>
       <OfflineNotice />
-
-      <View style={styles.card}>
+      <ScreenHeader title="Switch Activity" subtitle={activeEntry ? `Currently ${getWorkTypeLabel(activeEntry.workType)}` : undefined} />
         {!activeEntry ? (
           <StatusBanner tone="info" message="No active shift found. Clock in before switching activity." />
         ) : (
           <>
-            <Text style={styles.title}>Switch activity</Text>
-            <Text style={styles.help}>Current activity: {getWorkTypeLabel(activeEntry.workType)}</Text>
-            <Text style={styles.help}>Current context: {resolveJobTitle(activeEntry, jobs)}</Text>
-
-            <View style={styles.list}>
-              {activityOptions.map((option) => {
-                const selected = selectedWorkType === option.type;
-                return (
-                  <Pressable
-                    key={option.type}
-                    testID={`switch-activity-option-${option.type}`}
-                    onPress={() => setSelectedWorkType(option.type)}
-                    style={[styles.row, selected && styles.rowSelected]}
-                  >
-                    <View style={styles.textBlock}>
-                      <Text style={styles.rowTitle}>{option.label}</Text>
-                      <Text style={styles.rowMeta}>{option.help}</Text>
-                    </View>
-                    <View style={[styles.checkDot, selected && styles.checkDotSelected]}>
-                      {selected ? <Text style={styles.checkMark}>✓</Text> : null}
-                    </View>
-                  </Pressable>
-                );
-              })}
-            </View>
+            <ActivitySelector
+              heading="What are you switching to?"
+              testIDPrefix="switch-activity-option"
+              selectedType={activityChosen ? selectedWorkType : null}
+              onSelect={(type) => {
+                setSelectedWorkType(type);
+                setActivityChosen(true);
+                setSelectedJobId('');
+                setSelectedUnbillableCategoryId('');
+              }}
+            />
 
             {showJobSelection ? (
-              <>
-                <Text style={styles.sectionLabel}>{requiresJobSelection ? 'Select a job' : 'Job context (optional)'}</Text>
+              <View style={styles.progressiveSection}>
+                <SectionHeader title="Which job?" />
                 {assignedJobs.length === 0 ? (
                   <StatusBanner
                     tone={requiresJobSelection ? 'error' : 'info'}
@@ -226,46 +221,44 @@ export default function SwitchActivityScreen() {
                       : 'No assigned scheduled/in-progress jobs available. You can continue without a job context.'}
                   />
                 ) : (
-                  <View style={styles.list}>
+                  <View style={styles.selectionList}>
                     {assignedJobs.map((job) => {
                       const selected = selectedJobId === job.id;
                       return (
-                        <Pressable
+                        <ListRow
                           key={job.id}
                           testID={`switch-job-option-${job.id}`}
+                          title={job.title || 'Untitled Job'}
+                          subtitle={job.status.replace('_', ' ')}
+                          selected={selected}
                           onPress={() => setSelectedJobId(job.id)}
-                          style={[styles.row, selected && styles.rowSelected]}
-                        >
-                          <View style={styles.textBlock}>
-                            <Text style={styles.rowTitle}>{job.title || 'Untitled Job'}</Text>
-                            <Text style={styles.rowMeta}>{job.status.replace('_', ' ')}</Text>
-                          </View>
-                          <View style={[styles.checkDot, selected && styles.checkDotSelected]}>
-                            {selected ? <Text style={styles.checkMark}>✓</Text> : null}
-                          </View>
-                        </Pressable>
+                        />
                       );
                     })}
                   </View>
                 )}
-              </>
+              </View>
+            ) : null}
+
+            {activityChosen && selectedWorkType === 'drive_time' ? (
+              <StatusBanner tone="info" message="No job is required for Drive Time." />
             ) : null}
 
             {requiresUnbillableCategory ? (
-              <UnbillableCategorySelector
-                categories={unbillableCategories}
-                selectedCategoryId={selectedUnbillableCategoryId}
-                loading={unbillableCategoriesLoading}
-                error={unbillableCategoriesError}
-                onSelect={setSelectedUnbillableCategoryId}
-                onRetry={() => {
-                  void retryUnbillableCategories();
-                }}
-              />
+              <View style={styles.progressiveSection}>
+                <SectionHeader title="What are you doing?" />
+                <UnbillableCategorySelector
+                  categories={unbillableCategories}
+                  selectedCategoryId={selectedUnbillableCategoryId}
+                  loading={unbillableCategoriesLoading}
+                  error={unbillableCategoriesError}
+                  onSelect={setSelectedUnbillableCategoryId}
+                  onRetry={() => { void retryUnbillableCategories(); }}
+                />
+              </View>
             ) : null}
           </>
         )}
-      </View>
 
       {status ? <StatusBanner tone="success" message={status} /> : null}
       {error ? <StatusBanner tone="error" message={error} /> : null}
@@ -288,6 +281,8 @@ export default function SwitchActivityScreen() {
 }
 
 const styles = StyleSheet.create({
+  progressiveSection: { gap: 8 },
+  selectionList: { borderRadius: 12, borderWidth: 1, borderColor: colors.cardBorder, backgroundColor: colors.surface, paddingHorizontal: 12 },
   card: {
     borderRadius: 14,
     borderWidth: 1,

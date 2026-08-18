@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { PrimaryActionButton } from '@/components/PrimaryActionButton';
+import { ActivitySelector } from '@/components/ActivitySelector';
+import { ScreenHeader, SectionHeader, StatusBadge } from '@/components/MobilePrimitives';
 import { Screen } from '@/components/Screen';
 import { StatusBanner } from '@/components/StatusBanner';
 import { UnbillableCategorySelector } from '@/components/UnbillableCategorySelector';
@@ -263,12 +265,14 @@ export default function RequestTimeCorrectionScreen() {
   return (
     <Screen>
       <View style={styles.section}>
-        <Text style={styles.title}>Request Time Correction</Text>
+        <ScreenHeader title="Request a Correction" subtitle="Tell your manager what needs to change" />
         {targetEntry ? (
-          <View style={styles.summaryCard}>
+          <View style={styles.summaryBlock}>
+            <View style={styles.summaryHeading}>
+              <SectionHeader title="Original Entry" />
+              <StatusBadge label={getWorkTypeLabel(targetEntry.workType)} />
+            </View>
             <Text style={styles.summaryTitle}>{resolveJobTitle(targetEntry, jobs)}</Text>
-            <Text style={styles.summaryType}>{getWorkTypeLabel(targetEntry.workType)}</Text>
-            <Text style={styles.summaryMeta}>Original</Text>
             <Text style={styles.summaryRange}>{formatEntryTimeRange(targetEntry, false)}</Text>
           </View>
         ) : null}
@@ -347,30 +351,11 @@ export default function RequestTimeCorrectionScreen() {
       ) : null}
 
       {requiresActivitySelection ? (
-        <View style={styles.section}>
-          <Text style={styles.label}>Choose correct activity</Text>
-          <Pressable
-            style={[styles.option, requestedActivity === 'job' ? styles.optionSelected : null]}
-            onPress={() => setRequestedActivity('job')}
-            testID="activity-option-job"
-          >
-            <Text style={styles.optionLabel}>Job Work</Text>
-          </Pressable>
-          <Pressable
-            style={[styles.option, requestedActivity === 'drive_time' ? styles.optionSelected : null]}
-            onPress={() => setRequestedActivity('drive_time')}
-            testID="activity-option-drive_time"
-          >
-            <Text style={styles.optionLabel}>Drive Time</Text>
-          </Pressable>
-          <Pressable
-            style={[styles.option, requestedActivity === 'non_billable' ? styles.optionSelected : null]}
-            onPress={() => setRequestedActivity('non_billable')}
-            testID="activity-option-non_billable"
-          >
-            <Text style={styles.optionLabel}>Unbillable Time</Text>
-          </Pressable>
-        </View>
+        <ActivitySelector
+          heading="Choose correct activity"
+          selectedType={requestedActivity}
+          onSelect={setRequestedActivity}
+        />
       ) : null}
 
       {requiresUnbillableCategory ? (
@@ -456,35 +441,12 @@ const styles = StyleSheet.create({
   section: {
     gap: 10,
   },
-  title: {
-    color: colors.textPrimary,
-    fontSize: 24,
-    fontWeight: '700',
-    letterSpacing: -0.2,
-  },
-  summaryCard: {
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
-    backgroundColor: colors.surface,
-    padding: 12,
-    gap: 4,
-  },
+  summaryBlock: { borderTopWidth: 1, borderTopColor: colors.divider, paddingTop: 12, gap: 5 },
+  summaryHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   summaryTitle: {
     color: colors.textPrimary,
     fontSize: 16,
     fontWeight: '700',
-  },
-  summaryType: {
-    color: colors.textSecondary,
-    fontSize: 13,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-  },
-  summaryMeta: {
-    color: colors.textSecondary,
-    fontSize: 13,
-    fontWeight: '600',
   },
   summaryRange: {
     color: colors.textPrimary,

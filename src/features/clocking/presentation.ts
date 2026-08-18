@@ -95,8 +95,11 @@ export function formatElapsedShort(clockIn: string, nowMs = Date.now()) {
 
 export function formatDurationMinutes(totalMinutes: number) {
   const normalized = Math.max(0, Math.floor(totalMinutes));
+  if (normalized < 1) return '< 1 min';
   const hours = Math.floor(normalized / 60);
   const minutes = normalized % 60;
+  if (hours === 0) return `${minutes}m`;
+  if (minutes === 0) return `${hours}h`;
   return `${hours}h ${minutes}m`;
 }
 
@@ -172,6 +175,33 @@ export function formatEntryTimeRange(entry: TimeEntry, isAuthoritativeActive = f
 
   const end = new Date(entry.clockOut).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   return `${start} - ${end}`;
+}
+
+export function getCurrentShiftSegments(
+  entries: TimeEntry[],
+  employeeId?: string,
+  currentActiveEntryId?: string | null,
+): TimeEntry[] {
+  const active = resolveCurrentActiveEntry(entries, employeeId, currentActiveEntryId);
+  if (!active || !employeeId) return [];
+
+  const ordered = entries
+    .filter((entry) => entry.employeeId === employeeId)
+    .sort((a, b) => Date.parse(a.clockIn) - Date.parse(b.clockIn));
+  const activeIndex = ordered.findIndex((entry) => entry.id === active.id);
+  if (activeIndex < 0) return [active];
+
+  let startIndex = activeIndex;
+  while (startIndex > 0) {
+    const previous = ordered[startIndex - 1];
+    const current = ordered[startIndex];
+    if (!previous.clockOut) break;
+    const gapMs = Date.parse(current.clockIn) - Date.parse(previous.clockOut);
+    if (gapMs < 0 || gapMs > 5 * 60 * 1000) break;
+    startIndex -= 1;
+  }
+
+  return ordered.slice(startIndex, activeIndex + 1);
 }
 
 export function getGreetingForTime(name: string, now = new Date()) {

@@ -6,6 +6,8 @@ import { PrimaryActionButton } from '@/components/PrimaryActionButton';
 import { Screen } from '@/components/Screen';
 import { StatusBanner } from '@/components/StatusBanner';
 import { UnbillableCategorySelector } from '@/components/UnbillableCategorySelector';
+import { ActivitySelector } from '@/components/ActivitySelector';
+import { ListRow, ScreenHeader, SectionHeader } from '@/components/MobilePrimitives';
 import { useClockingActions } from '@/hooks/useClockingActions';
 import { useUnbillableCategories } from '@/hooks/useUnbillableCategories';
 import { createRequestMeta } from '@/services/requestGuards';
@@ -33,6 +35,7 @@ export default function ClockInScreen() {
     retry: retryUnbillableCategories,
   } = useUnbillableCategories();
   const [selectedWorkType, setSelectedWorkType] = useState<TimeEntryWorkType>('job');
+  const [activityChosen, setActivityChosen] = useState(false);
   const [selectedJobId, setSelectedJobId] = useState('');
   const [selectedUnbillableCategoryId, setSelectedUnbillableCategoryId] = useState('');
   const [retryMeta, setRetryMeta] = useState<{ requestId: string; idempotencyKey: string } | null>(null);
@@ -79,9 +82,9 @@ export default function ClockInScreen() {
     [activityOptions, selectedWorkType]
   );
 
-  const showJobSelection = selectedWorkType === 'job' || selectedWorkType === 'drive_time';
-  const requiresJobSelection = selectedActivity?.requiresJob === true;
-  const requiresUnbillableCategory = selectedWorkType === 'non_billable';
+  const showJobSelection = activityChosen && selectedWorkType === 'job';
+  const requiresJobSelection = activityChosen && selectedActivity?.requiresJob === true;
+  const requiresUnbillableCategory = activityChosen && selectedWorkType === 'non_billable';
 
   useEffect(() => {
     if (!requiresUnbillableCategory) return;
@@ -99,6 +102,7 @@ export default function ClockInScreen() {
   }, [requiresUnbillableCategory, selectedUnbillableCategoryId, unbillableCategories]);
 
   const canSubmit = useMemo(() => {
+    if (!activityChosen) return false;
     if (!user?.employeeId) return false;
     if (requiresJobSelection) return Boolean(selectedJobId);
     if (requiresUnbillableCategory) {
@@ -110,6 +114,7 @@ export default function ClockInScreen() {
     return true;
   }, [
     requiresJobSelection,
+    activityChosen,
     selectedJobId,
     user?.employeeId,
     requiresUnbillableCategory,
@@ -122,6 +127,11 @@ export default function ClockInScreen() {
   async function submitClockIn(metaOverride?: { requestId: string; idempotencyKey: string }) {
     if (!user?.employeeId) {
       setError('Employee profile is not linked to this account.');
+      return;
+    }
+
+    if (!activityChosen) {
+      setError('Choose what you are working on before clocking in.');
       return;
     }
 
@@ -180,35 +190,21 @@ export default function ClockInScreen() {
   return (
     <Screen>
       <OfflineNotice />
-      <View style={styles.card}>
-        <Text style={styles.title}>Choose an activity</Text>
-        <Text style={styles.help}>Pick what you are starting right now.</Text>
-
-        <View style={styles.jobsList}>
-          {activityOptions.map((option) => {
-            const selected = selectedWorkType === option.type;
-            return (
-              <Pressable
-                key={option.type}
-                testID={`activity-option-${option.type}`}
-                onPress={() => setSelectedWorkType(option.type)}
-                style={[styles.jobRow, selected && styles.jobRowSelected]}
-              >
-                <View style={styles.jobTextBlock}>
-                  <Text style={styles.jobTitle}>{option.label}</Text>
-                  <Text style={styles.jobMeta}>{option.help}</Text>
-                </View>
-                <View style={[styles.checkDot, selected && styles.checkDotSelected]}>
-                  {selected ? <Text style={styles.checkMark}>✓</Text> : null}
-                </View>
-              </Pressable>
-            );
-          })}
-        </View>
+      <ScreenHeader title="Clock In" subtitle="Start a new shift" />
+      <ActivitySelector
+        heading="What are you working on?"
+        selectedType={activityChosen ? selectedWorkType : null}
+        onSelect={(type) => {
+          setSelectedWorkType(type);
+          setActivityChosen(true);
+          setSelectedJobId('');
+          setSelectedUnbillableCategoryId('');
+        }}
+      />
 
         {showJobSelection ? (
-          <>
-            <Text style={styles.sectionLabel}>{requiresJobSelection ? 'Select a job' : 'Job context (optional)'}</Text>
+          <View style={styles.progressiveSection}>
+            <SectionHeader title="Which job?" />
             {assignedJobs.length === 0 ? (
               <StatusBanner
                 tone={requiresJobSelection ? 'error' : 'info'}
@@ -217,44 +213,42 @@ export default function ClockInScreen() {
                   : 'No assigned scheduled/in-progress jobs available. You can continue without a job context.'}
               />
             ) : (
-              <View style={styles.jobsList}>
+              <View style={styles.selectionList}>
                 {assignedJobs.map((job) => {
                   const selected = selectedJobId === job.id;
                   return (
-                    <Pressable
+                    <ListRow
                       key={job.id}
                       testID={`job-option-${job.id}`}
+                      title={job.title || 'Untitled Job'}
+                      subtitle={job.status.replace('_', ' ')}
+                      selected={selected}
                       onPress={() => setSelectedJobId(job.id)}
-                      style={[styles.jobRow, selected && styles.jobRowSelected]}
-                    >
-                      <View style={styles.jobTextBlock}>
-                        <Text style={styles.jobTitle}>{job.title || 'Untitled Job'}</Text>
-                        <Text style={styles.jobMeta}>{job.status.replace('_', ' ')}</Text>
-                      </View>
-                      <View style={[styles.checkDot, selected && styles.checkDotSelected]}>
-                        {selected ? <Text style={styles.checkMark}>✓</Text> : null}
-                      </View>
-                    </Pressable>
+                    />
                   );
                 })}
               </View>
             )}
-          </>
+          </View>
+        ) : null}
+
+        {activityChosen && selectedWorkType === 'drive_time' ? (
+          <StatusBanner tone="info" message="No job is required for Drive Time." />
         ) : null}
 
         {requiresUnbillableCategory ? (
-          <UnbillableCategorySelector
-            categories={unbillableCategories}
-            selectedCategoryId={selectedUnbillableCategoryId}
-            loading={unbillableCategoriesLoading}
-            error={unbillableCategoriesError}
-            onSelect={setSelectedUnbillableCategoryId}
-            onRetry={() => {
-              void retryUnbillableCategories();
-            }}
-          />
+          <View style={styles.progressiveSection}>
+            <SectionHeader title="What are you doing?" />
+            <UnbillableCategorySelector
+              categories={unbillableCategories}
+              selectedCategoryId={selectedUnbillableCategoryId}
+              loading={unbillableCategoriesLoading}
+              error={unbillableCategoriesError}
+              onSelect={setSelectedUnbillableCategoryId}
+              onRetry={() => { void retryUnbillableCategories(); }}
+            />
+          </View>
         ) : null}
-      </View>
 
       {status ? <StatusBanner tone="success" message={status} /> : null}
       {error ? <StatusBanner tone="error" message={error} /> : null}
@@ -277,6 +271,8 @@ export default function ClockInScreen() {
 }
 
 const styles = StyleSheet.create({
+  progressiveSection: { gap: 8 },
+  selectionList: { borderRadius: 12, borderWidth: 1, borderColor: colors.cardBorder, backgroundColor: colors.surface, paddingHorizontal: 12 },
   card: {
     borderRadius: 14,
     borderWidth: 1,

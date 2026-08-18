@@ -1,5 +1,6 @@
 import { StyleSheet, Text, View } from 'react-native';
 import { PrimaryActionButton } from '@/components/PrimaryActionButton';
+import { colors, spacing, typography } from '@/theme/colors';
 
 export function ErrorState({
   message,
@@ -21,15 +22,18 @@ export function ErrorState({
 
 const styles = StyleSheet.create({
   container: {
-    gap: 12,
+    alignItems: 'center',
+    paddingVertical: spacing.xxl,
+    gap: spacing.sm,
   },
   title: {
-    color: '#FFFFFF',
-    fontSize: 24,
-    fontWeight: '700',
+    color: colors.textPrimary,
+    fontSize: typography.title,
+    fontWeight: typography.bold,
   },
   message: {
-    color: '#E2E8F0',
-    fontSize: 16,
+    color: colors.textSecondary,
+    fontSize: typography.bodySmall,
+    textAlign: 'center',
   },
 });
