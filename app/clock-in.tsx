@@ -15,6 +15,7 @@ import { useUnbillableCategories } from '@/hooks/useUnbillableCategories';
 import { createRequestMeta } from '@/services/requestGuards';
 import { useAuthStore } from '@/store/authStore';
 import { useClockingStore } from '@/store/clockingStore';
+import { useFormsWorkflowStore, type FormsWorkflowIntent } from '@/store/formsWorkflowStore';
 import { colors } from '@/theme/colors';
 import type { TimeEntryWorkType } from '@/types/domain';
 
@@ -30,6 +31,7 @@ export default function ClockInScreen() {
   const { jobs } = useClockingStore();
   const { clockIn, loading, refreshWorkContext } = useClockingActions();
   const { getRequiredForms, refreshForms } = useFormsActions();
+  const { workflow, startWorkflow, clearWorkflow } = useFormsWorkflowStore();
   const {
     categories: unbillableCategories,
     loading: unbillableCategoriesLoading,
@@ -48,6 +50,7 @@ export default function ClockInScreen() {
   const [checkingForms, setCheckingForms] = useState(false);
   const advisoryAcceptedRef = useRef(false);
   const checkingFormsRef = useRef(false);
+  const continuingWorkflowRef = useRef<string | null>(null);
 
   useEffect(() => {
     void refreshWorkContext();
@@ -131,26 +134,54 @@ export default function ClockInScreen() {
     selectedUnbillableCategoryId,
   ]);
 
+  const clockInWorkflow = workflow?.originRoute === '/clock-in' && workflow.intent.kind === 'clock_in'
+    ? { ...workflow, intent: workflow.intent }
+    : null;
+
+  useEffect(() => {
+    if (!clockInWorkflow || clockInWorkflow.intent.employeeId !== user?.employeeId) return;
+
+    const intent = clockInWorkflow.intent;
+    setSelectedWorkType(intent.workType);
+    setActivityChosen(true);
+    setSelectedJobId(intent.jobIds[0] ?? '');
+    setSelectedUnbillableCategoryId(intent.unbillableCategoryId ?? '');
+    setAdvisoryForms(clockInWorkflow.forms.slice(clockInWorkflow.completedCount));
+
+    if (clockInWorkflow.completedCount < clockInWorkflow.forms.length) return;
+    if (continuingWorkflowRef.current === clockInWorkflow.id) return;
+    continuingWorkflowRef.current = clockInWorkflow.id;
+    void submitClockIn(undefined, true, intent);
+  }, [clockInWorkflow, user?.employeeId]);
+
   async function submitClockIn(
     metaOverride?: { requestId: string; idempotencyKey: string },
     continuePastAdvisory = false,
+    intentOverride?: Extract<FormsWorkflowIntent, { kind: 'clock_in' }>,
   ) {
-    if (!user?.employeeId) {
+    const employeeId = intentOverride?.employeeId ?? user?.employeeId;
+    const workType = intentOverride?.workType ?? selectedWorkType;
+    const jobIds = intentOverride?.jobIds ?? (selectedWorkType === 'non_billable'
+      ? []
+      : (selectedJobId ? [selectedJobId] : []));
+    const unbillableCategoryId = intentOverride?.unbillableCategoryId ?? selectedUnbillableCategoryId;
+
+    if (!employeeId || employeeId !== user?.employeeId) {
       setError('Employee profile is not linked to this account.');
       return;
     }
 
-    if (!activityChosen) {
+    if (!intentOverride && !activityChosen) {
       setError('Choose what you are working on before clocking in.');
       return;
     }
 
-    if (requiresJobSelection && !selectedJobId) {
+    if (workType === 'job' && jobIds.length === 0) {
       setError('Select an assigned job before clocking in.');
       return;
     }
 
-    if (requiresUnbillableCategory) {
+    if (workType === 'non_billable') {
       if (unbillableCategoriesLoading) {
         setError('Unbillable categories are still loading.');
         return;
@@ -163,7 +194,7 @@ export default function ClockInScreen() {
         setError('No unbillable categories are currently available. Ask your administrator to configure them in OliveOps.');
         return;
       }
-      if (!selectedUnbillableCategoryId) {
+      if (!unbillableCategoryId) {
         setError('Select an unbillable category before clocking in.');
         return;
       }
@@ -185,24 +216,33 @@ export default function ClockInScreen() {
       setCheckingForms(false);
       const forms = results.flatMap((result) => result.ok ? result.forms : []);
       if (forms.length > 0) {
+        startWorkflow({
+          originRoute: '/clock-in',
+          destination: '/active-shift',
+          phase: 'pre_action',
+          intent: {
+            kind: 'clock_in',
+            employeeId,
+            workType,
+            jobIds,
+            unbillableCategoryId: workType === 'non_billable' ? unbillableCategoryId : undefined,
+          },
+          forms,
+        });
         setAdvisoryForms(forms);
         return;
       }
       advisoryAcceptedRef.current = true;
     }
 
-    const meta = metaOverride ?? retryMeta ?? createRequestMeta(user.employeeId);
+    const meta = metaOverride ?? retryMeta ?? createRequestMeta(employeeId);
     setRetryMeta(meta);
 
-    const jobIds = selectedWorkType === 'non_billable'
-      ? []
-      : (selectedJobId ? [selectedJobId] : []);
-
     const result = await clockIn(
-      user.employeeId,
-      selectedWorkType,
+      employeeId,
+      workType,
       jobIds,
-      selectedWorkType === 'non_billable' ? selectedUnbillableCategoryId : undefined,
+      workType === 'non_billable' ? unbillableCategoryId : undefined,
       meta,
     );
 
@@ -212,6 +252,7 @@ export default function ClockInScreen() {
     }
 
     setRetryMeta(null);
+  clearWorkflow();
     setStatus('Clock-in submitted successfully.');
     router.replace('/active-shift');
   }
@@ -291,26 +332,37 @@ export default function ClockInScreen() {
       {advisoryForms.length > 0 ? (
         <AdvisoryFormsPrompt
           forms={advisoryForms}
-          heading="Form to complete before continuing"
-          message="You can complete it now or continue clocking in."
-          skipLabel="Continue Anyway"
+          heading="Pre-shift"
+          message={`${advisoryForms.length} form${advisoryForms.length === 1 ? '' : 's'} before starting`}
+          completeLabel={clockInWorkflow?.completedCount ? 'Complete Next Form' : 'Complete Form'}
+          skipLabel="Skip for Now"
+          completedCount={clockInWorkflow?.completedCount}
+          totalCount={clockInWorkflow?.forms.length}
+          cancelLabel="Cancel Clock In"
           onComplete={(form) => {
-            void refreshForms({ force: true }).then((result) => {
-              if (!result.ok) {
-                router.push('/forms');
-                return;
-              }
+            const activeWorkflow = clockInWorkflow;
+            if (activeWorkflow) {
               router.push({
                 pathname: '/form',
                 params: {
                   list: 'todo', formId: form.id, trigger: form.trigger,
                   jobId: form.context?.jobId, equipmentId: form.context?.equipmentId,
-                  divisionId: form.context?.divisionId, returnTo: '/clock-in',
+                  divisionId: form.context?.divisionId, workflowId: activeWorkflow.id,
                 },
               });
-            });
+              return;
+            }
+            void refreshForms({ force: true });
           }}
-          onSkip={() => { void submitClockIn(undefined, true); }}
+          onSkip={() => {
+            const intent = clockInWorkflow?.intent;
+            void submitClockIn(undefined, true, intent?.kind === 'clock_in' ? intent : undefined);
+          }}
+          onCancel={() => {
+            clearWorkflow();
+            setAdvisoryForms([]);
+            router.replace('/home');
+          }}
         />
       ) : (
         <PrimaryActionButton

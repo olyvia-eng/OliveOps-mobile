@@ -6,6 +6,9 @@ const mockSwitchActivity = jest.fn();
 const mockRefresh = jest.fn().mockResolvedValue({ ok: true });
 const mockGetRequiredForms = jest.fn().mockResolvedValue({ ok: true, forms: [] });
 const mockRefreshForms = jest.fn().mockResolvedValue({ ok: true });
+const mockStartWorkflow = jest.fn(() => 'workflow-switch');
+const mockClearWorkflow = jest.fn();
+let mockWorkflow: any = null;
 const mockLoadUnbillableCategoriesIfNeeded = jest.fn().mockResolvedValue(undefined);
 
 const mockUseClockingActions = jest.fn(() => ({
@@ -102,6 +105,14 @@ jest.mock('@/store/clockingStore', () => ({
   useClockingStore: () => mockUseClockingStore(),
 }));
 
+jest.mock('@/store/formsWorkflowStore', () => ({
+  useFormsWorkflowStore: () => ({
+    workflow: mockWorkflow,
+    startWorkflow: mockStartWorkflow,
+    clearWorkflow: mockClearWorkflow,
+  }),
+}));
+
 jest.mock('@/services/requestGuards', () => ({
   createRequestMeta: () => ({ requestId: 'req-switch-1', idempotencyKey: 'key-switch-1' }),
 }));
@@ -156,6 +167,9 @@ describe('SwitchActivityScreen', () => {
     mockRefresh.mockClear();
     mockGetRequiredForms.mockReset().mockResolvedValue({ ok: true, forms: [] });
     mockRefreshForms.mockReset().mockResolvedValue({ ok: true });
+    mockStartWorkflow.mockClear();
+    mockClearWorkflow.mockClear();
+    mockWorkflow = null;
     mockLoadUnbillableCategoriesIfNeeded.mockClear();
     mockUseUnbillableCategories.mockReset();
     mockUseUnbillableCategories.mockReturnValue({
@@ -263,11 +277,26 @@ describe('SwitchActivityScreen', () => {
 
     expect(mockGetRequiredForms).toHaveBeenCalledWith('before_starting_job', { jobId: 'job-2' });
     expect(mockSwitchActivity).not.toHaveBeenCalled();
+    expect(mockStartWorkflow).toHaveBeenCalledWith(expect.objectContaining({
+      phase: 'pre_action',
+      intent: expect.objectContaining({ kind: 'switch_activity', activeEntryId: 'entry-1', jobIds: ['job-2'] }),
+    }));
 
     await act(async () => tree.root.findByType('secondary-button').props.onPress());
     expect(mockSwitchActivity).toHaveBeenCalledTimes(1);
     expect(mockGetRequiredForms).toHaveBeenCalledWith('after_completing_job', { jobId: 'job-1' });
     expect(router.replace).toHaveBeenCalledWith('/active-shift');
+  });
+
+  it('resumes the preserved job switch once after its Form is completed', async () => {
+    mockWorkflow = {
+      id: 'workflow-switch', originRoute: '/switch-activity', destination: '/active-shift', phase: 'pre_action', completedCount: 1,
+      intent: { kind: 'switch_activity', employeeId: 'emp-1', activeEntryId: 'entry-1', workType: 'job', jobIds: ['job-2'] },
+      forms: [{ id: 'before-job', name: 'Job Start Check', trigger: 'before_starting_job', context: { jobId: 'job-2' }, fields: [] }],
+    };
+    await act(async () => { create(<SwitchActivityScreen />); });
+    expect(mockSwitchActivity).toHaveBeenCalledTimes(1);
+    expect(mockSwitchActivity).toHaveBeenCalledWith('job', ['job-2'], undefined, expect.any(Object));
   });
 
   it('surfaces after-completing Forms only after a successful switch', async () => {

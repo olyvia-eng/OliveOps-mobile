@@ -12,6 +12,9 @@ const mockRefreshForms = jest.fn().mockResolvedValue({ ok: true });
 const mockReplace = jest.fn();
 const mockDispatch = jest.fn();
 const mockAddListener = jest.fn(() => jest.fn());
+const mockCompleteCurrentForm = jest.fn();
+let mockWorkflow: any = null;
+let mockParams: any = { list: 'todo', formId: 'form-1', trigger: 'daily', equipmentId: 'eq-1' };
 
 const mockForm: any = {
   id: 'form-1',
@@ -32,7 +35,7 @@ const defaultFields = mockForm.fields;
 
 jest.mock('expo-router', () => ({
   router: { replace: (...args: unknown[]) => mockReplace(...args) },
-  useLocalSearchParams: () => ({ list: 'todo', formId: 'form-1', trigger: 'daily', equipmentId: 'eq-1' }),
+  useLocalSearchParams: () => mockParams,
   useNavigation: () => ({ addListener: mockAddListener, dispatch: mockDispatch }),
 }));
 jest.mock('@/store/formsStore', () => ({
@@ -40,6 +43,9 @@ jest.mock('@/store/formsStore', () => ({
 }));
 jest.mock('@/store/authStore', () => ({
   useAuthStore: () => ({ user: { businessId: 'biz-1', id: 'user-1', employeeId: 'emp-1' } }),
+}));
+jest.mock('@/store/formsWorkflowStore', () => ({
+  useFormsWorkflowStore: () => ({ workflow: mockWorkflow, completeCurrentForm: mockCompleteCurrentForm }),
 }));
 jest.mock('@/hooks/useFormsActions', () => ({
   useFormsActions: () => ({ refreshForms: mockRefreshForms, submitForm: mockSubmitForm, submitting: false }),
@@ -79,6 +85,9 @@ describe('FormScreen', () => {
     mockSubmitForm.mockReset().mockResolvedValue({ ok: true, submission: { id: 'sub-1' } });
     mockRefreshForms.mockClear();
     mockReplace.mockClear();
+    mockCompleteCurrentForm.mockClear();
+    mockWorkflow = null;
+    mockParams = { list: 'todo', formId: 'form-1', trigger: 'daily', equipmentId: 'eq-1' };
     mockAddListener.mockClear();
     mockForm.name = 'Daily Equipment Inspection';
     mockForm.fields = defaultFields;
@@ -129,6 +138,23 @@ describe('FormScreen', () => {
     expect(tree.root.findByProps({ testID: 'form-field-condition' }).props.value).toBe('Good');
     expect(tree.root.findByType('primary-button').props.label).toBe('Retry Submit');
     expect(mockReplace).not.toHaveBeenCalled();
+  });
+
+  it('advances a workflow Form and returns to its originating action after success', async () => {
+    mockParams = { list: 'todo', formId: 'form-1', trigger: 'daily', equipmentId: 'eq-1', workflowId: 'workflow-1' };
+    mockWorkflow = {
+      id: 'workflow-1', originRoute: '/clock-in', destination: '/active-shift', phase: 'pre_action', completedCount: 0,
+      intent: { kind: 'clock_in', employeeId: 'emp-1', workType: 'job', jobIds: ['job-1'] },
+      forms: [mockForm],
+    };
+    let tree: any;
+    await act(async () => { tree = create(<FormScreen />); });
+    await act(async () => tree.root.findByProps({ testID: 'form-field-condition' }).props.onChangeText('Good'));
+    await act(async () => tree.root.findByType('primary-button').props.onPress());
+
+    expect(mockCompleteCurrentForm).toHaveBeenCalledWith('workflow-1');
+    expect(mockReplace).toHaveBeenCalledWith('/clock-in');
+    expect(tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ')).not.toContain('Form submitted');
   });
 
   it('reuses the same client submission ID for an explicit retry', async () => {

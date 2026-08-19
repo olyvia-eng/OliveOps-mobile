@@ -5,10 +5,10 @@ import type {
 } from '@/types/forms';
 
 export function getFormTriggerLabel(trigger: EmployeeFormTrigger) {
-  if (trigger === 'before_clock_in') return 'Before clock in';
-  if (trigger === 'after_clock_out') return 'After clock out';
-  if (trigger === 'before_starting_job') return 'Before starting job';
-  if (trigger === 'after_completing_job') return 'After completing job';
+  if (trigger === 'before_clock_in') return 'Before starting your shift';
+  if (trigger === 'after_clock_out') return 'End-of-shift form';
+  if (trigger === 'before_starting_job') return 'Before starting this job';
+  if (trigger === 'after_completing_job') return 'After finishing this job';
   if (trigger === 'daily') return 'Due today';
   if (trigger === 'weekly') return 'Due this week';
   if (trigger === 'monthly') return 'Due this month';

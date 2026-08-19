@@ -13,6 +13,10 @@ export function AdvisoryFormsPrompt({
   skipLabel,
   onComplete,
   onSkip,
+  completedCount = 0,
+  totalCount = forms.length,
+  cancelLabel,
+  onCancel,
 }: {
   forms: EmployeeForm[];
   heading: string;
@@ -21,6 +25,10 @@ export function AdvisoryFormsPrompt({
   skipLabel: string;
   onComplete: (form: EmployeeForm) => void;
   onSkip: () => void;
+  completedCount?: number;
+  totalCount?: number;
+  cancelLabel?: string;
+  onCancel?: () => void;
 }) {
   const first = forms[0];
   if (!first) return null;
@@ -29,14 +37,23 @@ export function AdvisoryFormsPrompt({
     <View style={styles.container} accessibilityRole="summary">
       <Text style={styles.heading}>{heading}</Text>
       {message ? <Text style={styles.message}>{message}</Text> : null}
-      <View style={styles.formSummary}>
-        <Text style={styles.formName}>{first.name}</Text>
-        {first.category ? <Text style={styles.category}>{first.category}</Text> : null}
-        <Text style={styles.reason}>{getFormTriggerLabel(first.trigger)}</Text>
-        {forms.length > 1 ? <Text style={styles.more}>{`+ ${forms.length - 1} more`}</Text> : null}
+      {completedCount > 0 ? <Text style={styles.progress}>{`✓ ${completedCount} of ${totalCount} completed`}</Text> : null}
+      <View style={styles.formsList}>
+        {forms.map((form) => (
+          <View key={`${form.id}:${form.trigger}:${form.context?.jobId ?? ''}:${form.context?.equipmentId ?? ''}:${form.context?.divisionId ?? ''}`} style={styles.formSummary}>
+            <View style={styles.formTitleRow}>
+              <Text style={styles.pendingMark}>○</Text>
+              <Text style={styles.formName}>{form.name}</Text>
+            </View>
+            {form.description ? <Text style={styles.description}>{form.description}</Text> : null}
+            {form.category ? <Text style={styles.category}>{form.category}</Text> : null}
+            <Text style={styles.reason}>{getFormTriggerLabel(form.trigger)}</Text>
+          </View>
+        ))}
       </View>
       <PrimaryActionButton label={completeLabel} onPress={() => onComplete(first)} />
       <SecondaryButton label={skipLabel} onPress={onSkip} />
+      {cancelLabel && onCancel ? <SecondaryButton label={cancelLabel} onPress={onCancel} /> : null}
     </View>
   );
 }
@@ -45,9 +62,13 @@ const styles = StyleSheet.create({
   container: { gap: spacing.sm, borderTopWidth: 1, borderTopColor: colors.divider, paddingTop: spacing.md },
   heading: { color: colors.textPrimary, fontSize: typography.title, fontWeight: typography.bold },
   message: { color: colors.textSecondary, fontSize: typography.bodySmall, lineHeight: 20 },
-  formSummary: { gap: 3, paddingVertical: spacing.sm },
-  formName: { color: colors.textPrimary, fontSize: typography.body, fontWeight: typography.bold },
+  formsList: { gap: spacing.xs },
+  formSummary: { gap: 3, paddingVertical: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.divider },
+  formTitleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  pendingMark: { color: colors.textMuted, fontSize: typography.body },
+  formName: { flex: 1, color: colors.textPrimary, fontSize: typography.body, fontWeight: typography.bold },
+  description: { color: colors.textSecondary, fontSize: typography.bodySmall, lineHeight: 20 },
+  progress: { color: colors.success, fontSize: typography.bodySmall, fontWeight: typography.bold },
   category: { color: colors.textMuted, fontSize: typography.caption, fontWeight: typography.semibold, textTransform: 'uppercase' },
   reason: { color: colors.primary, fontSize: typography.bodySmall, fontWeight: typography.bold },
-  more: { color: colors.textSecondary, fontSize: typography.bodySmall },
 });

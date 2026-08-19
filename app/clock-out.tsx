@@ -26,6 +26,7 @@ import { isOnline } from '@/services/connectivity';
 import { createRequestMeta } from '@/services/requestGuards';
 import { useAuthStore } from '@/store/authStore';
 import { useClockingStore } from '@/store/clockingStore';
+import { useFormsWorkflowStore } from '@/store/formsWorkflowStore';
 import { colors } from '@/theme/colors';
 import { toUserFacingError } from '@/utils/userFacingError';
 import type { EmployeeForm } from '@/types/forms';
@@ -68,6 +69,7 @@ export default function ClockOutScreen() {
   const { currentActiveEntryId, timeEntries, jobs } = useClockingStore();
   const { clockOut, loading, refreshWorkContext } = useClockingActions();
   const { getRequiredForms, refreshForms } = useFormsActions();
+  const { workflow, startWorkflow, clearWorkflow } = useFormsWorkflowStore();
 
   const [notes, setNotes] = useState('');
   const [attachments, setAttachments] = useState<PhotoAttachment[]>([]);
@@ -121,6 +123,12 @@ export default function ClockOutScreen() {
     const endedAt = segment.clockOut ? Date.parse(segment.clockOut) : Date.now();
     return total + Math.max(0, (endedAt - startedAt) / 60000 - (segment.breakMinutes || 0));
   }, 0), [shiftSegments]);
+  const clockOutWorkflow = workflow?.originRoute === '/clock-out' && workflow.intent.kind === 'clock_out_follow_up'
+    ? { ...workflow, intent: workflow.intent }
+    : null;
+  const remainingPostActionForms = clockOutWorkflow
+    ? clockOutWorkflow.forms.slice(clockOutWorkflow.completedCount)
+    : postActionForms;
 
   function updateAttachment(localId: string, updater: (previous: PhotoAttachment) => PhotoAttachment) {
     setAttachments((previous) => previous.map((attachment) => {
@@ -386,6 +394,16 @@ export default function ClockOutScreen() {
     const results = await Promise.all(checks);
     const forms = results.flatMap((advisory) => advisory.ok ? advisory.forms : []);
     if (forms.length > 0) {
+      startWorkflow({
+        originRoute: '/clock-out',
+        destination: '/home',
+        phase: 'post_action',
+        intent: {
+          kind: 'clock_out_follow_up',
+          recordedDurationLabel: formatDurationMinutes(totalShiftMinutes),
+        },
+        forms,
+      });
       setPostActionForms(forms);
       return;
     }
@@ -397,6 +415,59 @@ export default function ClockOutScreen() {
       { text: 'Cancel', style: 'cancel' },
       { text: 'Confirm', style: 'destructive', onPress: () => { void submitClockOut(); } },
     ]);
+  }
+
+  if (clockOutWorkflow) {
+    const allCompleted = remainingPostActionForms.length === 0;
+    const lastCompletedForm = clockOutWorkflow.forms[clockOutWorkflow.completedCount - 1];
+    return (
+      <Screen>
+        <OfflineNotice />
+        <ScreenHeader
+          title={allCompleted ? 'Shift complete' : "You're clocked out"}
+          subtitle={`${clockOutWorkflow.intent.recordedDurationLabel} recorded`}
+        />
+        <StatusBanner tone="success" message="Clocked out" />
+        {allCompleted ? (
+          <>
+            <Text style={styles.completionMessage}>
+              {clockOutWorkflow.forms.length === 1 && lastCompletedForm
+                ? `${lastCompletedForm.name} submitted.`
+                : 'All post-shift forms completed.'}
+            </Text>
+            <PrimaryActionButton
+              label="Done"
+              onPress={() => {
+                clearWorkflow();
+                router.replace('/home');
+              }}
+            />
+          </>
+        ) : (
+          <AdvisoryFormsPrompt
+            forms={remainingPostActionForms}
+            heading={`${remainingPostActionForms.length} form${remainingPostActionForms.length === 1 ? '' : 's'} need${remainingPostActionForms.length === 1 ? 's' : ''} your attention`}
+            message="Your shift is already clocked out."
+            completeLabel={clockOutWorkflow.completedCount > 0 ? 'Complete Next Form' : 'Complete Form'}
+            skipLabel="Do Later"
+            completedCount={clockOutWorkflow.completedCount}
+            totalCount={clockOutWorkflow.forms.length}
+            onComplete={(form) => router.push({
+              pathname: '/form',
+              params: {
+                list: 'todo', formId: form.id, trigger: form.trigger,
+                jobId: form.context?.jobId, equipmentId: form.context?.equipmentId,
+                divisionId: form.context?.divisionId, workflowId: clockOutWorkflow.id,
+              },
+            })}
+            onSkip={() => {
+              clearWorkflow();
+              router.replace('/home');
+            }}
+          />
+        )}
+      </Screen>
+    );
   }
 
   return (
@@ -508,22 +579,21 @@ export default function ClockOutScreen() {
           message="Your clock-out is complete."
           skipLabel="Do Later"
           onComplete={(form) => {
-            void refreshForms({ force: true }).then((result) => {
-              if (!result.ok) {
-                router.replace('/forms');
-                return;
-              }
-              router.replace({
-                pathname: '/form',
-                params: {
-                  list: 'todo', formId: form.id, trigger: form.trigger,
-                  jobId: form.context?.jobId, equipmentId: form.context?.equipmentId,
-                  divisionId: form.context?.divisionId, returnTo: '/home',
-                },
-              });
+            const activeWorkflow = workflow?.originRoute === '/clock-out' ? workflow : null;
+            if (!activeWorkflow) return;
+            router.push({
+              pathname: '/form',
+              params: {
+                list: 'todo', formId: form.id, trigger: form.trigger,
+                jobId: form.context?.jobId, equipmentId: form.context?.equipmentId,
+                divisionId: form.context?.divisionId, workflowId: activeWorkflow.id,
+              },
             });
           }}
-          onSkip={() => router.replace('/home')}
+          onSkip={() => {
+            clearWorkflow();
+            router.replace('/home');
+          }}
         />
       ) : null}
       {error ? <StatusBanner tone="error" message={error} /> : null}
@@ -556,6 +626,7 @@ export default function ClockOutScreen() {
 }
 
 const styles = StyleSheet.create({
+  completionMessage: { color: colors.textSecondary, fontSize: 15, lineHeight: 21 },
   summarySection: { gap: 8 },
   timeline: { borderTopWidth: 1, borderTopColor: colors.divider, paddingTop: 8 },
   segmentRow: { flexDirection: 'row', minHeight: 76 },

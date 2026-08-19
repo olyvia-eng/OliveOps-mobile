@@ -20,6 +20,7 @@ import { useFormsActions } from '@/hooks/useFormsActions';
 import { createFormClientSubmissionId } from '@/services/requestGuards';
 import { useAuthStore } from '@/store/authStore';
 import { useFormsStore } from '@/store/formsStore';
+import { useFormsWorkflowStore } from '@/store/formsWorkflowStore';
 import { colors, spacing, typography } from '@/theme/colors';
 import type { EmployeeForm } from '@/types/forms';
 
@@ -32,13 +33,22 @@ function matchesParams(form: EmployeeForm, params: Record<string, string | strin
 }
 
 export default function FormScreen() {
-  const params = useLocalSearchParams<{ list?: string; formId?: string; trigger?: string; jobId?: string; equipmentId?: string; divisionId?: string; returnTo?: string }>();
+  const params = useLocalSearchParams<{ list?: string; formId?: string; trigger?: string; jobId?: string; equipmentId?: string; divisionId?: string; returnTo?: string; workflowId?: string }>();
   const navigation = useNavigation();
   const { user } = useAuthStore();
   const { toDo, available } = useFormsStore();
+  const { workflow, completeCurrentForm } = useFormsWorkflowStore();
   const { refreshForms, submitForm, submitting } = useFormsActions();
   const candidates = params.list === 'available' ? available : toDo;
-  const matchedForm = useMemo(() => candidates.find((item) => matchesParams(item, params)) ?? null, [candidates, params]);
+  const workflowForm = params.workflowId && workflow?.id === params.workflowId
+    ? workflow.forms[workflow.completedCount] ?? null
+    : null;
+  const matchedForm = useMemo(
+    () => workflowForm && matchesParams(workflowForm, params)
+      ? workflowForm
+      : candidates.find((item) => matchesParams(item, params)) ?? null,
+    [candidates, params, workflowForm],
+  );
   const formSnapshotRef = useRef<EmployeeForm | null>(null);
   const submissionInProgressRef = useRef(false);
   if (matchedForm) formSnapshotRef.current = matchedForm;
@@ -158,6 +168,11 @@ export default function FormScreen() {
 
     submittedRef.current = true;
     submissionInProgressRef.current = false;
+    if (workflow && workflow.id === params.workflowId) {
+      completeCurrentForm(workflow.id);
+      router.replace(workflow.originRoute);
+      return;
+    }
     setSubmittedFormName(form.name);
   }
 

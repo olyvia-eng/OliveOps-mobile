@@ -16,6 +16,7 @@ import { useUnbillableCategories } from '@/hooks/useUnbillableCategories';
 import { createRequestMeta } from '@/services/requestGuards';
 import { useAuthStore } from '@/store/authStore';
 import { useClockingStore } from '@/store/clockingStore';
+import { useFormsWorkflowStore, type FormsWorkflowIntent } from '@/store/formsWorkflowStore';
 import { colors } from '@/theme/colors';
 import type { TimeEntryWorkType } from '@/types/domain';
 import type { EmployeeForm } from '@/types/forms';
@@ -32,6 +33,7 @@ export default function SwitchActivityScreen() {
   const { currentActiveEntryId, jobs, timeEntries } = useClockingStore();
   const { loading, refreshWorkContext, switchActivity } = useClockingActions();
   const { getRequiredForms, refreshForms } = useFormsActions();
+  const { workflow, startWorkflow, clearWorkflow } = useFormsWorkflowStore();
   const {
     categories: unbillableCategories,
     loading: unbillableCategoriesLoading,
@@ -51,6 +53,7 @@ export default function SwitchActivityScreen() {
   const [checkingForms, setCheckingForms] = useState(false);
   const advisoryAcceptedRef = useRef(false);
   const checkingFormsRef = useRef(false);
+  const continuingWorkflowRef = useRef<string | null>(null);
 
   useEffect(() => {
     void refreshWorkContext();
@@ -138,26 +141,63 @@ export default function SwitchActivityScreen() {
     selectedUnbillableCategoryId,
   ]);
 
+  const preSwitchWorkflow = workflow?.originRoute === '/switch-activity' && workflow.intent.kind === 'switch_activity'
+    ? { ...workflow, intent: workflow.intent }
+    : null;
+  const postSwitchWorkflow = workflow?.originRoute === '/switch-activity' && workflow.intent.kind === 'switch_activity_follow_up'
+    ? { ...workflow, intent: workflow.intent }
+    : null;
+
+  useEffect(() => {
+    if (!preSwitchWorkflow || preSwitchWorkflow.intent.employeeId !== user?.employeeId) return;
+
+    const intent = preSwitchWorkflow.intent;
+    setSelectedWorkType(intent.workType);
+    setActivityChosen(true);
+    setSelectedJobId(intent.jobIds[0] ?? '');
+    setSelectedUnbillableCategoryId(intent.unbillableCategoryId ?? '');
+    setAdvisoryForms(preSwitchWorkflow.forms.slice(preSwitchWorkflow.completedCount));
+
+    if (preSwitchWorkflow.completedCount < preSwitchWorkflow.forms.length) return;
+    if (continuingWorkflowRef.current === preSwitchWorkflow.id) return;
+    continuingWorkflowRef.current = preSwitchWorkflow.id;
+    void submitSwitch(undefined, true, intent);
+  }, [preSwitchWorkflow, user?.employeeId]);
+
   async function submitSwitch(
     metaOverride?: { requestId: string; idempotencyKey: string },
     continuePastAdvisory = false,
+    intentOverride?: Extract<FormsWorkflowIntent, { kind: 'switch_activity' }>,
   ) {
-    if (!activeEntry || !user?.employeeId) {
+    const employeeId = intentOverride?.employeeId ?? user?.employeeId;
+    const workType = intentOverride?.workType ?? selectedWorkType;
+    const jobIds = intentOverride?.jobIds ?? (selectedWorkType === 'non_billable'
+      ? []
+      : (selectedJobId ? [selectedJobId] : []));
+    const unbillableCategoryId = intentOverride?.unbillableCategoryId ?? selectedUnbillableCategoryId;
+
+    if (!activeEntry || !employeeId || employeeId !== user?.employeeId) {
       setError('No active shift found.');
       return;
     }
 
-    if (!activityChosen) {
+    if (intentOverride && activeEntry.id !== intentOverride.activeEntryId) {
+      clearWorkflow();
+      setError('Your active shift changed. Choose the activity again before switching.');
+      return;
+    }
+
+    if (!intentOverride && !activityChosen) {
       setError('Choose what you are switching to.');
       return;
     }
 
-    if (requiresJobSelection && !selectedJobId) {
+    if (workType === 'job' && jobIds.length === 0) {
       setError('Select a job before switching to job work.');
       return;
     }
 
-    if (requiresUnbillableCategory) {
+    if (workType === 'non_billable') {
       if (unbillableCategoriesLoading) {
         setError('Unbillable categories are still loading.');
         return;
@@ -170,7 +210,7 @@ export default function SwitchActivityScreen() {
         setError('No unbillable categories are currently available. Ask your administrator to configure them in OliveOps.');
         return;
       }
-      if (!selectedUnbillableCategoryId) {
+      if (!unbillableCategoryId) {
         setError('Select an unbillable category before switching activity.');
         return;
       }
@@ -180,7 +220,7 @@ export default function SwitchActivityScreen() {
     setError(null);
 
     const previousJobId = activeEntry.jobIds?.[0] ?? activeEntry.jobId;
-    const nextJobId = selectedWorkType === 'job' ? selectedJobId : undefined;
+    const nextJobId = workType === 'job' ? jobIds[0] : undefined;
     if (!continuePastAdvisory && !advisoryAcceptedRef.current && !metaOverride && nextJobId && nextJobId !== previousJobId) {
       if (checkingFormsRef.current) return;
       checkingFormsRef.current = true;
@@ -189,23 +229,33 @@ export default function SwitchActivityScreen() {
       checkingFormsRef.current = false;
       setCheckingForms(false);
       if (advisory.ok && advisory.forms.length > 0) {
+        startWorkflow({
+          originRoute: '/switch-activity',
+          destination: '/active-shift',
+          phase: 'pre_action',
+          intent: {
+            kind: 'switch_activity',
+            employeeId,
+            activeEntryId: activeEntry.id,
+            workType,
+            jobIds,
+            unbillableCategoryId: workType === 'non_billable' ? unbillableCategoryId : undefined,
+          },
+          forms: advisory.forms,
+        });
         setAdvisoryForms(advisory.forms);
         return;
       }
       advisoryAcceptedRef.current = true;
     }
 
-    const meta = metaOverride ?? retryMeta ?? createRequestMeta(user.employeeId);
+    const meta = metaOverride ?? retryMeta ?? createRequestMeta(employeeId);
     setRetryMeta(meta);
 
-    const nextJobIds = selectedWorkType === 'non_billable'
-      ? []
-      : (selectedJobId ? [selectedJobId] : []);
-
     const result = await switchActivity(
-      selectedWorkType,
-      nextJobIds,
-      selectedWorkType === 'non_billable' ? selectedUnbillableCategoryId : undefined,
+      workType,
+      jobIds,
+      workType === 'non_billable' ? unbillableCategoryId : undefined,
       meta,
     );
     if (!result.ok) {
@@ -218,11 +268,62 @@ export default function SwitchActivityScreen() {
     if (previousJobId && previousJobId !== nextJobId) {
       const advisory = await getRequiredForms('after_completing_job', { jobId: previousJobId });
       if (advisory.ok && advisory.forms.length > 0) {
+        startWorkflow({
+          originRoute: '/switch-activity',
+          destination: '/active-shift',
+          phase: 'post_action',
+          intent: { kind: 'switch_activity_follow_up' },
+          forms: advisory.forms,
+        });
         setPostActionForms(advisory.forms);
         return;
       }
     }
+    clearWorkflow();
     router.replace('/active-shift');
+  }
+
+  if (postSwitchWorkflow) {
+    const remainingForms = postSwitchWorkflow.forms.slice(postSwitchWorkflow.completedCount);
+    const allCompleted = remainingForms.length === 0;
+    return (
+      <Screen>
+        <OfflineNotice />
+        <ScreenHeader title={allCompleted ? 'Activity complete' : 'Activity switched'} subtitle="Your work activity has been updated" />
+        <StatusBanner tone="success" message="Activity switch complete" />
+        {allCompleted ? (
+          <PrimaryActionButton
+            label="Done"
+            onPress={() => {
+              clearWorkflow();
+              router.replace('/active-shift');
+            }}
+          />
+        ) : (
+          <AdvisoryFormsPrompt
+            forms={remainingForms}
+            heading={`${remainingForms.length} form${remainingForms.length === 1 ? '' : 's'} need${remainingForms.length === 1 ? 's' : ''} your attention`}
+            message="Your activity switch is complete."
+            completeLabel={postSwitchWorkflow.completedCount > 0 ? 'Complete Next Form' : 'Complete Form'}
+            skipLabel="Do Later"
+            completedCount={postSwitchWorkflow.completedCount}
+            totalCount={postSwitchWorkflow.forms.length}
+            onComplete={(form) => router.push({
+              pathname: '/form',
+              params: {
+                list: 'todo', formId: form.id, trigger: form.trigger,
+                jobId: form.context?.jobId, equipmentId: form.context?.equipmentId,
+                divisionId: form.context?.divisionId, workflowId: postSwitchWorkflow.id,
+              },
+            })}
+            onSkip={() => {
+              clearWorkflow();
+              router.replace('/active-shift');
+            }}
+          />
+        )}
+      </Screen>
+    );
   }
 
   return (
@@ -309,21 +410,33 @@ export default function SwitchActivityScreen() {
           forms={advisoryForms}
           heading="Form to complete before continuing"
           message="You can complete it now or continue switching jobs."
-          skipLabel="Continue Anyway"
+          skipLabel="Skip for Now"
+          completedCount={preSwitchWorkflow?.completedCount}
+          totalCount={preSwitchWorkflow?.forms.length}
+          cancelLabel="Cancel Switch"
           onComplete={(form) => {
-            void refreshForms({ force: true }).then((result) => {
-              if (!result.ok) return router.push('/forms');
+            if (preSwitchWorkflow) {
               router.push({
                 pathname: '/form',
                 params: {
                   list: 'todo', formId: form.id, trigger: form.trigger,
                   jobId: form.context?.jobId, equipmentId: form.context?.equipmentId,
-                  divisionId: form.context?.divisionId, returnTo: '/switch-activity',
+                  divisionId: form.context?.divisionId, workflowId: preSwitchWorkflow.id,
                 },
               });
-            });
+              return;
+            }
+            void refreshForms({ force: true });
           }}
-          onSkip={() => { void submitSwitch(undefined, true); }}
+          onSkip={() => {
+            const intent = preSwitchWorkflow?.intent;
+            void submitSwitch(undefined, true, intent?.kind === 'switch_activity' ? intent : undefined);
+          }}
+          onCancel={() => {
+            clearWorkflow();
+            setAdvisoryForms([]);
+            router.replace('/active-shift');
+          }}
         />
       ) : postActionForms.length > 0 ? (
         <AdvisoryFormsPrompt

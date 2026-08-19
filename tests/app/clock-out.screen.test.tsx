@@ -6,6 +6,9 @@ const mockClockOut = jest.fn();
 const mockRefresh = jest.fn().mockResolvedValue({ ok: true });
 const mockGetRequiredForms = jest.fn().mockResolvedValue({ ok: true, forms: [] });
 const mockRefreshForms = jest.fn().mockResolvedValue({ ok: true });
+const mockStartWorkflow = jest.fn(() => 'workflow-clock-out');
+const mockClearWorkflow = jest.fn();
+let mockWorkflow: any = null;
 const mockOpenSettings = jest.fn().mockResolvedValue(undefined);
 let activeShiftClosed = false;
 
@@ -61,6 +64,7 @@ const mockUseClockingStore = jest.fn(() => ({
 jest.mock('expo-router', () => ({
   router: {
     replace: jest.fn(),
+    push: jest.fn(),
   },
 }));
 
@@ -85,6 +89,14 @@ jest.mock('@/store/authStore', () => ({
 
 jest.mock('@/store/clockingStore', () => ({
   useClockingStore: () => mockUseClockingStore(),
+}));
+
+jest.mock('@/store/formsWorkflowStore', () => ({
+  useFormsWorkflowStore: () => ({
+    workflow: mockWorkflow,
+    startWorkflow: mockStartWorkflow,
+    clearWorkflow: mockClearWorkflow,
+  }),
 }));
 
 jest.mock('@/services/requestGuards', () => ({
@@ -157,6 +169,9 @@ describe('ClockOutScreen', () => {
     mockClockOut.mockResolvedValue({ ok: true });
     mockGetRequiredForms.mockReset().mockResolvedValue({ ok: true, forms: [] });
     mockRefreshForms.mockReset().mockResolvedValue({ ok: true });
+    mockStartWorkflow.mockClear();
+    mockClearWorkflow.mockClear();
+    mockWorkflow = null;
     (prepareUpload as jest.Mock).mockReset();
     (uploadUriToS3 as jest.Mock).mockReset();
     (completeUpload as jest.Mock).mockReset();
@@ -232,6 +247,10 @@ describe('ClockOutScreen', () => {
     expect(mockGetRequiredForms).toHaveBeenNthCalledWith(1, 'after_clock_out');
     expect(mockGetRequiredForms).toHaveBeenNthCalledWith(2, 'after_completing_job', { jobId: 'job-1' });
     expect(router.replace).not.toHaveBeenCalled();
+    expect(mockStartWorkflow).toHaveBeenCalledWith(expect.objectContaining({
+      originRoute: '/clock-out', phase: 'post_action',
+      intent: expect.objectContaining({ kind: 'clock_out_follow_up', recordedDurationLabel: expect.any(String) }),
+    }));
     expect(tree.root.findAllByType('status-banner').some((node: any) => node.props.message === 'Clock-out submitted successfully.')).toBe(true);
     const text = tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ');
     expect(text).toContain('1 form needs your attention');
@@ -249,13 +268,36 @@ describe('ClockOutScreen', () => {
     let tree: any;
     await act(async () => { tree = create(<ClockOutScreen />); });
     await act(async () => tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Clock Out').props.onPress());
+    mockWorkflow = {
+      id: 'workflow-clock-out', originRoute: '/clock-out', destination: '/home', phase: 'post_action', completedCount: 0,
+      intent: { kind: 'clock_out_follow_up', recordedDurationLabel: '1h 48m' },
+      forms: [{ id: 'after-clock', name: 'Post Shift Report', trigger: 'after_clock_out', context: { jobId: 'job-1' }, fields: [] }],
+    };
+    await act(async () => tree.update(<ClockOutScreen />));
     await act(async () => tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Complete Form').props.onPress());
 
     expect(mockClockOut).toHaveBeenCalledTimes(1);
-    expect(router.replace).toHaveBeenCalledWith(expect.objectContaining({
+    expect(router.push).toHaveBeenCalledWith(expect.objectContaining({
       pathname: '/form',
-      params: expect.objectContaining({ formId: 'after-clock', trigger: 'after_clock_out', returnTo: '/home' }),
+      params: expect.objectContaining({ formId: 'after-clock', trigger: 'after_clock_out', workflowId: 'workflow-clock-out' }),
     }));
+  });
+
+  it('shows completed post-shift success without replaying clock-out', async () => {
+    mockWorkflow = {
+      id: 'workflow-clock-out', originRoute: '/clock-out', destination: '/home', phase: 'post_action', completedCount: 1,
+      intent: { kind: 'clock_out_follow_up', recordedDurationLabel: '8h 17m' },
+      forms: [{ id: 'after-clock', name: 'Post Shift Report', trigger: 'after_clock_out', context: {}, fields: [] }],
+    };
+    let tree: any;
+    await act(async () => { tree = create(<ClockOutScreen />); });
+    const text = tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ');
+    expect(text).toContain('Shift complete');
+    expect(text).toContain('Post Shift Report submitted.');
+    expect(mockClockOut).not.toHaveBeenCalled();
+    await act(async () => tree.root.findByType('primary-button').props.onPress());
+    expect(mockClearWorkflow).toHaveBeenCalled();
+    expect(router.replace).toHaveBeenCalledWith('/home');
   });
 
   it('keeps successful clock-out valid when post-action Forms checks fail', async () => {

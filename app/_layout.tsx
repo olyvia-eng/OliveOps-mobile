@@ -8,6 +8,7 @@ import { useAuthStore } from '@/store/authStore';
 import { AuthProvider } from '@/store/authStore';
 import { ClockingProvider } from '@/store/clockingStore';
 import { FormsProvider } from '@/store/formsStore';
+import { FormsWorkflowProvider } from '@/store/formsWorkflowStore';
 import { colors } from '@/theme/colors';
 
 function CompactBackButton() {
@@ -61,9 +62,10 @@ function RootLayout() {
     <AppErrorBoundary>
       <AuthProvider>
         <FormsProvider>
-          <ClockingProvider>
-            <AppLifecycleSync />
-            <Stack
+          <FormsWorkflowProvider>
+            <ClockingProvider>
+              <AppLifecycleSync />
+              <Stack
             screenOptions={{
               headerStyle: { backgroundColor: colors.background },
               headerTintColor: colors.textPrimary,
@@ -87,8 +89,9 @@ function RootLayout() {
             <Stack.Screen name="form" options={secondaryScreenOptions('Complete Form')} />
             <Stack.Screen name="form-submission" options={secondaryScreenOptions('Completed Form')} />
             <Stack.Screen name="settings" options={secondaryScreenOptions('Settings')} />
-            </Stack>
-          </ClockingProvider>
+              </Stack>
+            </ClockingProvider>
+          </FormsWorkflowProvider>
         </FormsProvider>
       </AuthProvider>
     </AppErrorBoundary>
