@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { OfflineNotice } from '@/components/OfflineNotice';
+import { AdvisoryFormsPrompt } from '@/components/AdvisoryFormsPrompt';
 import { PrimaryActionButton } from '@/components/PrimaryActionButton';
 import { Screen } from '@/components/Screen';
 import { StatusBanner } from '@/components/StatusBanner';
@@ -17,6 +18,7 @@ import { useAuthStore } from '@/store/authStore';
 import { useClockingStore } from '@/store/clockingStore';
 import { colors } from '@/theme/colors';
 import type { TimeEntryWorkType } from '@/types/domain';
+import type { EmployeeForm } from '@/types/forms';
 
 type ActivityOption = {
   type: TimeEntryWorkType;
@@ -29,7 +31,7 @@ export default function SwitchActivityScreen() {
   const { user } = useAuthStore();
   const { currentActiveEntryId, jobs, timeEntries } = useClockingStore();
   const { loading, refreshWorkContext, switchActivity } = useClockingActions();
-  const { getRequiredForms } = useFormsActions();
+  const { getRequiredForms, refreshForms } = useFormsActions();
   const {
     categories: unbillableCategories,
     loading: unbillableCategoriesLoading,
@@ -44,7 +46,8 @@ export default function SwitchActivityScreen() {
   const [retryMeta, setRetryMeta] = useState<{ requestId: string; idempotencyKey: string } | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [advisoryFormCount, setAdvisoryFormCount] = useState(0);
+  const [advisoryForms, setAdvisoryForms] = useState<EmployeeForm[]>([]);
+  const [postActionForms, setPostActionForms] = useState<EmployeeForm[]>([]);
   const [checkingForms, setCheckingForms] = useState(false);
   const advisoryAcceptedRef = useRef(false);
   const checkingFormsRef = useRef(false);
@@ -186,7 +189,7 @@ export default function SwitchActivityScreen() {
       checkingFormsRef.current = false;
       setCheckingForms(false);
       if (advisory.ok && advisory.forms.length > 0) {
-        setAdvisoryFormCount(advisory.forms.length);
+        setAdvisoryForms(advisory.forms);
         return;
       }
       advisoryAcceptedRef.current = true;
@@ -215,7 +218,7 @@ export default function SwitchActivityScreen() {
     if (previousJobId && previousJobId !== nextJobId) {
       const advisory = await getRequiredForms('after_completing_job', { jobId: previousJobId });
       if (advisory.ok && advisory.forms.length > 0) {
-        router.replace('/forms');
+        setPostActionForms(advisory.forms);
         return;
       }
     }
@@ -239,7 +242,7 @@ export default function SwitchActivityScreen() {
                 setActivityChosen(true);
                 setSelectedJobId('');
                 setSelectedUnbillableCategoryId('');
-                setAdvisoryFormCount(0);
+                setAdvisoryForms([]);
                 advisoryAcceptedRef.current = false;
               }}
             />
@@ -267,7 +270,7 @@ export default function SwitchActivityScreen() {
                           selected={selected}
                           onPress={() => {
                             setSelectedJobId(job.id);
-                            setAdvisoryFormCount(0);
+                            setAdvisoryForms([]);
                             advisoryAcceptedRef.current = false;
                           }}
                         />
@@ -299,20 +302,57 @@ export default function SwitchActivityScreen() {
         )}
 
       {status ? <StatusBanner tone="success" message={status} /> : null}
-      {advisoryFormCount > 0 ? (
-        <StatusBanner tone="info" message={`${advisoryFormCount} Form${advisoryFormCount === 1 ? '' : 's'} available before you start this job. You can complete them now or continue switching.`} />
-      ) : null}
       {error ? <StatusBanner tone="error" message={error} /> : null}
 
-      {advisoryFormCount > 0 ? (
-        <PrimaryActionButton label="View Forms" onPress={() => router.push('/forms')} />
-      ) : null}
-
-      <PrimaryActionButton
-        label={loading ? 'Switching...' : checkingForms ? 'Checking Forms...' : advisoryFormCount > 0 ? 'Continue Switch' : 'Switch Activity'}
-        disabled={!canSubmit || loading || checkingForms}
-        onPress={() => void submitSwitch(undefined, advisoryFormCount > 0)}
-      />
+      {advisoryForms.length > 0 ? (
+        <AdvisoryFormsPrompt
+          forms={advisoryForms}
+          heading="Form to complete before continuing"
+          message="You can complete it now or continue switching jobs."
+          skipLabel="Continue Anyway"
+          onComplete={(form) => {
+            void refreshForms({ force: true }).then((result) => {
+              if (!result.ok) return router.push('/forms');
+              router.push({
+                pathname: '/form',
+                params: {
+                  list: 'todo', formId: form.id, trigger: form.trigger,
+                  jobId: form.context?.jobId, equipmentId: form.context?.equipmentId,
+                  divisionId: form.context?.divisionId, returnTo: '/switch-activity',
+                },
+              });
+            });
+          }}
+          onSkip={() => { void submitSwitch(undefined, true); }}
+        />
+      ) : postActionForms.length > 0 ? (
+        <AdvisoryFormsPrompt
+          forms={postActionForms}
+          heading={`${postActionForms.length} form${postActionForms.length === 1 ? '' : 's'} need${postActionForms.length === 1 ? 's' : ''} your attention`}
+          message="Your activity switch is complete."
+          skipLabel="Do Later"
+          onComplete={(form) => {
+            void refreshForms({ force: true }).then((result) => {
+              if (!result.ok) return router.replace('/forms');
+              router.replace({
+                pathname: '/form',
+                params: {
+                  list: 'todo', formId: form.id, trigger: form.trigger,
+                  jobId: form.context?.jobId, equipmentId: form.context?.equipmentId,
+                  divisionId: form.context?.divisionId, returnTo: '/active-shift',
+                },
+              });
+            });
+          }}
+          onSkip={() => router.replace('/active-shift')}
+        />
+      ) : (
+        <PrimaryActionButton
+          label={loading ? 'Switching...' : checkingForms ? 'Checking Forms...' : 'Switch Activity'}
+          disabled={!canSubmit || loading || checkingForms}
+          onPress={() => void submitSwitch()}
+        />
+      )}
 
       {error && retryMeta ? (
         <PrimaryActionButton

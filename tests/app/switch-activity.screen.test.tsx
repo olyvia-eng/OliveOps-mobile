@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 const mockSwitchActivity = jest.fn();
 const mockRefresh = jest.fn().mockResolvedValue({ ok: true });
 const mockGetRequiredForms = jest.fn().mockResolvedValue({ ok: true, forms: [] });
+const mockRefreshForms = jest.fn().mockResolvedValue({ ok: true });
 const mockLoadUnbillableCategoriesIfNeeded = jest.fn().mockResolvedValue(undefined);
 
 const mockUseClockingActions = jest.fn(() => ({
@@ -86,7 +87,7 @@ jest.mock('@/hooks/useClockingActions', () => ({
 }));
 
 jest.mock('@/hooks/useFormsActions', () => ({
-  useFormsActions: () => ({ getRequiredForms: mockGetRequiredForms }),
+  useFormsActions: () => ({ getRequiredForms: mockGetRequiredForms, refreshForms: mockRefreshForms }),
 }));
 
 jest.mock('@/hooks/useUnbillableCategories', () => ({
@@ -122,6 +123,10 @@ jest.mock('@/components/PrimaryActionButton', () => ({
     require('react').createElement('primary-button', { label, disabled: !!disabled, onPress }),
 }));
 
+jest.mock('@/components/SecondaryButton', () => ({
+  SecondaryButton: ({ label, onPress }: any) => require('react').createElement('secondary-button', { label, onPress }),
+}));
+
 jest.mock('react-native', () => {
   const React = require('react');
   return {
@@ -150,6 +155,7 @@ describe('SwitchActivityScreen', () => {
     mockSwitchActivity.mockReset();
     mockRefresh.mockClear();
     mockGetRequiredForms.mockReset().mockResolvedValue({ ok: true, forms: [] });
+    mockRefreshForms.mockReset().mockResolvedValue({ ok: true });
     mockLoadUnbillableCategoriesIfNeeded.mockClear();
     mockUseUnbillableCategories.mockReset();
     mockUseUnbillableCategories.mockReturnValue({
@@ -247,7 +253,7 @@ describe('SwitchActivityScreen', () => {
 
   it('surfaces before-starting Forms and continues the job switch non-blocking', async () => {
     mockGetRequiredForms
-      .mockResolvedValueOnce({ ok: true, forms: [{ id: 'before-job' }] })
+      .mockResolvedValueOnce({ ok: true, forms: [{ id: 'before-job', name: 'Job Start Check', trigger: 'before_starting_job', context: { jobId: 'job-2' }, fields: [] }] })
       .mockResolvedValue({ ok: true, forms: [] });
     let tree: any;
     await act(async () => { tree = create(<SwitchActivityScreen />); });
@@ -258,14 +264,14 @@ describe('SwitchActivityScreen', () => {
     expect(mockGetRequiredForms).toHaveBeenCalledWith('before_starting_job', { jobId: 'job-2' });
     expect(mockSwitchActivity).not.toHaveBeenCalled();
 
-    await act(async () => tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Continue Switch').props.onPress());
+    await act(async () => tree.root.findByType('secondary-button').props.onPress());
     expect(mockSwitchActivity).toHaveBeenCalledTimes(1);
     expect(mockGetRequiredForms).toHaveBeenCalledWith('after_completing_job', { jobId: 'job-1' });
     expect(router.replace).toHaveBeenCalledWith('/active-shift');
   });
 
   it('surfaces after-completing Forms only after a successful switch', async () => {
-    mockGetRequiredForms.mockResolvedValue({ ok: true, forms: [{ id: 'after-job' }] });
+    mockGetRequiredForms.mockResolvedValue({ ok: true, forms: [{ id: 'after-job', name: 'Job Completion Report', trigger: 'after_completing_job', context: { jobId: 'job-1' }, fields: [] }] });
     let tree: any;
     await act(async () => { tree = create(<SwitchActivityScreen />); });
     await act(async () => tree.root.findByProps({ testID: 'switch-activity-option-drive_time' }).props.onPress());
@@ -273,7 +279,11 @@ describe('SwitchActivityScreen', () => {
 
     expect(mockSwitchActivity).toHaveBeenCalledTimes(1);
     expect(mockGetRequiredForms).toHaveBeenCalledWith('after_completing_job', { jobId: 'job-1' });
-    expect(router.replace).toHaveBeenCalledWith('/forms');
+    expect(router.replace).not.toHaveBeenCalled();
+    const text = tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ');
+    expect(text).toContain('Job Completion Report');
+    await act(async () => tree.root.findByType('secondary-button').props.onPress());
+    expect(router.replace).toHaveBeenCalledWith('/active-shift');
   });
 
   it('offers Drive Time without capability data and submits its canonical work type', async () => {

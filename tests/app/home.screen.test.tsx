@@ -3,6 +3,7 @@ import { act, create } from 'react-test-renderer';
 import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
 
 const mockRefresh = jest.fn().mockResolvedValue({ ok: true });
+const mockRefreshForms = jest.fn().mockResolvedValue({ ok: true });
 
 const mockUseClockingActions = jest.fn(() => ({
   refreshWorkContext: mockRefresh,
@@ -56,6 +57,11 @@ const mockClockingState = {
 };
 
 const mockUseClockingStore = jest.fn(() => mockClockingState);
+const mockFormsState = {
+  toDo: [{ id: 'required-1' }, { id: 'required-2' }],
+  available: [{ id: 'available-1' }, { id: 'available-2' }, { id: 'available-3' }],
+  completed: [{ submissionId: 'completed-1' }],
+};
 
 jest.mock('expo-router', () => ({
   router: {
@@ -67,12 +73,20 @@ jest.mock('@/hooks/useClockingActions', () => ({
   useClockingActions: () => mockUseClockingActions(),
 }));
 
+jest.mock('@/hooks/useFormsActions', () => ({
+  useFormsActions: () => ({ refreshForms: mockRefreshForms }),
+}));
+
 jest.mock('@/store/authStore', () => ({
   useAuthStore: () => mockUseAuthStore(),
 }));
 
 jest.mock('@/store/clockingStore', () => ({
   useClockingStore: () => mockUseClockingStore(),
+}));
+
+jest.mock('@/store/formsStore', () => ({
+  useFormsStore: () => mockFormsState,
 }));
 
 jest.mock('@/components/Screen', () => ({
@@ -113,6 +127,8 @@ describe('HomeScreen', () => {
 
   beforeEach(() => {
     mockRefresh.mockClear();
+    mockRefreshForms.mockClear();
+    mockFormsState.toDo = [{ id: 'required-1' }, { id: 'required-2' }];
     mockClockingState.activeShiftWarnings.possibleForgottenClockOut = false;
   });
 
@@ -145,6 +161,22 @@ describe('HomeScreen', () => {
     });
     await act(async () => formsRow.props.onPress());
     expect(router.push).toHaveBeenCalledWith('/forms');
+  });
+
+  it('shows only the outstanding To Do count for Forms', async () => {
+    await act(async () => { tree = create(<HomeScreen />); });
+    const renderedText = tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ');
+    expect(renderedText).toContain('2 due');
+    expect(renderedText).not.toContain('3 due');
+    expect(renderedText).not.toContain('6 due');
+  });
+
+  it('omits the due count when no required Forms are outstanding', async () => {
+    mockFormsState.toDo = [];
+    await act(async () => { tree = create(<HomeScreen />); });
+    const renderedText = tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ');
+    expect(renderedText).not.toContain('due');
+    expect(renderedText).toContain('Complete required and available forms');
   });
 
   it('shows long-shift warning actions when possible forgotten clock-out is flagged', async () => {

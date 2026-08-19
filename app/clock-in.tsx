@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { OfflineNotice } from '@/components/OfflineNotice';
+import { AdvisoryFormsPrompt } from '@/components/AdvisoryFormsPrompt';
 import { PrimaryActionButton } from '@/components/PrimaryActionButton';
 import { Screen } from '@/components/Screen';
 import { StatusBanner } from '@/components/StatusBanner';
@@ -28,7 +29,7 @@ export default function ClockInScreen() {
   const { user } = useAuthStore();
   const { jobs } = useClockingStore();
   const { clockIn, loading, refreshWorkContext } = useClockingActions();
-  const { getRequiredForms } = useFormsActions();
+  const { getRequiredForms, refreshForms } = useFormsActions();
   const {
     categories: unbillableCategories,
     loading: unbillableCategoriesLoading,
@@ -43,7 +44,7 @@ export default function ClockInScreen() {
   const [retryMeta, setRetryMeta] = useState<{ requestId: string; idempotencyKey: string } | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [advisoryFormCount, setAdvisoryFormCount] = useState(0);
+  const [advisoryForms, setAdvisoryForms] = useState<import('@/types/forms').EmployeeForm[]>([]);
   const [checkingForms, setCheckingForms] = useState(false);
   const advisoryAcceptedRef = useRef(false);
   const checkingFormsRef = useRef(false);
@@ -184,7 +185,7 @@ export default function ClockInScreen() {
       setCheckingForms(false);
       const forms = results.flatMap((result) => result.ok ? result.forms : []);
       if (forms.length > 0) {
-        setAdvisoryFormCount(forms.length);
+        setAdvisoryForms(forms);
         return;
       }
       advisoryAcceptedRef.current = true;
@@ -227,7 +228,7 @@ export default function ClockInScreen() {
           setActivityChosen(true);
           setSelectedJobId('');
           setSelectedUnbillableCategoryId('');
-          setAdvisoryFormCount(0);
+          setAdvisoryForms([]);
           advisoryAcceptedRef.current = false;
         }}
       />
@@ -255,7 +256,7 @@ export default function ClockInScreen() {
                       selected={selected}
                       onPress={() => {
                         setSelectedJobId(job.id);
-                        setAdvisoryFormCount(0);
+                        setAdvisoryForms([]);
                         advisoryAcceptedRef.current = false;
                       }}
                     />
@@ -285,20 +286,39 @@ export default function ClockInScreen() {
         ) : null}
 
       {status ? <StatusBanner tone="success" message={status} /> : null}
-      {advisoryFormCount > 0 ? (
-        <StatusBanner tone="info" message={`${advisoryFormCount} Form${advisoryFormCount === 1 ? '' : 's'} available before you start. You can complete them now or continue clocking in.`} />
-      ) : null}
       {error ? <StatusBanner tone="error" message={error} /> : null}
 
-      {advisoryFormCount > 0 ? (
-        <PrimaryActionButton label="View Forms" onPress={() => router.push('/forms')} />
-      ) : null}
-
-      <PrimaryActionButton
-        label={loading ? 'Clocking in...' : checkingForms ? 'Checking Forms...' : advisoryFormCount > 0 ? 'Continue Clock In' : 'Clock In'}
-        disabled={!canSubmit || loading || checkingForms}
-        onPress={() => void submitClockIn(undefined, advisoryFormCount > 0)}
-      />
+      {advisoryForms.length > 0 ? (
+        <AdvisoryFormsPrompt
+          forms={advisoryForms}
+          heading="Form to complete before continuing"
+          message="You can complete it now or continue clocking in."
+          skipLabel="Continue Anyway"
+          onComplete={(form) => {
+            void refreshForms({ force: true }).then((result) => {
+              if (!result.ok) {
+                router.push('/forms');
+                return;
+              }
+              router.push({
+                pathname: '/form',
+                params: {
+                  list: 'todo', formId: form.id, trigger: form.trigger,
+                  jobId: form.context?.jobId, equipmentId: form.context?.equipmentId,
+                  divisionId: form.context?.divisionId, returnTo: '/clock-in',
+                },
+              });
+            });
+          }}
+          onSkip={() => { void submitClockIn(undefined, true); }}
+        />
+      ) : (
+        <PrimaryActionButton
+          label={loading ? 'Clocking in...' : checkingForms ? 'Checking Forms...' : 'Clock In'}
+          disabled={!canSubmit || loading || checkingForms}
+          onPress={() => void submitClockIn()}
+        />
+      )}
 
       {error && retryMeta ? (
         <PrimaryActionButton

@@ -3,6 +3,7 @@ import { ActivityIndicator, Alert, Image, Linking, Pressable, StyleSheet, Text, 
 import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { OfflineNotice } from '@/components/OfflineNotice';
+import { AdvisoryFormsPrompt } from '@/components/AdvisoryFormsPrompt';
 import { PrimaryActionButton } from '@/components/PrimaryActionButton';
 import { Screen } from '@/components/Screen';
 import { StatusBanner } from '@/components/StatusBanner';
@@ -27,6 +28,7 @@ import { useAuthStore } from '@/store/authStore';
 import { useClockingStore } from '@/store/clockingStore';
 import { colors } from '@/theme/colors';
 import { toUserFacingError } from '@/utils/userFacingError';
+import type { EmployeeForm } from '@/types/forms';
 
 type PhotoAttachmentStatus = 'uploading' | 'uploaded' | 'failed';
 
@@ -65,7 +67,7 @@ export default function ClockOutScreen() {
   const { user, accessToken } = useAuthStore();
   const { currentActiveEntryId, timeEntries, jobs } = useClockingStore();
   const { clockOut, loading, refreshWorkContext } = useClockingActions();
-  const { getRequiredForms } = useFormsActions();
+  const { getRequiredForms, refreshForms } = useFormsActions();
 
   const [notes, setNotes] = useState('');
   const [attachments, setAttachments] = useState<PhotoAttachment[]>([]);
@@ -74,6 +76,7 @@ export default function ClockOutScreen() {
   const [error, setError] = useState<string | null>(null);
   const [permissionSettingsRequired, setPermissionSettingsRequired] = useState(false);
   const [navigatingAfterSuccess, setNavigatingAfterSuccess] = useState(false);
+  const [postActionForms, setPostActionForms] = useState<EmployeeForm[]>([]);
   const attachmentsRef = useRef<PhotoAttachment[]>([]);
   const submittedRef = useRef(false);
   const cleanedFileIdsRef = useRef<Set<string>>(new Set());
@@ -381,8 +384,9 @@ export default function ClockOutScreen() {
       checks.push(getRequiredForms('after_completing_job', { jobId: completedJobId }));
     }
     const results = await Promise.all(checks);
-    if (results.some((advisory) => advisory.ok && advisory.forms.length > 0)) {
-      router.replace('/forms');
+    const forms = results.flatMap((advisory) => advisory.ok ? advisory.forms : []);
+    if (forms.length > 0) {
+      setPostActionForms(forms);
       return;
     }
     router.replace('/home');
@@ -497,6 +501,31 @@ export default function ClockOutScreen() {
       </View>
 
       {success ? <StatusBanner tone="success" message={success} /> : null}
+      {postActionForms.length > 0 ? (
+        <AdvisoryFormsPrompt
+          forms={postActionForms}
+          heading={`${postActionForms.length} form${postActionForms.length === 1 ? '' : 's'} need${postActionForms.length === 1 ? 's' : ''} your attention`}
+          message="Your clock-out is complete."
+          skipLabel="Do Later"
+          onComplete={(form) => {
+            void refreshForms({ force: true }).then((result) => {
+              if (!result.ok) {
+                router.replace('/forms');
+                return;
+              }
+              router.replace({
+                pathname: '/form',
+                params: {
+                  list: 'todo', formId: form.id, trigger: form.trigger,
+                  jobId: form.context?.jobId, equipmentId: form.context?.equipmentId,
+                  divisionId: form.context?.divisionId, returnTo: '/home',
+                },
+              });
+            });
+          }}
+          onSkip={() => router.replace('/home')}
+        />
+      ) : null}
       {error ? <StatusBanner tone="error" message={error} /> : null}
       {permissionSettingsRequired ? (
         <PrimaryActionButton
@@ -507,11 +536,13 @@ export default function ClockOutScreen() {
       ) : null}
       {!activeEntry && !navigatingAfterSuccess ? <StatusBanner tone="info" message="No active shift found. Refresh and try again." /> : null}
 
-      <PrimaryActionButton
-        label={loading ? 'Clocking out...' : 'Clock Out'}
-        disabled={!activeEntry || loading || hasIncompletePhoto}
-        onPress={onConfirmClockOut}
-      />
+      {postActionForms.length === 0 ? (
+        <PrimaryActionButton
+          label={loading ? 'Clocking out...' : 'Clock Out'}
+          disabled={!activeEntry || loading || hasIncompletePhoto}
+          onPress={onConfirmClockOut}
+        />
+      ) : null}
 
       {error && retryMeta ? (
         <PrimaryActionButton

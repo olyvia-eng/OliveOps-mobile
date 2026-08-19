@@ -10,6 +10,7 @@ const mockFormsState = {
   toDo: [{
     id: 'form-daily',
     name: 'Daily Job Report',
+    category: 'Operations',
     description: 'Report work',
     trigger: 'daily',
     required: true,
@@ -21,6 +22,7 @@ const mockFormsState = {
   available: [{
     id: 'form-incident',
     name: 'Incident Report',
+    category: 'Safety',
     trigger: 'on_demand',
     required: false,
     context: { equipmentId: 'eq-1', equipmentName: 'Bobcat E50' },
@@ -89,6 +91,8 @@ describe('FormsScreen', () => {
     expect(textOf(tree)).toContain('Daily Job Report');
     expect(textOf(tree)).toContain('Smith Residence');
     expect(textOf(tree)).toContain('Residential');
+    expect(textOf(tree)).toContain('Operations');
+    expect(textOf(tree)).toContain('Due today');
     expect(mockRefreshForms).toHaveBeenCalledTimes(1);
   });
 
@@ -98,9 +102,12 @@ describe('FormsScreen', () => {
     await act(async () => tree.root.findByProps({ testID: 'forms-tab-available' }).props.onPress());
     expect(textOf(tree)).toContain('Incident Report');
     expect(textOf(tree)).toContain('Bobcat E50');
+    expect(textOf(tree)).toContain('Safety');
+    expect(textOf(tree)).toContain('Available anytime');
+    expect(textOf(tree)).not.toContain('Required');
 
     await act(async () => tree.root.findByProps({ testID: 'forms-tab-completed' }).props.onPress());
-    expect(textOf(tree)).toContain('Submitted');
+    expect(textOf(tree)).toContain('Pending review');
     await act(async () => tree.root.findByProps({ testID: 'submission-row-sub-1' }).props.onPress());
     expect(mockPush).toHaveBeenCalledWith({ pathname: '/form-submission', params: { id: 'sub-1' } });
   });
@@ -121,8 +128,32 @@ describe('FormsScreen', () => {
     mockFormsState.completed = [] as any;
     let tree: any;
     await act(async () => { tree = create(React.createElement(FormsScreen)); });
-    expect(textOf(tree)).toContain('Nothing due');
+    expect(textOf(tree)).toContain("You're all caught up");
+    expect(textOf(tree)).toContain('No forms require your attention.');
+    await act(async () => tree.root.findByProps({ testID: 'forms-tab-available' }).props.onPress());
+    expect(textOf(tree)).toContain('No additional forms available');
+    await act(async () => tree.root.findByProps({ testID: 'forms-tab-completed' }).props.onPress());
+    expect(textOf(tree)).toContain('No completed forms yet');
     await act(async () => tree.root.findByType('flat-list').props.onRefresh());
     expect(mockRefreshForms).toHaveBeenLastCalledWith({ force: true });
+  });
+
+  it('keeps separate server requirements for the same Form and labels each reason', async () => {
+    mockFormsState.toDo = [
+      {
+        id: 'form-daily', name: 'Post Shift Report', category: 'Operations', trigger: 'daily',
+        required: true, periodKey: '2026-08-18', context: {}, fields: [], submissionState: { completed: false },
+      },
+      {
+        id: 'form-daily', name: 'Post Shift Report', category: 'Operations', trigger: 'after_clock_out',
+        required: true, context: {}, fields: [], submissionState: { completed: false },
+      },
+    ] as any;
+    let tree: any;
+    await act(async () => { tree = create(<FormsScreen />); });
+
+    expect(tree.root.findAllByType('pressable').filter((node: any) => node.props.testID === 'form-row-form-daily')).toHaveLength(2);
+    expect(textOf(tree)).toContain('Due today');
+    expect(textOf(tree)).toContain('After clock out');
   });
 });

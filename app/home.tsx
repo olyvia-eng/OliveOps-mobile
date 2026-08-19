@@ -16,14 +16,18 @@ import {
   resolveJobTitle,
 } from '@/features/clocking/presentation';
 import { useClockingActions } from '@/hooks/useClockingActions';
+import { useFormsActions } from '@/hooks/useFormsActions';
 import { useAuthStore } from '@/store/authStore';
 import { useClockingStore } from '@/store/clockingStore';
+import { useFormsStore } from '@/store/formsStore';
 import { colors } from '@/theme/colors';
 
 export default function HomeScreen() {
   const { user } = useAuthStore();
   const { activeShiftWarnings, currentActiveEntryId, timeEntries, jobs } = useClockingStore();
   const { refreshWorkContext } = useClockingActions();
+  const { refreshForms } = useFormsActions();
+  const { toDo } = useFormsStore();
   const [loadError, setLoadError] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
 
@@ -38,6 +42,10 @@ export default function HomeScreen() {
       mounted = false;
     };
   }, [refreshWorkContext]);
+
+  useEffect(() => {
+    void refreshForms();
+  }, [refreshForms]);
 
   const activeShift = useMemo(() => {
     return resolveCurrentActiveEntry(timeEntries, user?.employeeId, currentActiveEntryId);
@@ -142,7 +150,12 @@ export default function HomeScreen() {
       <View style={styles.quickSection}>
         <SectionHeader title="Quick Actions" />
         <View style={styles.quickList}>
-          <ListRow title="Forms" subtitle="Complete required and available forms" onPress={() => router.push('/forms')} />
+          <ListRow
+            title="Forms"
+            subtitle="Complete required and available forms"
+            detail={toDo.length > 0 ? `${toDo.length} due` : undefined}
+            onPress={() => router.push('/forms')}
+          />
           <ListRow title="Time History" subtitle="Review entries and weekly totals" onPress={() => router.push('/time-history')} />
           <ListRow title="Correction Requests" subtitle="View or request a time correction" onPress={() => router.push('/my-correction-requests')} />
         </View>

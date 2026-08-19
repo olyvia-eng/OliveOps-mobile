@@ -46,6 +46,9 @@ jest.mock('@/components/StatusBanner', () => ({ StatusBanner: ({ message }: any)
 jest.mock('@/components/PrimaryActionButton', () => ({
   PrimaryActionButton: ({ label, disabled, onPress }: any) => require('react').createElement('primary-button', { label, disabled, onPress }),
 }));
+jest.mock('@/components/SecondaryButton', () => ({
+  SecondaryButton: ({ label, onPress }: any) => require('react').createElement('secondary-button', { label, onPress }),
+}));
 jest.mock('react-native', () => {
   const ReactModule = require('react');
   return {
@@ -81,7 +84,7 @@ describe('FormScreen', () => {
     expect(tree.root.findByProps({ accessibilityRole: 'alert' }).props.children).toBe('This field is required.');
   });
 
-  it('submits exact trimmed responses and context, then returns to Forms', async () => {
+  it('submits exact trimmed responses and shows confirmation before returning to Forms', async () => {
     let tree: any;
     await act(async () => { tree = create(<FormScreen />); });
     await act(async () => tree.root.findByProps({ testID: 'form-field-condition' }).props.onChangeText('  Good  '));
@@ -99,6 +102,11 @@ describe('FormScreen', () => {
         { fieldId: 'damage', value: 'no' },
       ],
     });
+    expect(mockReplace).not.toHaveBeenCalled();
+    const text = tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ');
+    expect(text).toContain('Form submitted');
+    expect(text).toContain('Daily Equipment Inspection has been submitted successfully.');
+    await act(async () => tree.root.findByType('primary-button').props.onPress());
     expect(mockReplace).toHaveBeenCalledWith('/forms');
   });
 

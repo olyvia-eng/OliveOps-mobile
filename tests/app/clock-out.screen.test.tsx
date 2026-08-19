@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 const mockClockOut = jest.fn();
 const mockRefresh = jest.fn().mockResolvedValue({ ok: true });
 const mockGetRequiredForms = jest.fn().mockResolvedValue({ ok: true, forms: [] });
+const mockRefreshForms = jest.fn().mockResolvedValue({ ok: true });
 const mockOpenSettings = jest.fn().mockResolvedValue(undefined);
 let activeShiftClosed = false;
 
@@ -75,7 +76,7 @@ jest.mock('@/hooks/useClockingActions', () => ({
 }));
 
 jest.mock('@/hooks/useFormsActions', () => ({
-  useFormsActions: () => ({ getRequiredForms: mockGetRequiredForms }),
+  useFormsActions: () => ({ getRequiredForms: mockGetRequiredForms, refreshForms: mockRefreshForms }),
 }));
 
 jest.mock('@/store/authStore', () => ({
@@ -118,6 +119,10 @@ jest.mock('@/components/PrimaryActionButton', () => ({
     require('react').createElement('primary-button', { label, disabled: !!disabled, onPress }),
 }));
 
+jest.mock('@/components/SecondaryButton', () => ({
+  SecondaryButton: ({ label, onPress }: any) => require('react').createElement('secondary-button', { label, onPress }),
+}));
+
 jest.mock('react-native', () => {
   const React = require('react');
   return {
@@ -151,6 +156,7 @@ describe('ClockOutScreen', () => {
     mockClockOut.mockReset();
     mockClockOut.mockResolvedValue({ ok: true });
     mockGetRequiredForms.mockReset().mockResolvedValue({ ok: true, forms: [] });
+    mockRefreshForms.mockReset().mockResolvedValue({ ok: true });
     (prepareUpload as jest.Mock).mockReset();
     (uploadUriToS3 as jest.Mock).mockReset();
     (completeUpload as jest.Mock).mockReset();
@@ -213,7 +219,7 @@ describe('ClockOutScreen', () => {
 
   it('surfaces post-clock Forms after clock-out remains successful', async () => {
     mockGetRequiredForms
-      .mockResolvedValueOnce({ ok: true, forms: [{ id: 'after-clock' }] })
+      .mockResolvedValueOnce({ ok: true, forms: [{ id: 'after-clock', name: 'Post Shift Report', category: 'Operations', trigger: 'after_clock_out', context: {}, fields: [] }] })
       .mockResolvedValueOnce({ ok: true, forms: [] });
     (Alert.alert as jest.Mock).mockImplementation((_title: string, _message: string, actions: Array<{ onPress?: () => void }>) => {
       actions?.[1]?.onPress?.();
@@ -225,7 +231,42 @@ describe('ClockOutScreen', () => {
     expect(mockClockOut).toHaveBeenCalledTimes(1);
     expect(mockGetRequiredForms).toHaveBeenNthCalledWith(1, 'after_clock_out');
     expect(mockGetRequiredForms).toHaveBeenNthCalledWith(2, 'after_completing_job', { jobId: 'job-1' });
-    expect(router.replace).toHaveBeenCalledWith('/forms');
+    expect(router.replace).not.toHaveBeenCalled();
+    expect(tree.root.findAllByType('status-banner').some((node: any) => node.props.message === 'Clock-out submitted successfully.')).toBe(true);
+    const text = tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ');
+    expect(text).toContain('1 form needs your attention');
+    expect(text).toContain('Post Shift Report');
+
+    await act(async () => tree.root.findByType('secondary-button').props.onPress());
+    expect(router.replace).toHaveBeenCalledWith('/home');
+  });
+
+  it('opens the exact post-clock Form after clock-out succeeds', async () => {
+    mockGetRequiredForms
+      .mockResolvedValueOnce({ ok: true, forms: [{ id: 'after-clock', name: 'Post Shift Report', trigger: 'after_clock_out', context: { jobId: 'job-1' }, fields: [] }] })
+      .mockResolvedValueOnce({ ok: true, forms: [] });
+    (Alert.alert as jest.Mock).mockImplementation((_title: string, _message: string, actions: Array<{ onPress?: () => void }>) => actions?.[1]?.onPress?.());
+    let tree: any;
+    await act(async () => { tree = create(<ClockOutScreen />); });
+    await act(async () => tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Clock Out').props.onPress());
+    await act(async () => tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Complete Form').props.onPress());
+
+    expect(mockClockOut).toHaveBeenCalledTimes(1);
+    expect(router.replace).toHaveBeenCalledWith(expect.objectContaining({
+      pathname: '/form',
+      params: expect.objectContaining({ formId: 'after-clock', trigger: 'after_clock_out', returnTo: '/home' }),
+    }));
+  });
+
+  it('keeps successful clock-out valid when post-action Forms checks fail', async () => {
+    mockGetRequiredForms.mockResolvedValue({ ok: false, error: 'Could not check required Forms.' });
+    (Alert.alert as jest.Mock).mockImplementation((_title: string, _message: string, actions: Array<{ onPress?: () => void }>) => actions?.[1]?.onPress?.());
+    let tree: any;
+    await act(async () => { tree = create(<ClockOutScreen />); });
+    await act(async () => tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Clock Out').props.onPress());
+
+    expect(mockClockOut).toHaveBeenCalledTimes(1);
+    expect(router.replace).toHaveBeenCalledWith('/home');
   });
 
   it('shows offline notice and keeps confirm enabled when active shift exists', async () => {

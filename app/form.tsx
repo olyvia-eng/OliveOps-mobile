@@ -5,6 +5,7 @@ import { FormContextSummary } from '@/components/FormContextSummary';
 import { FormFieldRenderer } from '@/components/FormFieldRenderer';
 import { ScreenHeader, StatusBadge } from '@/components/MobilePrimitives';
 import { PrimaryActionButton } from '@/components/PrimaryActionButton';
+import { SecondaryButton } from '@/components/SecondaryButton';
 import { Screen } from '@/components/Screen';
 import { StatusBanner } from '@/components/StatusBanner';
 import {
@@ -31,18 +32,23 @@ function matchesParams(form: EmployeeForm, params: Record<string, string | strin
 }
 
 export default function FormScreen() {
-  const params = useLocalSearchParams<{ list?: string; formId?: string; trigger?: string; jobId?: string; equipmentId?: string; divisionId?: string }>();
+  const params = useLocalSearchParams<{ list?: string; formId?: string; trigger?: string; jobId?: string; equipmentId?: string; divisionId?: string; returnTo?: string }>();
   const navigation = useNavigation();
   const { user } = useAuthStore();
   const { toDo, available } = useFormsStore();
   const { refreshForms, submitForm, submitting } = useFormsActions();
   const candidates = params.list === 'available' ? available : toDo;
-  const form = useMemo(() => candidates.find((item) => matchesParams(item, params)) ?? null, [candidates, params]);
+  const matchedForm = useMemo(() => candidates.find((item) => matchesParams(item, params)) ?? null, [candidates, params]);
+  const formSnapshotRef = useRef<EmployeeForm | null>(null);
+  const submissionInProgressRef = useRef(false);
+  if (matchedForm) formSnapshotRef.current = matchedForm;
+  const form = matchedForm ?? (submissionInProgressRef.current ? formSnapshotRef.current : null);
   const initialValues = useMemo(() => initialFormValues(form?.fields ?? []), [form]);
   const [values, setValues] = useState<EmployeeFormValues>(initialValues);
   const [fieldErrors, setFieldErrors] = useState<EmployeeFormFieldErrors>({});
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [submittedFormName, setSubmittedFormName] = useState<string | null>(null);
   const submittedRef = useRef(false);
   const clientSubmissionRef = useRef<{ identity: string; value: string } | null>(null);
   const refreshedMissingRef = useRef(false);
@@ -80,6 +86,29 @@ export default function FormScreen() {
     ]);
   }), [dirty, navigation]);
 
+  if (submittedFormName) {
+    const returnLabel = params.returnTo === '/clock-in'
+      ? 'Continue to Clock In'
+      : params.returnTo === '/switch-activity'
+        ? 'Continue Activity Switch'
+        : params.returnTo === '/active-shift'
+          ? 'Return to Active Shift'
+          : params.returnTo === '/home'
+            ? 'Return Home'
+            : 'Back to Forms';
+    const returnPath = params.returnTo || '/forms';
+    return (
+      <Screen>
+        <ScreenHeader title="Form submitted" subtitle={`${submittedFormName} has been submitted successfully.`} />
+        <StatusBanner tone="success" message="Submission complete" />
+        <PrimaryActionButton label={returnLabel} onPress={() => router.replace(returnPath as never)} />
+        {returnPath === '/home'
+          ? <SecondaryButton label="View Forms" onPress={() => router.replace('/forms')} />
+          : <SecondaryButton label="Home" onPress={() => router.replace('/home')} />}
+      </Screen>
+    );
+  }
+
   if (!form) {
     return (
       <Screen>
@@ -107,6 +136,7 @@ export default function FormScreen() {
       return;
     }
 
+    submissionInProgressRef.current = true;
     const result = await submitForm({
       clientSubmissionId: clientSubmissionRef.current?.value ?? createRequestMeta(submissionIdentity).idempotencyKey,
       formId: form.id,
@@ -117,13 +147,15 @@ export default function FormScreen() {
       responses: buildFormResponses(orderedFields, values),
     });
     if (!result.ok) {
+      submissionInProgressRef.current = false;
       setError(result.error ?? 'Could not submit this form. Your answers are still here.');
       if ('fieldErrors' in result && result.fieldErrors) setFieldErrors(result.fieldErrors);
       return;
     }
 
     submittedRef.current = true;
-    router.replace('/forms');
+  submissionInProgressRef.current = false;
+  setSubmittedFormName(form.name);
   }
 
   return (

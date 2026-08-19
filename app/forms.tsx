@@ -125,8 +125,8 @@ export default function FormsScreen() {
         )}
         ListEmptyComponent={(
           <EmptyState
-            title={tab === 'todo' ? 'Nothing due' : tab === 'available' ? 'No available forms' : 'No completed forms'}
-            message={tab === 'todo' ? 'You have no required forms to complete.' : tab === 'available' ? 'No on-demand forms are available to your employee account.' : 'Submitted forms will appear here.'}
+            title={tab === 'todo' ? "You're all caught up" : tab === 'available' ? 'No additional forms available' : 'No completed forms yet'}
+            message={tab === 'todo' ? 'No forms require your attention.' : tab === 'available' ? 'Optional forms will appear here when available.' : 'Submitted forms will appear here.'}
           />
         )}
         renderItem={({ item }) => item.kind === 'form' ? (
@@ -141,8 +141,11 @@ export default function FormsScreen() {
               <Text style={styles.rowTitle}>{item.value.name}</Text>
               <Text style={styles.chevron}>›</Text>
             </View>
+            {item.value.category ? <Text style={styles.category}>{item.value.category}</Text> : null}
+            <Text style={[styles.reason, item.value.trigger === 'on_demand' && styles.availableReason]}>
+              {getFormTriggerLabel(item.value.trigger)}
+            </Text>
             <FormContextSummary context={item.value.context} />
-            <Text style={styles.rowMeta}>{getFormTriggerLabel(item.value.trigger)}</Text>
           </Pressable>
         ) : (
           <Pressable
@@ -159,8 +162,8 @@ export default function FormsScreen() {
                 tone={item.value.status === 'approved' ? 'success' : item.value.status === 'rejected' ? 'error' : 'neutral'}
               />
             </View>
-            <FormContextSummary context={item.value.context} />
             <Text style={styles.rowMeta}>Submitted {formatSubmittedAt(item.value.submittedAt)}</Text>
+            <FormContextSummary context={item.value.context} />
           </Pressable>
         )}
       />
@@ -179,9 +182,12 @@ const styles = StyleSheet.create({
   tabSelected: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.cardBorder },
   tabText: { color: colors.textSecondary, fontSize: typography.bodySmall, fontWeight: typography.semibold },
   tabTextSelected: { color: colors.primary, fontWeight: typography.bold },
-  row: { gap: spacing.sm, borderTopWidth: 1, borderTopColor: colors.divider, paddingVertical: spacing.md },
+  row: { gap: spacing.xs, minHeight: 72, borderTopWidth: 1, borderTopColor: colors.divider, paddingVertical: spacing.md },
   rowTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
   rowTitle: { flex: 1, color: colors.textPrimary, fontSize: typography.body, fontWeight: typography.bold },
+  category: { color: colors.textMuted, fontSize: typography.caption, fontWeight: typography.semibold, textTransform: 'uppercase' },
+  reason: { color: colors.primary, fontSize: typography.bodySmall, fontWeight: typography.bold },
+  availableReason: { color: colors.textSecondary },
   rowMeta: { color: colors.textSecondary, fontSize: typography.bodySmall },
   chevron: { color: colors.textMuted, fontSize: 24 },
   pressed: { opacity: 0.65 },

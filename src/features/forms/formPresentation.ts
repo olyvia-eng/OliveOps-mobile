@@ -5,21 +5,21 @@ import type {
 } from '@/types/forms';
 
 export function getFormTriggerLabel(trigger: EmployeeFormTrigger) {
-  if (trigger === 'before_clock_in') return 'Required before clock in';
-  if (trigger === 'after_clock_out') return 'Required after clock out';
-  if (trigger === 'before_starting_job') return 'Required before starting job';
-  if (trigger === 'after_completing_job') return 'Required after completing job';
-  if (trigger === 'daily') return 'Due this business day';
-  if (trigger === 'weekly') return 'Due this business week';
-  if (trigger === 'monthly') return 'Due this business month';
-  return 'Available on demand';
+  if (trigger === 'before_clock_in') return 'Before clock in';
+  if (trigger === 'after_clock_out') return 'After clock out';
+  if (trigger === 'before_starting_job') return 'Before starting job';
+  if (trigger === 'after_completing_job') return 'After completing job';
+  if (trigger === 'daily') return 'Due today';
+  if (trigger === 'weekly') return 'Due this week';
+  if (trigger === 'monthly') return 'Due this month';
+  return 'Available anytime';
 }
 
 export function getSubmissionStatusLabel(status: EmployeeFormSubmissionStatus) {
   if (status === 'approved') return 'Approved';
-  if (status === 'rejected') return 'Needs resubmission';
+  if (status === 'rejected') return 'Rejected';
   if (status === 'draft') return 'Draft';
-  return 'Submitted';
+  return 'Pending review';
 }
 
 export function getPrimaryContextLabel(context?: EmployeeFormContext) {
