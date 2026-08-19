@@ -39,8 +39,8 @@ export function AdvisoryFormsPrompt({
       {message ? <Text style={styles.message}>{message}</Text> : null}
       {completedCount > 0 ? <Text style={styles.progress}>{`✓ ${completedCount} of ${totalCount} completed`}</Text> : null}
       <View style={styles.formsList}>
-        {forms.map((form) => (
-          <View key={`${form.id}:${form.trigger}:${form.context?.jobId ?? ''}:${form.context?.equipmentId ?? ''}:${form.context?.divisionId ?? ''}`} style={styles.formSummary}>
+        {forms.map((form, index) => (
+          <View key={`${index}:${form.id}:${form.trigger}:${form.context?.jobId ?? ''}:${form.context?.equipmentId ?? ''}:${form.context?.divisionId ?? ''}`} style={styles.formSummary}>
             <View style={styles.formTitleRow}>
               <Text style={styles.pendingMark}>○</Text>
               <Text style={styles.formName}>{form.name}</Text>

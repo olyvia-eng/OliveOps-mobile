@@ -154,6 +154,6 @@ describe('FormsScreen', () => {
 
     expect(tree.root.findAllByType('pressable').filter((node: any) => node.props.testID === 'form-row-form-daily')).toHaveLength(2);
     expect(textOf(tree)).toContain('Due today');
-    expect(textOf(tree)).toContain('After clock out');
+    expect(textOf(tree)).toContain('End-of-shift form');
   });
 });

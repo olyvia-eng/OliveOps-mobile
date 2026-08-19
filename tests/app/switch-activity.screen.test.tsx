@@ -282,7 +282,7 @@ describe('SwitchActivityScreen', () => {
       intent: expect.objectContaining({ kind: 'switch_activity', activeEntryId: 'entry-1', jobIds: ['job-2'] }),
     }));
 
-    await act(async () => tree.root.findByType('secondary-button').props.onPress());
+    await act(async () => tree.root.findAllByType('secondary-button').find((node: any) => node.props.label === 'Skip for Now').props.onPress());
     expect(mockSwitchActivity).toHaveBeenCalledTimes(1);
     expect(mockGetRequiredForms).toHaveBeenCalledWith('after_completing_job', { jobId: 'job-1' });
     expect(router.replace).toHaveBeenCalledWith('/active-shift');
@@ -311,7 +311,7 @@ describe('SwitchActivityScreen', () => {
     expect(router.replace).not.toHaveBeenCalled();
     const text = tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ');
     expect(text).toContain('Job Completion Report');
-    await act(async () => tree.root.findByType('secondary-button').props.onPress());
+    await act(async () => tree.root.findAllByType('secondary-button').find((node: any) => node.props.label === 'Do Later').props.onPress());
     expect(router.replace).toHaveBeenCalledWith('/active-shift');
   });
 

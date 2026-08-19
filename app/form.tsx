@@ -170,7 +170,7 @@ export default function FormScreen() {
     submissionInProgressRef.current = false;
     if (workflow && workflow.id === params.workflowId) {
       completeCurrentForm(workflow.id);
-      router.replace(workflow.originRoute);
+      router.back();
       return;
     }
     setSubmittedFormName(form.name);

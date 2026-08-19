@@ -256,7 +256,7 @@ describe('ClockOutScreen', () => {
     expect(text).toContain('1 form needs your attention');
     expect(text).toContain('Post Shift Report');
 
-    await act(async () => tree.root.findByType('secondary-button').props.onPress());
+    await act(async () => tree.root.findAllByType('secondary-button').find((node: any) => node.props.label === 'Do Later').props.onPress());
     expect(router.replace).toHaveBeenCalledWith('/home');
   });
 
@@ -298,6 +298,29 @@ describe('ClockOutScreen', () => {
     await act(async () => tree.root.findByType('primary-button').props.onPress());
     expect(mockClearWorkflow).toHaveBeenCalled();
     expect(router.replace).toHaveBeenCalledWith('/home');
+  });
+
+  it('continues through multiple post-shift Forms without replaying clock-out', async () => {
+    mockWorkflow = {
+      id: 'workflow-clock-out', originRoute: '/clock-out', destination: '/home', phase: 'post_action', completedCount: 1,
+      intent: { kind: 'clock_out_follow_up', recordedDurationLabel: '8h 17m' },
+      forms: [
+        { id: 'after-one', name: 'Post Shift Report', trigger: 'after_clock_out', context: {}, fields: [] },
+        { id: 'after-two', name: 'Equipment Check', trigger: 'after_clock_out', context: {}, fields: [] },
+      ],
+    };
+    let tree: any;
+    await act(async () => { tree = create(<ClockOutScreen />); });
+
+    expect(mockClockOut).not.toHaveBeenCalled();
+    const text = tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ');
+    expect(text).toContain('1 of 2 completed');
+    expect(text).toContain('Equipment Check');
+
+    await act(async () => tree.root.findByType('primary-button').props.onPress());
+    expect(router.push).toHaveBeenCalledWith(expect.objectContaining({
+      params: expect.objectContaining({ formId: 'after-two', workflowId: 'workflow-clock-out' }),
+    }));
   });
 
   it('keeps successful clock-out valid when post-action Forms checks fail', async () => {

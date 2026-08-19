@@ -266,7 +266,7 @@ describe('ClockInScreen', () => {
     expect(text).toContain('Morning Truck Inspection');
     expect(text).toContain('Job Start Check');
 
-    await act(async () => tree.root.findByType('secondary-button').props.onPress());
+    await act(async () => tree.root.findAllByType('secondary-button').find((node: any) => node.props.label === 'Skip for Now').props.onPress());
     expect(mockClockIn).toHaveBeenCalledTimes(1);
     expect(router.replace).toHaveBeenCalledWith('/active-shift');
   });
@@ -308,6 +308,36 @@ describe('ClockInScreen', () => {
     expect(mockClockIn).toHaveBeenCalledWith('emp-1', 'job', ['job-1'], undefined, expect.any(Object));
     expect(mockClearWorkflow).toHaveBeenCalledTimes(1);
     expect(router.replace).toHaveBeenCalledWith('/active-shift');
+  });
+
+  it('shows the next pre-action Form and waits for the final completion before clocking in', async () => {
+    const forms = [
+      { id: 'form-one', name: 'Morning Truck Inspection', trigger: 'before_clock_in', context: {}, fields: [] },
+      { id: 'form-two', name: 'Daily Safety Check', trigger: 'before_clock_in', context: {}, fields: [] },
+    ];
+    mockWorkflow = {
+      id: 'workflow-1', originRoute: '/clock-in', destination: '/active-shift', phase: 'pre_action', completedCount: 1,
+      intent: { kind: 'clock_in', employeeId: 'emp-1', workType: 'job', jobIds: ['job-1'] },
+      forms,
+    };
+    let tree: any;
+    await act(async () => { tree = create(<ClockInScreen />); });
+
+    expect(mockClockIn).not.toHaveBeenCalled();
+    const text = tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ');
+    expect(text).toContain('1 of 2 completed');
+    expect(text).toContain('Daily Safety Check');
+    expect(text).not.toContain('Morning Truck Inspection');
+
+    await act(async () => tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Complete Next Form').props.onPress());
+    expect(router.push).toHaveBeenCalledWith(expect.objectContaining({
+      pathname: '/form',
+      params: expect.objectContaining({ formId: 'form-two', workflowId: 'workflow-1' }),
+    }));
+
+    mockWorkflow = { ...mockWorkflow, completedCount: 2 };
+    await act(async () => tree.update(<ClockInScreen />));
+    expect(mockClockIn).toHaveBeenCalledTimes(1);
   });
 
   it('continues clock-in when the advisory Forms check fails', async () => {

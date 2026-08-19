@@ -10,6 +10,7 @@ jest.mock('@react-native-community/datetimepicker', () => ({
 const mockSubmitForm = jest.fn();
 const mockRefreshForms = jest.fn().mockResolvedValue({ ok: true });
 const mockReplace = jest.fn();
+const mockBack = jest.fn();
 const mockDispatch = jest.fn();
 const mockAddListener = jest.fn(() => jest.fn());
 const mockCompleteCurrentForm = jest.fn();
@@ -34,7 +35,10 @@ const mockForm: any = {
 const defaultFields = mockForm.fields;
 
 jest.mock('expo-router', () => ({
-  router: { replace: (...args: unknown[]) => mockReplace(...args) },
+  router: {
+    replace: (...args: unknown[]) => mockReplace(...args),
+    back: (...args: unknown[]) => mockBack(...args),
+  },
   useLocalSearchParams: () => mockParams,
   useNavigation: () => ({ addListener: mockAddListener, dispatch: mockDispatch }),
 }));
@@ -85,6 +89,7 @@ describe('FormScreen', () => {
     mockSubmitForm.mockReset().mockResolvedValue({ ok: true, submission: { id: 'sub-1' } });
     mockRefreshForms.mockClear();
     mockReplace.mockClear();
+    mockBack.mockClear();
     mockCompleteCurrentForm.mockClear();
     mockWorkflow = null;
     mockParams = { list: 'todo', formId: 'form-1', trigger: 'daily', equipmentId: 'eq-1' };
@@ -153,7 +158,8 @@ describe('FormScreen', () => {
     await act(async () => tree.root.findByType('primary-button').props.onPress());
 
     expect(mockCompleteCurrentForm).toHaveBeenCalledWith('workflow-1');
-    expect(mockReplace).toHaveBeenCalledWith('/clock-in');
+    expect(mockBack).toHaveBeenCalledTimes(1);
+    expect(mockReplace).not.toHaveBeenCalled();
     expect(tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ')).not.toContain('Form submitted');
   });
 

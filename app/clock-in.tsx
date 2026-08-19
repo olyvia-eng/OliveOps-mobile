@@ -152,7 +152,7 @@ export default function ClockInScreen() {
     if (continuingWorkflowRef.current === clockInWorkflow.id) return;
     continuingWorkflowRef.current = clockInWorkflow.id;
     void submitClockIn(undefined, true, intent);
-  }, [clockInWorkflow, user?.employeeId]);
+  }, [clockInWorkflow?.id, clockInWorkflow?.completedCount, user?.employeeId]);
 
   async function submitClockIn(
     metaOverride?: { requestId: string; idempotencyKey: string },

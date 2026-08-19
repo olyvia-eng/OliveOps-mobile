@@ -162,7 +162,7 @@ export default function SwitchActivityScreen() {
     if (continuingWorkflowRef.current === preSwitchWorkflow.id) return;
     continuingWorkflowRef.current = preSwitchWorkflow.id;
     void submitSwitch(undefined, true, intent);
-  }, [preSwitchWorkflow, user?.employeeId]);
+  }, [preSwitchWorkflow?.id, preSwitchWorkflow?.completedCount, user?.employeeId]);
 
   async function submitSwitch(
     metaOverride?: { requestId: string; idempotencyKey: string },
