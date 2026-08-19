@@ -265,4 +265,20 @@ describe('useFormsActions', () => {
 
     expect(result).toEqual({ ok: false, error: 'This form is not available to your employee account.', uncertain: false });
   });
+
+  it('does not mislabel an unstructured request rejection as a field error', async () => {
+    mockSubmitEmployeeForm.mockRejectedValue(new ApiError('invalid_client_submission_id', 400));
+    await mount();
+
+    let result: any;
+    await act(async () => {
+      result = await currentActions.submitForm({ clientSubmissionId: 'valid-attempt', formId: 'form-1', trigger: 'daily', responses: [] });
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      error: 'Could not submit this form. Your answers are still here.',
+      uncertain: false,
+    });
+  });
 });

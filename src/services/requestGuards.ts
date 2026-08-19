@@ -22,3 +22,7 @@ export function createRequestMeta(seed: string): { requestId: string; idempotenc
     idempotencyKey: `${normalized}:${requestId}`,
   };
 }
+
+export function createFormClientSubmissionId() {
+  return createRequestMeta('form-submission').idempotencyKey;
+}

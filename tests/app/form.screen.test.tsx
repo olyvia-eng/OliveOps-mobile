@@ -2,6 +2,11 @@ import React from 'react';
 import { act, create } from 'react-test-renderer';
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 
+jest.mock('@react-native-community/datetimepicker', () => ({
+  __esModule: true,
+  default: (props: any) => require('react').createElement('date-picker', props),
+}));
+
 const mockSubmitForm = jest.fn();
 const mockRefreshForms = jest.fn().mockResolvedValue({ ok: true });
 const mockReplace = jest.fn();
@@ -23,6 +28,7 @@ const mockForm: any = {
   ],
   submissionState: { completed: false },
 };
+const defaultFields = mockForm.fields;
 
 jest.mock('expo-router', () => ({
   router: { replace: (...args: unknown[]) => mockReplace(...args) },
@@ -39,7 +45,7 @@ jest.mock('@/hooks/useFormsActions', () => ({
   useFormsActions: () => ({ refreshForms: mockRefreshForms, submitForm: mockSubmitForm, submitting: false }),
 }));
 jest.mock('@/services/requestGuards', () => ({
-  createRequestMeta: () => ({ requestId: 'form-request-1', idempotencyKey: 'form-submission-1' }),
+  createFormClientSubmissionId: () => 'form-submission:request-1',
 }));
 jest.mock('@/components/Screen', () => ({ Screen: ({ children }: any) => require('react').createElement('screen', {}, children) }));
 jest.mock('@/components/StatusBanner', () => ({ StatusBanner: ({ message }: any) => require('react').createElement('status-banner', { message }) }));
@@ -69,10 +75,13 @@ import { Alert } from 'react-native';
 
 describe('FormScreen', () => {
   beforeEach(() => {
+    jest.useRealTimers();
     mockSubmitForm.mockReset().mockResolvedValue({ ok: true, submission: { id: 'sub-1' } });
     mockRefreshForms.mockClear();
     mockReplace.mockClear();
     mockAddListener.mockClear();
+    mockForm.name = 'Daily Equipment Inspection';
+    mockForm.fields = defaultFields;
     mockForm.fields[3].required = false;
   });
 
@@ -91,7 +100,7 @@ describe('FormScreen', () => {
     await act(async () => tree.root.findByProps({ testID: 'form-field-damage-option-no' }).props.onPress());
     await act(async () => tree.root.findByType('primary-button').props.onPress());
     expect(mockSubmitForm).toHaveBeenCalledWith({
-      clientSubmissionId: 'form-submission-1',
+      clientSubmissionId: 'form-submission:request-1',
       formId: 'form-1',
       trigger: 'daily',
       equipmentId: 'eq-1',
@@ -133,8 +142,8 @@ describe('FormScreen', () => {
     await act(async () => tree.root.findByType('primary-button').props.onPress());
 
     expect(mockSubmitForm).toHaveBeenCalledTimes(2);
-    expect(mockSubmitForm.mock.calls[0][0].clientSubmissionId).toBe('form-submission-1');
-    expect(mockSubmitForm.mock.calls[1][0].clientSubmissionId).toBe('form-submission-1');
+    expect(mockSubmitForm.mock.calls[0][0].clientSubmissionId).toBe('form-submission:request-1');
+    expect(mockSubmitForm.mock.calls[1][0].clientSubmissionId).toBe('form-submission:request-1');
   });
 
   it('disables submission when a required unsupported field exists', async () => {
@@ -160,5 +169,67 @@ describe('FormScreen', () => {
     await act(async () => beforeRemove({ preventDefault, data: { action: { type: 'GO_BACK' } } }));
     expect(preventDefault).toHaveBeenCalledTimes(1);
     expect(Alert.alert).toHaveBeenCalledWith('Discard changes?', expect.any(String), expect.any(Array));
+  });
+
+  it('submits Morning Truck Inspection with hydrated Date, Driver, and Yes answers', async () => {
+    jest.useFakeTimers().setSystemTime(new Date(2026, 7, 19, 23, 30));
+    mockForm.name = 'Morning Truck Inspection';
+    mockForm.fields = [
+      { id: 'inspection-date', type: 'date', label: 'Inspection Date', required: true, order: 1 },
+      {
+        id: 'driver', type: 'employee_selector', label: 'Driver', required: true, order: 2,
+        defaultValue: 'Jane Smith', choices: [{ value: 'emp-jane', label: 'Jane Smith' }],
+      },
+      { id: 'lights', type: 'yes_no', label: 'Lights and signals working?', required: true, order: 3 },
+      { id: 'notes', type: 'multi_line_text', label: 'Notes / Deficiencies', required: false, order: 4 },
+    ];
+    let tree: any;
+    await act(async () => { tree = create(<FormScreen />); });
+
+    expect(tree.root.findByProps({ testID: 'form-field-inspection-date' }).props.accessibilityLabel).toContain('Aug 19, 2026');
+    expect(tree.root.findByProps({ testID: 'form-field-driver-option-emp-jane' }).props.accessibilityState.selected).toBe(true);
+    await act(async () => tree.root.findByProps({ testID: 'form-field-lights-option-yes' }).props.onPress());
+    await act(async () => tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Submit Form').props.onPress());
+
+    expect(mockSubmitForm).toHaveBeenCalledWith(expect.objectContaining({
+      responses: [
+        { fieldId: 'inspection-date', value: '2026-08-19' },
+        { fieldId: 'driver', value: 'emp-jane' },
+        { fieldId: 'lights', value: 'yes' },
+      ],
+    }));
+    jest.useRealTimers();
+  });
+
+  it('keeps an edited date through rerenders and failed submission', async () => {
+    mockForm.fields = [
+      { id: 'inspection-date', type: 'date', label: 'Inspection Date', required: true, order: 1, defaultValue: '2026-08-19' },
+      { id: 'notes', type: 'single_line_text', label: 'Notes', required: false, order: 2 },
+    ];
+    mockSubmitForm.mockResolvedValue({ ok: false, error: 'Submission could not be confirmed.', uncertain: true });
+    let tree: any;
+    await act(async () => { tree = create(<FormScreen />); });
+    await act(async () => tree.root.findByProps({ testID: 'form-field-inspection-date' }).props.onPress());
+    await act(async () => tree.root.findByType('date-picker').props.onChange({ type: 'set' }, new Date(2026, 7, 25, 12)));
+    await act(async () => tree.root.findByProps({ testID: 'form-field-notes' }).props.onChangeText('Checked'));
+    expect(tree.root.findByProps({ testID: 'form-field-inspection-date' }).props.accessibilityLabel).toContain('Aug 25, 2026');
+
+    await act(async () => tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Submit Form').props.onPress());
+    expect(tree.root.findByProps({ testID: 'form-field-inspection-date' }).props.accessibilityLabel).toContain('Aug 25, 2026');
+    expect(mockSubmitForm.mock.calls[0][0].responses).toContainEqual({ fieldId: 'inspection-date', value: '2026-08-25' });
+  });
+
+  it('places a structured server validation error beneath the identified field', async () => {
+    mockSubmitForm.mockResolvedValue({
+      ok: false,
+      error: 'Some answers need attention before this form can be submitted.',
+      fieldErrors: { condition: 'Check this answer and try again.' },
+    });
+    let tree: any;
+    await act(async () => { tree = create(<FormScreen />); });
+    await act(async () => tree.root.findByProps({ testID: 'form-field-condition' }).props.onChangeText('Good'));
+    await act(async () => tree.root.findByType('primary-button').props.onPress());
+
+    expect(tree.root.findByProps({ accessibilityRole: 'alert' }).props.children).toBe('Check this answer and try again.');
   });
 });

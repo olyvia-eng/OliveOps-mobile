@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
-import { beginRequest, createRequestMeta, endRequest } from '@/services/requestGuards';
+import { beginRequest, createFormClientSubmissionId, createRequestMeta, endRequest } from '@/services/requestGuards';
 
 describe('requestGuards', () => {
   it('prevents duplicate clock-in submissions', () => {
@@ -22,5 +22,11 @@ describe('requestGuards', () => {
     const meta = createRequestMeta('entry-1');
     expect(meta.requestId).toContain('entry-1');
     expect(meta.idempotencyKey).toContain(meta.requestId);
+  });
+
+  it('creates Form submission IDs accepted by the employee API contract', () => {
+    const clientSubmissionId = createFormClientSubmissionId();
+    expect(clientSubmissionId).toMatch(/^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$/);
+    expect(clientSubmissionId.length).toBeLessThanOrEqual(128);
   });
 });

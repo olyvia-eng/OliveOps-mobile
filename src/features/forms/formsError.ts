@@ -9,7 +9,7 @@ export function toFormsError(error: unknown, fallback: string) {
     if (error.status === 408 || error.code === 'REQUEST_TIMEOUT') {
       return 'The request timed out. Your answers are still here.';
     }
-    if (error.status === 400) return 'Some answers need attention before this form can be submitted.';
+    if (error.status === 400 && error.fieldId) return 'Some answers need attention before this form can be submitted.';
   }
 
   return fallback;

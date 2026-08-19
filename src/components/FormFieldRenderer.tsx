@@ -1,7 +1,14 @@
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useState } from 'react';
+import { Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { colors, radii, spacing, typography } from '@/theme/colors';
 import type { EmployeeFormField } from '@/types/forms';
-import { UNSUPPORTED_FIELD_TYPES } from '@/features/forms/formValidation';
+import {
+  dateFromCanonicalValue,
+  formatFormDate,
+  localCalendarDate,
+  UNSUPPORTED_FIELD_TYPES,
+} from '@/features/forms/formValidation';
 
 export function FormFieldRenderer({
   field,
@@ -16,6 +23,14 @@ export function FormFieldRenderer({
   disabled?: boolean;
   onChange: (value: string) => void;
 }) {
+  const [showDatePicker, setShowDatePicker] = useState(false);
+
+  function onDateChange(event: DateTimePickerEvent, selectedDate?: Date) {
+    if (Platform.OS !== 'ios') setShowDatePicker(false);
+    if (event.type === 'dismissed' || !selectedDate) return;
+    onChange(localCalendarDate(selectedDate));
+  }
+
   if (field.type === 'section_header') {
     return <Text accessibilityRole="header" style={styles.sectionHeader}>{field.label}</Text>;
   }
@@ -48,7 +63,38 @@ export function FormFieldRenderer({
     <View style={styles.field}>
       <Text nativeID={`form-label-${field.id}`} style={styles.label}>{field.label}{field.required ? ' *' : ''}</Text>
       {field.helpText ? <Text style={styles.help}>{field.helpText}</Text> : null}
-      {options ? (
+      {field.type === 'date' ? (
+        <>
+          <Pressable
+            testID={`form-field-${field.id}`}
+            accessibilityRole="button"
+            accessibilityLabel={`${field.label}: ${formatFormDate(value)}`}
+            accessibilityState={{ disabled }}
+            disabled={disabled}
+            onPress={() => setShowDatePicker(true)}
+            style={[styles.dateButton, error && styles.inputError]}
+          >
+            <Text style={styles.dateValue}>{formatFormDate(value)}</Text>
+            <Text accessibilityElementsHidden style={styles.calendarIcon}>▦</Text>
+          </Pressable>
+          {showDatePicker ? (
+            <View style={styles.datePicker}>
+              <DateTimePicker
+                testID={`form-field-${field.id}-picker`}
+                value={dateFromCanonicalValue(value) ?? new Date()}
+                mode="date"
+                display={Platform.OS === 'ios' ? 'inline' : 'default'}
+                onChange={onDateChange}
+              />
+              {Platform.OS === 'ios' ? (
+                <Pressable accessibilityRole="button" onPress={() => setShowDatePicker(false)} style={styles.dateDone}>
+                  <Text style={styles.dateDoneText}>Done</Text>
+                </Pressable>
+              ) : null}
+            </View>
+          ) : null}
+        </>
+      ) : options ? (
         <View accessibilityLabel={field.label} style={field.type === 'yes_no' ? styles.segmented : styles.options}>
           {options.map((option) => {
             const selected = value === option.value;
@@ -76,7 +122,7 @@ export function FormFieldRenderer({
           editable={!disabled}
           value={value}
           onChangeText={onChange}
-          placeholder={field.placeholder || (field.type === 'date' ? 'YYYY-MM-DD' : field.type === 'time' ? 'HH:MM' : undefined)}
+          placeholder={field.placeholder || (field.type === 'time' ? 'HH:MM' : undefined)}
           placeholderTextColor={colors.inputPlaceholder}
           keyboardType={field.type === 'number' || field.type === 'currency' ? 'decimal-pad' : 'default'}
           multiline={field.type === 'multi_line_text'}
@@ -96,6 +142,12 @@ const styles = StyleSheet.create({
   input: { minHeight: 50, borderWidth: 1, borderColor: colors.border, borderRadius: radii.md, backgroundColor: colors.surface, color: colors.textPrimary, fontSize: typography.body, paddingHorizontal: spacing.md },
   multiline: { minHeight: 120, paddingTop: spacing.md, textAlignVertical: 'top' },
   inputError: { borderColor: colors.error },
+  dateButton: { minHeight: 50, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, borderColor: colors.border, borderRadius: radii.md, backgroundColor: colors.surface, paddingHorizontal: spacing.md },
+  dateValue: { color: colors.textPrimary, fontSize: typography.body, fontWeight: typography.medium },
+  calendarIcon: { color: colors.primary, fontSize: 22 },
+  datePicker: { gap: spacing.sm, borderWidth: 1, borderColor: colors.cardBorder, borderRadius: radii.md, backgroundColor: colors.surface, padding: spacing.sm },
+  dateDone: { minHeight: 44, alignItems: 'center', justifyContent: 'center' },
+  dateDoneText: { color: colors.primary, fontSize: typography.body, fontWeight: typography.bold },
   error: { color: colors.error, fontSize: typography.bodySmall, fontWeight: typography.semibold },
   options: { borderWidth: 1, borderColor: colors.cardBorder, borderRadius: radii.lg, backgroundColor: colors.surface, paddingHorizontal: spacing.md },
   option: { minHeight: 50, justifyContent: 'center', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.divider, paddingHorizontal: spacing.sm },

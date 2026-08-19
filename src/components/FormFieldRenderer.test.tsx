@@ -2,6 +2,11 @@ import React from 'react';
 import { act, create } from 'react-test-renderer';
 import { describe, expect, it, jest } from '@jest/globals';
 
+jest.mock('@react-native-community/datetimepicker', () => ({
+  __esModule: true,
+  default: (props: any) => require('react').createElement('date-picker', props),
+}));
+
 jest.mock('react-native', () => {
   const ReactModule = require('react');
   return {
@@ -29,7 +34,6 @@ describe('FormFieldRenderer', () => {
     ['long', 'multi_line_text'],
     ['number', 'number'],
     ['currency', 'currency'],
-    ['date', 'date'],
     ['time', 'time'],
   ] as const)('renders %s as a controlled text input', async (id, type) => {
     let tree: any;
@@ -37,6 +41,24 @@ describe('FormFieldRenderer', () => {
       tree = create(<FormFieldRenderer field={field(id, type)} value="" onChange={jest.fn()} />);
     });
     expect(tree.root.findByProps({ testID: `form-field-${id}` })).toBeTruthy();
+  });
+
+  it('shows a friendly date and writes the selected local date canonically', async () => {
+    const onChange = jest.fn();
+    let tree: any;
+    await act(async () => {
+      tree = create(<FormFieldRenderer field={field('date', 'date', { required: true })} value="2026-08-19" onChange={onChange} />);
+    });
+    expect(tree.root.findByProps({ testID: 'form-field-date' }).props.accessibilityLabel).toContain('Aug 19, 2026');
+    expect(tree.root.findAllByType('textinput')).toHaveLength(0);
+
+    await act(async () => tree.root.findByProps({ testID: 'form-field-date' }).props.onPress());
+    const picker = tree.root.findByType('date-picker');
+    expect(picker.props.value.getFullYear()).toBe(2026);
+    expect(picker.props.value.getMonth()).toBe(7);
+    expect(picker.props.value.getDate()).toBe(19);
+    await act(async () => picker.props.onChange({ type: 'set' }, new Date(2026, 7, 25, 12)));
+    expect(onChange).toHaveBeenCalledWith('2026-08-25');
   });
 
   it.each([

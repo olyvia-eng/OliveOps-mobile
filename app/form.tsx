@@ -17,7 +17,7 @@ import {
   validateFormValues,
 } from '@/features/forms/formValidation';
 import { useFormsActions } from '@/hooks/useFormsActions';
-import { createRequestMeta } from '@/services/requestGuards';
+import { createFormClientSubmissionId } from '@/services/requestGuards';
 import { useAuthStore } from '@/store/authStore';
 import { useFormsStore } from '@/store/formsStore';
 import { colors, spacing, typography } from '@/theme/colors';
@@ -50,6 +50,7 @@ export default function FormScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [submittedFormName, setSubmittedFormName] = useState<string | null>(null);
   const submittedRef = useRef(false);
+  const initializedAttemptRef = useRef('');
   const clientSubmissionRef = useRef<{ identity: string; value: string } | null>(null);
   const refreshedMissingRef = useRef(false);
   const submissionIdentity = form && user
@@ -59,14 +60,16 @@ export default function FormScreen() {
   if (submissionIdentity && clientSubmissionRef.current?.identity !== submissionIdentity) {
     clientSubmissionRef.current = {
       identity: submissionIdentity,
-      value: createRequestMeta(submissionIdentity).idempotencyKey,
+      value: createFormClientSubmissionId(),
     };
   }
 
   useEffect(() => {
+    if (!submissionIdentity || initializedAttemptRef.current === submissionIdentity) return;
+    initializedAttemptRef.current = submissionIdentity;
     setValues(initialValues);
     setFieldErrors({});
-  }, [initialValues]);
+  }, [initialValues, submissionIdentity]);
 
   useEffect(() => {
     if (form || refreshedMissingRef.current) return;
@@ -138,7 +141,7 @@ export default function FormScreen() {
 
     submissionInProgressRef.current = true;
     const result = await submitForm({
-      clientSubmissionId: clientSubmissionRef.current?.value ?? createRequestMeta(submissionIdentity).idempotencyKey,
+      clientSubmissionId: clientSubmissionRef.current?.value ?? createFormClientSubmissionId(),
       formId: form.id,
       trigger: form.trigger,
       jobId: form.context?.jobId,
@@ -154,8 +157,8 @@ export default function FormScreen() {
     }
 
     submittedRef.current = true;
-  submissionInProgressRef.current = false;
-  setSubmittedFormName(form.name);
+    submissionInProgressRef.current = false;
+    setSubmittedFormName(form.name);
   }
 
   return (

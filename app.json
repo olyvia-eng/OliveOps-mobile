@@ -55,7 +55,8 @@
           "organization": "oliveops",
           "project": "oliveops-mobile"
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker"
     ],
     "extra": {
       "router": {},

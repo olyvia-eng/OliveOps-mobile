@@ -1,8 +1,10 @@
 import { describe, expect, it } from '@jest/globals';
 import {
   buildFormResponses,
+  formatFormDate,
   hasRequiredUnsupportedField,
   initialFormValues,
+  localCalendarDate,
   validateFormValues,
 } from '@/features/forms/formValidation';
 import type { EmployeeFormField } from '@/types/forms';
@@ -19,6 +21,47 @@ describe('formValidation', () => {
       field({ id: 'photo', type: 'photo_upload', label: 'Photo', defaultValue: 'Ignore' }),
     ];
     expect(initialFormValues(fields)).toEqual({ text: 'Default' });
+  });
+
+  it('normalizes supported defaults into canonical answer values', () => {
+    const fields = [
+      field({ id: 'short', type: 'single_line_text', label: 'Short', defaultValue: '  Jane Smith  ' }),
+      field({ id: 'long', type: 'multi_line_text', label: 'Long', defaultValue: ' Notes ' }),
+      field({ id: 'number', type: 'number', label: 'Number', defaultValue: 0 as any }),
+      field({ id: 'date', type: 'date', label: 'Date', defaultValue: '2026-08-25' }),
+      field({ id: 'time', type: 'time', label: 'Time', defaultValue: '07:30' }),
+      field({ id: 'yes', type: 'yes_no', label: 'Yes', defaultValue: true as any }),
+      field({ id: 'no', type: 'yes_no', label: 'No', defaultValue: false as any }),
+      field({ id: 'check', type: 'checkbox', label: 'Check', options: ['Checked'], defaultValue: 'Checked' }),
+      field({ id: 'drop', type: 'dropdown', label: 'Drop', options: ['A'], defaultValue: 'A' }),
+      field({ id: 'multiple', type: 'multiple_choice', label: 'Multiple', options: ['Good'], defaultValue: 'Good' }),
+      field({ id: 'driver', type: 'employee_selector', label: 'Driver', choices: [{ value: 'emp-1', label: 'Jane Smith' }], defaultValue: 'Jane Smith' }),
+    ];
+
+    expect(initialFormValues(fields, {}, new Date(2026, 7, 19, 12))).toEqual({
+      short: 'Jane Smith', long: 'Notes', number: '0', date: '2026-08-25', time: '07:30',
+      yes: 'yes', no: 'no', check: 'Checked', drop: 'A', multiple: 'Good', driver: 'emp-1',
+    });
+  });
+
+  it('uses existing answers before defaults and local today without overwriting blanks', () => {
+    const fields = [
+      field({ id: 'date', type: 'date', label: 'Date', defaultValue: '2026-08-25' }),
+      field({ id: 'driver', type: 'single_line_text', label: 'Driver', defaultValue: 'Jane Smith' }),
+      field({ id: 'today', type: 'date', label: 'Today' }),
+    ];
+    expect(initialFormValues(fields, { date: '2026-08-27', driver: '', today: '2026-08-28' }, new Date(2026, 7, 19, 12))).toEqual({
+      date: '2026-08-27', driver: '', today: '2026-08-28',
+    });
+  });
+
+  it('uses local calendar components for today and safely replaces malformed date defaults', () => {
+    const localDate = new Date(2026, 7, 19, 23, 30);
+    const dateField = field({ id: 'date', type: 'date', label: 'Date', required: true, defaultValue: '2026-02-30' });
+    expect(localCalendarDate(localDate)).toBe('2026-08-19');
+    expect(initialFormValues([dateField], {}, localDate)).toEqual({ date: '2026-08-19' });
+    expect(formatFormDate('not-a-date')).toBe('Choose a date');
+    expect(validateFormValues([dateField], { date: '2026-08-19' })).toEqual({});
   });
 
   it('validates required text and contract length limits', () => {
@@ -53,7 +96,7 @@ describe('formValidation', () => {
     })).toEqual({
       number: 'Enter a valid number.',
       currency: 'Enter a valid number.',
-      date: 'Enter a valid date as YYYY-MM-DD.',
+      date: 'Choose a valid date.',
       time: 'Enter a valid time as HH:MM.',
       yesno: 'Choose Yes or No.',
       choice: 'Choose one of the available options.',
@@ -77,6 +120,20 @@ describe('formValidation', () => {
     expect(validateFormValues(fields, values)).toEqual({});
     expect(buildFormResponses(fields, values)).toContainEqual({ fieldId: 'text', value: 'done' });
     expect(buildFormResponses(fields, values)).not.toContainEqual(expect.objectContaining({ fieldId: 'section' }));
+  });
+
+  it('accepts canonical No and numeric zero but rejects whitespace and blank defaults', () => {
+    const fields = [
+      field({ id: 'no', type: 'yes_no', label: 'No', required: true }),
+      field({ id: 'zero', type: 'number', label: 'Zero', required: true }),
+      field({ id: 'blank', type: 'single_line_text', label: 'Blank', required: true, defaultValue: '   ' }),
+    ];
+    const values = initialFormValues(fields, { no: 'no', zero: '0' });
+    expect(validateFormValues(fields, values)).toEqual({ blank: 'This field is required.' });
+    expect(buildFormResponses(fields, values)).toEqual([
+      { fieldId: 'no', value: 'no' },
+      { fieldId: 'zero', value: '0' },
+    ]);
   });
 
   it('blocks required signature, photo, and file fields without submitting them', () => {
