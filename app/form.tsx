@@ -19,6 +19,7 @@ import {
 import { useFormsActions } from '@/hooks/useFormsActions';
 import { createFormClientSubmissionId } from '@/services/requestGuards';
 import { useAuthStore } from '@/store/authStore';
+import { useClockingStore } from '@/store/clockingStore';
 import { useFormsStore } from '@/store/formsStore';
 import { useFormsWorkflowStore } from '@/store/formsWorkflowStore';
 import { colors, spacing, typography } from '@/theme/colors';
@@ -36,6 +37,7 @@ export default function FormScreen() {
   const params = useLocalSearchParams<{ list?: string; formId?: string; trigger?: string; jobId?: string; equipmentId?: string; divisionId?: string; returnTo?: string; workflowId?: string }>();
   const navigation = useNavigation();
   const { user } = useAuthStore();
+  const { businessTimeZone } = useClockingStore();
   const { toDo, available } = useFormsStore();
   const { workflow, completeCurrentForm } = useFormsWorkflowStore();
   const { refreshForms, submitForm, submitting } = useFormsActions();
@@ -53,7 +55,10 @@ export default function FormScreen() {
   const submissionInProgressRef = useRef(false);
   if (matchedForm) formSnapshotRef.current = matchedForm;
   const form = matchedForm ?? (submissionInProgressRef.current ? formSnapshotRef.current : null);
-  const initialValues = useMemo(() => initialFormValues(form?.fields ?? []), [form]);
+  const initialValues = useMemo(
+    () => initialFormValues(form?.fields ?? [], {}, new Date(), businessTimeZone),
+    [businessTimeZone, form],
+  );
   const [values, setValues] = useState<EmployeeFormValues>(initialValues);
   const [fieldErrors, setFieldErrors] = useState<EmployeeFormFieldErrors>({});
   const [error, setError] = useState<string | null>(null);
@@ -178,7 +183,13 @@ export default function FormScreen() {
 
   return (
     <Screen testID="employee-form-scroll">
-      <ScreenHeader title={form.name} subtitle={form.description} action={form.required ? <StatusBadge label="Required" tone="active" /> : undefined} />
+      <ScreenHeader
+        title={form.name}
+        subtitle={form.description}
+        action={form.completionRequirement === 'required' || form.required
+          ? <StatusBadge label="Required" tone="active" />
+          : undefined}
+      />
       <FormContextSummary context={form.context} />
       {orderedFields.map((field) => (
         <FormFieldRenderer

@@ -8,9 +8,10 @@ import { getCorrectionTypeLabel } from '@/features/clocking/presentation';
 import { useTimeCorrectionActions } from '@/hooks/useTimeCorrectionActions';
 import { useClockingStore } from '@/store/clockingStore';
 import { colors } from '@/theme/colors';
+import { formatBusinessDate, formatBusinessDateTime } from '@/utils/businessTime';
 
 export default function MyCorrectionRequestsScreen() {
-  const { timeCorrections } = useClockingStore();
+  const { businessTimeZone, timeCorrections } = useClockingStore();
   const { loading, refreshMyCorrections } = useTimeCorrectionActions();
   const [error, setError] = useState<string | null>(null);
 
@@ -38,8 +39,8 @@ export default function MyCorrectionRequestsScreen() {
         ListEmptyComponent={<EmptyState title="No correction requests" message="Requests you submit will appear here." />}
         renderItem={({ item }) => {
           const requestedSummary = [
-            item.requestedClockInAt ? `Start: ${new Date(item.requestedClockInAt).toLocaleString()}` : null,
-            item.requestedClockOutAt ? `End: ${new Date(item.requestedClockOutAt).toLocaleString()}` : null,
+            item.requestedClockInAt ? `Start: ${formatBusinessDateTime(new Date(item.requestedClockInAt), businessTimeZone)}` : null,
+            item.requestedClockOutAt ? `End: ${formatBusinessDateTime(new Date(item.requestedClockOutAt), businessTimeZone)}` : null,
             item.requestedJobId ? `Job: ${item.requestedJobId}` : null,
             item.requestedActivityType ? `Activity: ${item.requestedActivityType.replace('_', ' ')}` : null,
           ].filter(Boolean).join(' • ') || 'Details in request note';
@@ -55,7 +56,7 @@ export default function MyCorrectionRequestsScreen() {
               </View>
               <Text style={styles.summaryText}>{requestedSummary}</Text>
               <Text style={styles.reasonText}>{item.reason}</Text>
-              <Text style={styles.dateText}>Submitted {new Date(item.submittedAt).toLocaleDateString()}</Text>
+              <Text style={styles.dateText}>Submitted {formatBusinessDate(new Date(item.submittedAt), businessTimeZone)}</Text>
             </View>
           );
         }}

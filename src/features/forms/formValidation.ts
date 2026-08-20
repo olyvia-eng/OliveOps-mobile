@@ -1,4 +1,5 @@
 import type { EmployeeFormField, EmployeeFormResponse } from '@/types/forms';
+import { businessDateKey } from '@/utils/businessTime';
 
 export type EmployeeFormValues = Record<string, string>;
 export type EmployeeFormFieldErrors = Record<string, string>;
@@ -69,6 +70,7 @@ export function initialFormValues(
   fields: EmployeeFormField[],
   existingValues: EmployeeFormValues = {},
   today = new Date(),
+  timeZone?: string | null,
 ) {
   return fields.reduce<EmployeeFormValues>((values, field) => {
     if (DISPLAY_FIELD_TYPES.has(field.type) || UNSUPPORTED_FIELD_TYPES.has(field.type)) return values;
@@ -78,7 +80,7 @@ export function initialFormValues(
     }
     const defaultValue = normalizeInitialValue(field, field.defaultValue);
     if (defaultValue) values[field.id] = defaultValue;
-    else if (field.type === 'date') values[field.id] = localCalendarDate(today);
+    else if (field.type === 'date') values[field.id] = businessDateKey(today, timeZone);
     return values;
   }, { ...existingValues });
 }

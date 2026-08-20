@@ -34,6 +34,7 @@ export interface AuthSessionResponse {
 
 export interface BootstrapResponse {
   ok: boolean;
+  timezone?: string;
   jobs?: Job[];
   timeEntries?: TimeEntry[];
   timeCorrections?: TimeCorrectionRequest[];

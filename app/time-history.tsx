@@ -22,17 +22,23 @@ import { colors, spacing } from '@/theme/colors';
 
 export default function TimeHistoryScreen() {
   const { user } = useAuthStore();
-  const { currentActiveEntryId, timeEntries, timeCorrections, jobs } = useClockingStore();
+  const { businessTimeZone, currentActiveEntryId, timeEntries, timeCorrections, jobs } = useClockingStore();
   const effectiveTimeEntries = useMemo(
     () => buildEffectiveTimeEntries(timeEntries, timeCorrections),
     [timeCorrections, timeEntries],
   );
-  const todayEntries = useMemo(() => getTodayEntries(effectiveTimeEntries), [effectiveTimeEntries]);
+  const todayEntries = useMemo(
+    () => getTodayEntries(effectiveTimeEntries, businessTimeZone),
+    [businessTimeZone, effectiveTimeEntries],
+  );
   const orderedEntries = useMemo(
     () => [...todayEntries].sort((a, b) => new Date(b.clockIn).getTime() - new Date(a.clockIn).getTime()),
     [todayEntries]
   );
-  const weekTotal = useMemo(() => getWeekTotalHours(effectiveTimeEntries), [effectiveTimeEntries]);
+  const weekTotal = useMemo(
+    () => getWeekTotalHours(effectiveTimeEntries, businessTimeZone),
+    [businessTimeZone, effectiveTimeEntries],
+  );
   const weekTotalLabel = useMemo(() => formatDurationMinutes(weekTotal * 60), [weekTotal]);
   const activeEntry = useMemo(
     () => resolveCurrentActiveEntry(timeEntries, user?.employeeId, currentActiveEntryId),
@@ -89,7 +95,7 @@ export default function TimeHistoryScreen() {
                 </View>
               ) : null}
             </View>
-            <Text style={styles.entryRange}>Today · {formatEntryTimeRange(item, isAuthoritativeActiveEntry(item.id, authoritativeActiveEntryId))}</Text>
+            <Text style={styles.entryRange}>Today · {formatEntryTimeRange(item, isAuthoritativeActiveEntry(item.id, authoritativeActiveEntryId), businessTimeZone)}</Text>
             <Pressable
               testID={`request-correction-${item.id}`}
               accessibilityRole="button"

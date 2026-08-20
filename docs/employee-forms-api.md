@@ -67,10 +67,10 @@ Missing context values and incomplete submission-state metadata are omitted from
 ```http
 GET /api/employee?action=required&trigger=before_clock_in
 GET /api/employee?action=required&trigger=before_starting_job&jobId=<id>
-GET /api/employee?action=required&trigger=after_completing_job&jobId=<id>&equipmentId=<id>
+GET /api/employee?action=required&trigger=after_leaving_job&jobId=<id>&equipmentId=<id>
 ```
 
-Valid required triggers are `before_clock_in`, `after_clock_out`, `before_starting_job`, `after_completing_job`, `daily`, `weekly`, and `monthly`. The response contains only active, assigned Forms not already satisfied for the period and context:
+Valid triggers include `before_clock_in`, `after_clock_out`, `before_starting_job`, `after_completing_job`, `after_leaving_job`, `job_completed`, `daily`, `weekly`, and `monthly`. `after_leaving_job` applies when an employee stops working on a job. `job_completed` applies only when the OliveOps Job record transitions to Completed. `after_completing_job` remains a distinct legacy trigger and must not be inferred from either event. The response contains only active, assigned Forms not already satisfied for the period and context:
 
 ```json
 {
@@ -81,7 +81,7 @@ Valid required triggers are `before_clock_in`, `after_clock_out`, `before_starti
 }
 ```
 
-Phase 1 checks are advisory. Clock-in, clock-out, starting work, and completing work continue even when `forms` is non-empty. The mobile app should surface the missing Forms without turning them into a workflow blocker.
+Responses may identify `completionRequirement` as `reminder` or `required`. Current enforcement remains advisory because clocking and job transitions do not atomically enforce Form completion on the server. The mobile app should encourage required completion while preserving safe continuation.
 
 ## Submit a Form
 

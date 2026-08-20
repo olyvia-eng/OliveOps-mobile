@@ -13,6 +13,7 @@ import {
   getSubmissionStatusLabel,
 } from '@/features/forms/formPresentation';
 import { useFormsActions } from '@/hooks/useFormsActions';
+import { useClockingStore } from '@/store/clockingStore';
 import { useFormsStore } from '@/store/formsStore';
 import { colors, radii, spacing, typography } from '@/theme/colors';
 import type { EmployeeForm, EmployeeFormSubmission } from '@/types/forms';
@@ -27,6 +28,7 @@ const tabs: Array<{ id: FormsTab; label: string }> = [
 ];
 
 export default function FormsScreen() {
+  const { businessTimeZone } = useClockingStore();
   const { toDo, available, completed, loadedAt, flashMessage, setFlashMessage } = useFormsStore();
   const { refreshForms, loadingWorkspace } = useFormsActions();
   const [tab, setTab] = useState<FormsTab>('todo');
@@ -162,7 +164,7 @@ export default function FormsScreen() {
                 tone={item.value.status === 'approved' ? 'success' : item.value.status === 'rejected' ? 'error' : 'neutral'}
               />
             </View>
-            <Text style={styles.rowMeta}>Submitted {formatSubmittedAt(item.value.submittedAt)}</Text>
+            <Text style={styles.rowMeta}>Submitted {formatSubmittedAt(item.value.submittedAt, businessTimeZone)}</Text>
             <FormContextSummary context={item.value.context} />
           </Pressable>
         )}

@@ -45,7 +45,7 @@ export default function SwitchActivityScreen() {
   const [activityChosen, setActivityChosen] = useState(false);
   const [selectedJobId, setSelectedJobId] = useState('');
   const [selectedUnbillableCategoryId, setSelectedUnbillableCategoryId] = useState('');
-  const [retryMeta, setRetryMeta] = useState<{ requestId: string; idempotencyKey: string } | null>(null);
+  const [retryMeta, setRetryMeta] = useState<{ requestId: string; idempotencyKey: string; fingerprint: string } | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [advisoryForms, setAdvisoryForms] = useState<EmployeeForm[]>([]);
@@ -165,7 +165,7 @@ export default function SwitchActivityScreen() {
   }, [preSwitchWorkflow?.id, preSwitchWorkflow?.completedCount, user?.employeeId]);
 
   async function submitSwitch(
-    metaOverride?: { requestId: string; idempotencyKey: string },
+    metaOverride?: { requestId: string; idempotencyKey: string; fingerprint?: string },
     continuePastAdvisory = false,
     intentOverride?: Extract<FormsWorkflowIntent, { kind: 'switch_activity' }>,
   ) {
@@ -249,8 +249,14 @@ export default function SwitchActivityScreen() {
       advisoryAcceptedRef.current = true;
     }
 
-    const meta = metaOverride ?? retryMeta ?? createRequestMeta(employeeId);
-    setRetryMeta(meta);
+    const fingerprint = JSON.stringify({ employeeId, activeEntryId: activeEntry.id, workType, jobIds, unbillableCategoryId: workType === 'non_billable' ? unbillableCategoryId : undefined });
+    const reusableMeta = metaOverride?.fingerprint === fingerprint
+      ? metaOverride
+      : retryMeta?.fingerprint === fingerprint
+        ? retryMeta
+        : createRequestMeta(employeeId);
+    const meta = { requestId: reusableMeta.requestId, idempotencyKey: reusableMeta.idempotencyKey };
+    setRetryMeta({ ...meta, fingerprint });
 
     const result = await switchActivity(
       workType,
@@ -266,7 +272,7 @@ export default function SwitchActivityScreen() {
     setRetryMeta(null);
     setStatus('Activity switched successfully.');
     if (previousJobId && previousJobId !== nextJobId) {
-      const advisory = await getRequiredForms('after_completing_job', { jobId: previousJobId });
+      const advisory = await getRequiredForms('after_leaving_job', { jobId: previousJobId });
       if (advisory.ok && advisory.forms.length > 0) {
         startWorkflow({
           originRoute: '/switch-activity',

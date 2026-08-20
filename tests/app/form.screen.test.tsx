@@ -48,6 +48,9 @@ jest.mock('@/store/formsStore', () => ({
 jest.mock('@/store/authStore', () => ({
   useAuthStore: () => ({ user: { businessId: 'biz-1', id: 'user-1', employeeId: 'emp-1' } }),
 }));
+jest.mock('@/store/clockingStore', () => ({
+  useClockingStore: () => ({ businessTimeZone: 'America/Toronto' }),
+}));
 jest.mock('@/store/formsWorkflowStore', () => ({
   useFormsWorkflowStore: () => ({ workflow: mockWorkflow, completeCurrentForm: mockCompleteCurrentForm }),
 }));

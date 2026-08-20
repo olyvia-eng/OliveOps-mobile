@@ -21,6 +21,7 @@ const mockUseAuthStore = jest.fn(() => ({
 }));
 
 const mockClockingState = {
+  businessTimeZone: 'America/Toronto',
   currentActiveEntryId: null as string | null,
   activeShiftWarnings: {
     possibleForgottenClockOut: false,

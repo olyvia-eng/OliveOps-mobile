@@ -23,6 +23,7 @@ import { useClockingStore } from '@/store/clockingStore';
 import { colors } from '@/theme/colors';
 import type { CreateTimeCorrectionRequest } from '@/types/api';
 import type { TimeCorrectionRequestType, TimeEntryWorkType } from '@/types/domain';
+import { businessDateKey, businessLocalDateTimeToIso } from '@/utils/businessTime';
 
 const REQUEST_TYPE_OPTIONS: Array<{ id: TimeCorrectionRequestType; label: string }> = [
   { id: 'forgot_clock_in', label: 'Forgot to clock in' },
@@ -36,7 +37,7 @@ const REQUEST_TYPE_OPTIONS: Array<{ id: TimeCorrectionRequestType; label: string
 export default function RequestTimeCorrectionScreen() {
   const params = useLocalSearchParams<{ timeEntryId?: string; requestType?: TimeCorrectionRequestType; postClockOut?: string }>();
   const { user } = useAuthStore();
-  const { jobs, timeEntries, currentActiveEntryId } = useClockingStore();
+  const { businessTimeZone, jobs, timeEntries, currentActiveEntryId } = useClockingStore();
   const { clockOut, loading: clockingLoading } = useClockingActions();
   const { submitCorrection, loading } = useTimeCorrectionActions();
   const {
@@ -53,7 +54,7 @@ export default function RequestTimeCorrectionScreen() {
     : (entryId ? 'wrong_time' : 'forgot_clock_in');
 
   const [requestType, setRequestType] = useState<TimeCorrectionRequestType>(defaultRequestType);
-  const [requestedDate, setRequestedDate] = useState(new Date().toISOString().slice(0, 10));
+  const [requestedDate, setRequestedDate] = useState(() => businessDateKey(new Date(), businessTimeZone));
   const [requestedStartTime, setRequestedStartTime] = useState('08:00');
   const [requestedEndTime, setRequestedEndTime] = useState('17:00');
   const [requestedActivity, setRequestedActivity] = useState<TimeEntryWorkType>('job');
@@ -93,11 +94,7 @@ export default function RequestTimeCorrectionScreen() {
   }, [requiresUnbillableCategory, requestedUnbillableCategoryId, unbillableCategories]);
 
   function combineDateAndTime(dateValue: string, timeValue: string) {
-    if (!dateValue || !timeValue) return undefined;
-    const normalized = `${dateValue}T${timeValue}:00`;
-    const parsed = new Date(normalized);
-    if (Number.isNaN(parsed.getTime())) return undefined;
-    return parsed.toISOString();
+    return businessLocalDateTimeToIso(dateValue, timeValue, businessTimeZone);
   }
 
   const submitting = loading || clockingLoading;
@@ -126,12 +123,12 @@ export default function RequestTimeCorrectionScreen() {
     }
 
     if (requestType === 'forgot_clock_out') {
-      const sourceDate = targetEntry?.clockIn.slice(0, 10) ?? requestedDate;
+      const sourceDate = targetEntry ? businessDateKey(new Date(targetEntry.clockIn), businessTimeZone) : requestedDate;
       payload.requestedClockOutAt = combineDateAndTime(sourceDate, requestedEndTime);
     }
 
     if (requestType === 'wrong_time') {
-      const sourceDate = targetEntry?.clockIn.slice(0, 10) ?? requestedDate;
+      const sourceDate = targetEntry ? businessDateKey(new Date(targetEntry.clockIn), businessTimeZone) : requestedDate;
       payload.requestedClockInAt = combineDateAndTime(sourceDate, requestedStartTime);
       payload.requestedClockOutAt = combineDateAndTime(sourceDate, requestedEndTime);
     }
@@ -273,7 +270,7 @@ export default function RequestTimeCorrectionScreen() {
               <StatusBadge label={getWorkTypeLabel(targetEntry.workType)} />
             </View>
             <Text style={styles.summaryTitle}>{resolveJobTitle(targetEntry, jobs)}</Text>
-            <Text style={styles.summaryRange}>{formatEntryTimeRange(targetEntry, false)}</Text>
+            <Text style={styles.summaryRange}>{formatEntryTimeRange(targetEntry, false, businessTimeZone)}</Text>
           </View>
         ) : null}
       </View>

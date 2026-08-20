@@ -66,14 +66,14 @@ function extensionForMimeType(mimeType: string) {
 
 export default function ClockOutScreen() {
   const { user, accessToken } = useAuthStore();
-  const { currentActiveEntryId, timeEntries, jobs } = useClockingStore();
+  const { currentActiveEntryId, timeEntries, jobs, businessTimeZone } = useClockingStore();
   const { clockOut, loading, refreshWorkContext } = useClockingActions();
   const { getRequiredForms, refreshForms } = useFormsActions();
   const { workflow, startWorkflow, clearWorkflow } = useFormsWorkflowStore();
 
   const [notes, setNotes] = useState('');
   const [attachments, setAttachments] = useState<PhotoAttachment[]>([]);
-  const [retryMeta, setRetryMeta] = useState<{ requestId: string; idempotencyKey: string } | null>(null);
+  const [retryMeta, setRetryMeta] = useState<{ requestId: string; idempotencyKey: string; fingerprint: string } | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [permissionSettingsRequired, setPermissionSettingsRequired] = useState(false);
@@ -355,7 +355,7 @@ export default function ClockOutScreen() {
     });
   }
 
-  async function submitClockOut(metaOverride?: { requestId: string; idempotencyKey: string }) {
+  async function submitClockOut(metaOverride?: { requestId: string; idempotencyKey: string; fingerprint?: string }) {
     if (!activeEntry) {
       setError('No active shift found.');
       return;
@@ -364,12 +364,21 @@ export default function ClockOutScreen() {
     setError(null);
     setSuccess(null);
 
-    const meta = metaOverride ?? retryMeta ?? createRequestMeta(activeEntry.id);
-    setRetryMeta(meta);
-
     const uploadedPhotoAttachmentFileIds = attachments
       .filter((attachment) => attachment.status === 'uploaded' && Boolean(attachment.fileId))
       .map((attachment) => attachment.fileId as string);
+    const fingerprint = JSON.stringify({
+      entryId: activeEntry.id,
+      notes: notes.trim(),
+      photoAttachmentFileIds: uploadedPhotoAttachmentFileIds,
+    });
+    const reusableMeta = metaOverride?.fingerprint === fingerprint
+      ? metaOverride
+      : retryMeta?.fingerprint === fingerprint
+        ? retryMeta
+        : createRequestMeta(activeEntry.id);
+    const meta = { requestId: reusableMeta.requestId, idempotencyKey: reusableMeta.idempotencyKey };
+    setRetryMeta({ ...meta, fingerprint });
 
     const result = await clockOut(
       activeEntry.id,
@@ -386,10 +395,10 @@ export default function ClockOutScreen() {
     submittedRef.current = true;
     setSuccess('Clock-out submitted successfully.');
     setNavigatingAfterSuccess(true);
-    const completedJobId = activeEntry.jobIds?.[0] ?? activeEntry.jobId;
+    const leavingJobId = activeEntry.jobIds?.[0] ?? activeEntry.jobId;
     const checks = [getRequiredForms('after_clock_out')];
-    if (completedJobId) {
-      checks.push(getRequiredForms('after_completing_job', { jobId: completedJobId }));
+    if (leavingJobId) {
+      checks.push(getRequiredForms('after_leaving_job', { jobId: leavingJobId }));
     }
     const results = await Promise.all(checks);
     const forms = results.flatMap((advisory) => advisory.ok ? advisory.forms : []);
@@ -485,7 +494,7 @@ export default function ClockOutScreen() {
                   {index < shiftSegments.length - 1 ? <View style={styles.timelineLine} /> : null}
                 </View>
                 <View style={styles.segmentContent}>
-                  <Text style={styles.segmentTime}>{formatEntryTimeRange(segment, segment.id === activeEntry.id)}</Text>
+                  <Text style={styles.segmentTime}>{formatEntryTimeRange(segment, segment.id === activeEntry.id, businessTimeZone)}</Text>
                   <View style={styles.segmentHeading}>
                     <Text style={styles.segmentTitle}>{getWorkTypeLabel(segment.workType)}</Text>
                     <Text style={styles.segmentDuration}>{formatDurationForEntry(segment)}</Text>

@@ -1,4 +1,5 @@
 import type { Job, TimeCorrectionRequest, TimeCorrectionRequestType, TimeEntry } from '@/types/domain';
+import { formatBusinessTime } from '@/utils/businessTime';
 
 export function getWorkTypeLabel(workType: TimeEntry['workType']) {
   if (workType === 'drive_time') return 'Drive Time';
@@ -167,13 +168,13 @@ export function formatLongShiftWarning(clockIn: string, nowMs = Date.now()) {
   return `You've been clocked in for ${formatElapsedShort(clockIn, nowMs)}. Did you forget to clock out?`;
 }
 
-export function formatEntryTimeRange(entry: TimeEntry, isAuthoritativeActive = false) {
-  const start = new Date(entry.clockIn).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+export function formatEntryTimeRange(entry: TimeEntry, isAuthoritativeActive = false, timeZone?: string | null) {
+  const start = formatBusinessTime(new Date(entry.clockIn), timeZone, { hour: 'numeric', minute: '2-digit' });
   if (!entry.clockOut) {
     return isAuthoritativeActive ? `${start} - Now` : `${start} - End time unavailable`;
   }
 
-  const end = new Date(entry.clockOut).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const end = formatBusinessTime(new Date(entry.clockOut), timeZone, { hour: 'numeric', minute: '2-digit' });
   return `${start} - ${end}`;
 }
 

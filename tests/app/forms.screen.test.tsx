@@ -44,6 +44,7 @@ const mockFormsState = {
 };
 
 jest.mock('expo-router', () => ({ router: { push: (...args: unknown[]) => mockPush(...args) } }));
+jest.mock('@/store/clockingStore', () => ({ useClockingStore: () => ({ businessTimeZone: 'America/Toronto' }) }));
 jest.mock('@/store/formsStore', () => ({ useFormsStore: () => mockFormsState }));
 jest.mock('@/hooks/useFormsActions', () => ({
   useFormsActions: () => ({ refreshForms: mockRefreshForms, loadingWorkspace: false }),

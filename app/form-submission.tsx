@@ -8,11 +8,13 @@ import { ScreenHeader, StatusBadge } from '@/components/MobilePrimitives';
 import { Screen } from '@/components/Screen';
 import { formatSubmittedAt, getSubmissionStatusLabel } from '@/features/forms/formPresentation';
 import { useFormsActions } from '@/hooks/useFormsActions';
+import { useClockingStore } from '@/store/clockingStore';
 import { useFormsStore } from '@/store/formsStore';
 import { colors, spacing, typography } from '@/theme/colors';
 
 export default function FormSubmissionScreen() {
   const { id } = useLocalSearchParams<{ id?: string }>();
+  const { businessTimeZone } = useClockingStore();
   const submissionId = typeof id === 'string' ? id : '';
   const { submissionDetails } = useFormsStore();
   const { getSubmission, loadingSubmission } = useFormsActions();
@@ -40,7 +42,7 @@ export default function FormSubmissionScreen() {
     <Screen>
       <ScreenHeader
         title={detail.form.name}
-        subtitle={`Submitted ${formatSubmittedAt(detail.submission.submittedAt)}`}
+        subtitle={`Submitted ${formatSubmittedAt(detail.submission.submittedAt, businessTimeZone)}`}
         action={(
           <StatusBadge
             label={getSubmissionStatusLabel(detail.submission.status)}

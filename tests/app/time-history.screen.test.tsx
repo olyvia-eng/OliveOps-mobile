@@ -3,6 +3,7 @@ import { act, create } from 'react-test-renderer';
 import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
 
 const mockClockingState = {
+  businessTimeZone: 'America/Toronto',
   currentActiveEntryId: null as string | null,
   timeCorrections: [] as any[],
   timeEntries: [] as any[],

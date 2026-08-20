@@ -3,6 +3,8 @@ export type EmployeeFormTrigger =
   | 'after_clock_out'
   | 'before_starting_job'
   | 'after_completing_job'
+  | 'after_leaving_job'
+  | 'job_completed'
   | 'daily'
   | 'weekly'
   | 'monthly'
@@ -31,6 +33,7 @@ export type EmployeeFormFieldType =
   | 'file_upload';
 
 export type EmployeeFormSubmissionStatus = 'draft' | 'submitted' | 'approved' | 'rejected';
+export type EmployeeFormCompletionRequirement = 'reminder' | 'required';
 
 export interface EmployeeFormChoice {
   value: string;
@@ -73,6 +76,7 @@ export interface EmployeeForm {
   category?: string;
   trigger: EmployeeFormTrigger;
   required: boolean;
+  completionRequirement?: EmployeeFormCompletionRequirement;
   periodKey?: string;
   context?: EmployeeFormContext;
   fields: EmployeeFormField[];

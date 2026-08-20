@@ -21,10 +21,11 @@ import {
 import { useAuthStore } from '@/store/authStore';
 import { useClockingStore } from '@/store/clockingStore';
 import { colors } from '@/theme/colors';
+import { formatBusinessTime } from '@/utils/businessTime';
 
 export default function ActiveShiftScreen() {
   const { user } = useAuthStore();
-  const { activeShiftWarnings, currentActiveEntryId, timeEntries, jobs } = useClockingStore();
+  const { activeShiftWarnings, businessTimeZone, currentActiveEntryId, timeEntries, jobs } = useClockingStore();
   const [now, setNow] = useState(Date.now());
 
   const entry = useMemo(() => {
@@ -81,7 +82,7 @@ export default function ActiveShiftScreen() {
             <Text style={styles.heroActivity}>{entry.workType === 'non_billable' ? unbillableCategoryLabel : activityLabel}</Text>
             {entry.workType === 'job' ? <Text style={styles.heroJob}>{jobLabel}</Text> : null}
             <Text style={styles.elapsedClock}>{formatElapsedClock(entry.clockIn, now)}</Text>
-            <Text style={styles.heroMeta}>Started {new Date(entry.clockIn).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</Text>
+            <Text style={styles.heroMeta}>Started {formatBusinessTime(new Date(entry.clockIn), businessTimeZone, { hour: 'numeric', minute: '2-digit' })}</Text>
           </View>
 
           <View style={styles.timelineSection}>
@@ -98,7 +99,7 @@ export default function ActiveShiftScreen() {
                       <Text style={styles.segmentTitle}>{getWorkTypeLabel(segment.workType)}{segment.workType === 'job' ? ` — ${resolveEntryPrimaryLabel(segment, jobs)}` : ''}</Text>
                       <Text style={styles.segmentDuration}>{formatDurationForEntry(segment, now)}</Text>
                     </View>
-                    <Text style={styles.segmentTime}>{formatEntryTimeRange(segment, segment.id === entry.id)}</Text>
+                    <Text style={styles.segmentTime}>{formatEntryTimeRange(segment, segment.id === entry.id, businessTimeZone)}</Text>
                     {segment.workType === 'non_billable' ? <Text style={styles.segmentMeta}>{resolveEntryPrimaryLabel(segment, jobs)}</Text> : null}
                   </View>
                 </View>

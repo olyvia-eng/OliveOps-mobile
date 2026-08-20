@@ -8,6 +8,7 @@ const mockGetRequiredForms = jest.fn().mockResolvedValue({ ok: true, forms: [] }
 const mockRefreshForms = jest.fn().mockResolvedValue({ ok: true });
 const mockStartWorkflow = jest.fn(() => 'workflow-clock-out');
 const mockClearWorkflow = jest.fn();
+const mockCreateRequestMeta = jest.fn();
 let mockWorkflow: any = null;
 const mockOpenSettings = jest.fn().mockResolvedValue(undefined);
 let activeShiftClosed = false;
@@ -100,7 +101,7 @@ jest.mock('@/store/formsWorkflowStore', () => ({
 }));
 
 jest.mock('@/services/requestGuards', () => ({
-  createRequestMeta: () => ({ requestId: 'req-2', idempotencyKey: 'key-2' }),
+  createRequestMeta: (...args: unknown[]) => mockCreateRequestMeta(...args),
 }));
 
 jest.mock('@/services/connectivity', () => ({
@@ -167,6 +168,10 @@ describe('ClockOutScreen', () => {
     (router.replace as jest.Mock).mockReset();
     mockClockOut.mockReset();
     mockClockOut.mockResolvedValue({ ok: true });
+    mockCreateRequestMeta.mockReset();
+    mockCreateRequestMeta
+      .mockReturnValueOnce({ requestId: 'req-2', idempotencyKey: 'key-2' })
+      .mockReturnValueOnce({ requestId: 'req-3', idempotencyKey: 'key-3' });
     mockGetRequiredForms.mockReset().mockResolvedValue({ ok: true, forms: [] });
     mockRefreshForms.mockReset().mockResolvedValue({ ok: true });
     mockStartWorkflow.mockClear();
@@ -232,6 +237,35 @@ describe('ClockOutScreen', () => {
     expect(router.replace).toHaveBeenCalledWith('/home');
   });
 
+  it('reuses retry metadata only while the clock-out payload is unchanged', async () => {
+    mockClockOut.mockResolvedValue({ ok: false, error: 'Connection lost.' });
+    (Alert.alert as jest.Mock).mockImplementation((_title: string, _message: string, actions: Array<{ onPress?: () => void }>) => {
+      actions?.[1]?.onPress?.();
+    });
+
+    let tree: any;
+    await act(async () => { tree = create(<ClockOutScreen />); });
+    await act(async () => {
+      tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Clock Out').props.onPress();
+    });
+    await act(async () => {
+      tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Retry Clock Out').props.onPress();
+    });
+
+    expect(mockClockOut.mock.calls[0][3]).toEqual({ requestId: 'req-2', idempotencyKey: 'key-2' });
+    expect(mockClockOut.mock.calls[1][3]).toEqual({ requestId: 'req-2', idempotencyKey: 'key-2' });
+
+    await act(async () => {
+      tree.root.findByType('textinput').props.onChangeText('Changed after failure');
+    });
+    await act(async () => {
+      tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Retry Clock Out').props.onPress();
+    });
+
+    expect(mockClockOut.mock.calls[2][3]).toEqual({ requestId: 'req-3', idempotencyKey: 'key-3' });
+    expect(mockCreateRequestMeta).toHaveBeenCalledTimes(2);
+  });
+
   it('surfaces post-clock Forms after clock-out remains successful', async () => {
     mockGetRequiredForms
       .mockResolvedValueOnce({ ok: true, forms: [{ id: 'after-clock', name: 'Post Shift Report', category: 'Operations', trigger: 'after_clock_out', context: {}, fields: [] }] })
@@ -245,7 +279,7 @@ describe('ClockOutScreen', () => {
 
     expect(mockClockOut).toHaveBeenCalledTimes(1);
     expect(mockGetRequiredForms).toHaveBeenNthCalledWith(1, 'after_clock_out');
-    expect(mockGetRequiredForms).toHaveBeenNthCalledWith(2, 'after_completing_job', { jobId: 'job-1' });
+    expect(mockGetRequiredForms).toHaveBeenNthCalledWith(2, 'after_leaving_job', { jobId: 'job-1' });
     expect(router.replace).not.toHaveBeenCalled();
     expect(mockStartWorkflow).toHaveBeenCalledWith(expect.objectContaining({
       originRoute: '/clock-out', phase: 'post_action',

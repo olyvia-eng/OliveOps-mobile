@@ -14,6 +14,7 @@ export function useClockingActions() {
     upsertTimeEntry,
     setActiveShiftWarnings,
     setActivityConfigs,
+    setBusinessTimeZone,
     setCurrentActiveEntryId,
     setJobs,
     setTimeCorrections,
@@ -42,6 +43,7 @@ export function useClockingActions() {
     }
 
     setJobs(scopeJobsForSession(payload.jobs ?? [], user));
+    setBusinessTimeZone(payload.timezone);
     setTimeEntries(scopeTimeEntriesForSession(payload.timeEntries ?? [], user));
     setTimeCorrections(payload.timeCorrections ?? []);
     setCurrentActiveEntryId(payload.currentActiveEntryId ?? null);
@@ -226,6 +228,7 @@ export function useClockingActions() {
     authIdentity,
     setActivityConfigs,
     setActiveShiftWarnings,
+    setBusinessTimeZone,
     setCurrentActiveEntryId,
     setJobs,
     setTimeCorrections,

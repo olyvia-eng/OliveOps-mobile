@@ -2,6 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import { useAuthStore } from '@/store/authStore';
 import type { ActivityConfig } from '@/types/api';
 import type { Job, TimeCorrectionRequest, TimeEntry, UnbillableCategory } from '@/types/domain';
+import { DEFAULT_BUSINESS_TIME_ZONE, normalizeBusinessTimeZone } from '@/utils/businessTime';
 
 export type ActiveShiftWarnings = {
   possibleForgottenClockOut: boolean;
@@ -9,6 +10,7 @@ export type ActiveShiftWarnings = {
 };
 
 type ClockingState = {
+  businessTimeZone: string;
   jobs: Job[];
   timeEntries: TimeEntry[];
   timeCorrections: TimeCorrectionRequest[];
@@ -20,6 +22,7 @@ type ClockingState = {
   currentActiveEntryId: string | null;
   activeShiftWarnings: ActiveShiftWarnings;
   activityConfigs?: ActivityConfig[];
+  setBusinessTimeZone: (timeZone?: string | null) => void;
   setJobs: (jobs: Job[]) => void;
   setTimeEntries: (entries: TimeEntry[]) => void;
   setTimeCorrections: (items: TimeCorrectionRequest[]) => void;
@@ -38,6 +41,7 @@ const ClockingContext = createContext<ClockingState | undefined>(undefined);
 
 export function ClockingProvider({ children }: { children: React.ReactNode }) {
   const { status, user } = useAuthStore();
+  const [businessTimeZone, setBusinessTimeZoneState] = useState(DEFAULT_BUSINESS_TIME_ZONE);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [timeEntries, setTimeEntries] = useState<TimeEntry[]>([]);
   const [timeCorrections, setTimeCorrections] = useState<TimeCorrectionRequest[]>([]);
@@ -59,6 +63,10 @@ export function ClockingProvider({ children }: { children: React.ReactNode }) {
       possibleForgottenClockOut: next?.possibleForgottenClockOut === true,
       thresholdHours: Number.isFinite(next?.thresholdHours) ? Math.max(1, Number(next?.thresholdHours)) : 12,
     });
+  }, []);
+
+  const setBusinessTimeZone = useCallback((timeZone?: string | null) => {
+    setBusinessTimeZoneState(normalizeBusinessTimeZone(timeZone));
   }, []);
 
   const upsertTimeEntry = useCallback((entry: TimeEntry) => {
@@ -87,6 +95,7 @@ export function ClockingProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const resetClockingState = useCallback(() => {
+    setBusinessTimeZoneState(DEFAULT_BUSINESS_TIME_ZONE);
     setJobs([]);
     setTimeEntries([]);
     setTimeCorrections([]);
@@ -116,6 +125,7 @@ export function ClockingProvider({ children }: { children: React.ReactNode }) {
 
   const value = useMemo<ClockingState>(
     () => ({
+      businessTimeZone,
       jobs,
       timeEntries,
       timeCorrections,
@@ -127,6 +137,7 @@ export function ClockingProvider({ children }: { children: React.ReactNode }) {
       currentActiveEntryId,
       activeShiftWarnings,
       activityConfigs,
+      setBusinessTimeZone,
       setJobs,
       setTimeEntries,
       setTimeCorrections,
@@ -143,11 +154,13 @@ export function ClockingProvider({ children }: { children: React.ReactNode }) {
     [
       activeShiftWarnings,
       activityConfigs,
+      businessTimeZone,
       currentActiveEntryId,
       jobs,
       resetClockingState,
       resetUnbillableCategories,
       setActiveShiftWarnings,
+      setBusinessTimeZone,
       setUnbillableCategories,
       timeCorrections,
       timeEntries,

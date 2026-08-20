@@ -18,6 +18,7 @@ const detail = {
 };
 
 jest.mock('expo-router', () => ({ useLocalSearchParams: () => ({ id: 'sub-1' }) }));
+jest.mock('@/store/clockingStore', () => ({ useClockingStore: () => ({ businessTimeZone: 'America/Toronto' }) }));
 jest.mock('@/store/formsStore', () => ({ useFormsStore: () => ({ submissionDetails: { 'sub-1': detail } }) }));
 jest.mock('@/hooks/useFormsActions', () => ({ useFormsActions: () => ({ getSubmission: mockGetSubmission, loadingSubmission: false }) }));
 jest.mock('@/components/Screen', () => ({ Screen: ({ children }: any) => require('react').createElement('screen', {}, children) }));

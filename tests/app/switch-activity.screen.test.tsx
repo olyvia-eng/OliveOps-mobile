@@ -284,7 +284,7 @@ describe('SwitchActivityScreen', () => {
 
     await act(async () => tree.root.findAllByType('secondary-button').find((node: any) => node.props.label === 'Skip for Now').props.onPress());
     expect(mockSwitchActivity).toHaveBeenCalledTimes(1);
-    expect(mockGetRequiredForms).toHaveBeenCalledWith('after_completing_job', { jobId: 'job-1' });
+    expect(mockGetRequiredForms).toHaveBeenCalledWith('after_leaving_job', { jobId: 'job-1' });
     expect(router.replace).toHaveBeenCalledWith('/active-shift');
   });
 
@@ -299,18 +299,18 @@ describe('SwitchActivityScreen', () => {
     expect(mockSwitchActivity).toHaveBeenCalledWith('job', ['job-2'], undefined, expect.any(Object));
   });
 
-  it('surfaces after-completing Forms only after a successful switch', async () => {
-    mockGetRequiredForms.mockResolvedValue({ ok: true, forms: [{ id: 'after-job', name: 'Job Completion Report', trigger: 'after_completing_job', context: { jobId: 'job-1' }, fields: [] }] });
+  it('surfaces after-leaving Forms only after a successful switch', async () => {
+    mockGetRequiredForms.mockResolvedValue({ ok: true, forms: [{ id: 'after-job', name: 'Job Departure Report', trigger: 'after_leaving_job', context: { jobId: 'job-1' }, fields: [] }] });
     let tree: any;
     await act(async () => { tree = create(<SwitchActivityScreen />); });
     await act(async () => tree.root.findByProps({ testID: 'switch-activity-option-drive_time' }).props.onPress());
     await act(async () => tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Switch Activity').props.onPress());
 
     expect(mockSwitchActivity).toHaveBeenCalledTimes(1);
-    expect(mockGetRequiredForms).toHaveBeenCalledWith('after_completing_job', { jobId: 'job-1' });
+    expect(mockGetRequiredForms).toHaveBeenCalledWith('after_leaving_job', { jobId: 'job-1' });
     expect(router.replace).not.toHaveBeenCalled();
     const text = tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ');
-    expect(text).toContain('Job Completion Report');
+    expect(text).toContain('Job Departure Report');
     await act(async () => tree.root.findAllByType('secondary-button').find((node: any) => node.props.label === 'Do Later').props.onPress());
     expect(router.replace).toHaveBeenCalledWith('/active-shift');
   });

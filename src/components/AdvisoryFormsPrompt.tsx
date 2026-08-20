@@ -44,6 +44,7 @@ export function AdvisoryFormsPrompt({
             <View style={styles.formTitleRow}>
               <Text style={styles.pendingMark}>○</Text>
               <Text style={styles.formName}>{form.name}</Text>
+              {form.completionRequirement === 'required' ? <Text style={styles.requirement}>Required</Text> : null}
             </View>
             {form.description ? <Text style={styles.description}>{form.description}</Text> : null}
             {form.category ? <Text style={styles.category}>{form.category}</Text> : null}
@@ -67,6 +68,7 @@ const styles = StyleSheet.create({
   formTitleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   pendingMark: { color: colors.textMuted, fontSize: typography.body },
   formName: { flex: 1, color: colors.textPrimary, fontSize: typography.body, fontWeight: typography.bold },
+  requirement: { color: colors.primary, fontSize: typography.caption, fontWeight: typography.bold },
   description: { color: colors.textSecondary, fontSize: typography.bodySmall, lineHeight: 20 },
   progress: { color: colors.success, fontSize: typography.bodySmall, fontWeight: typography.bold },
   category: { color: colors.textMuted, fontSize: typography.caption, fontWeight: typography.semibold, textTransform: 'uppercase' },

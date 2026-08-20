@@ -21,10 +21,11 @@ import { useAuthStore } from '@/store/authStore';
 import { useClockingStore } from '@/store/clockingStore';
 import { useFormsStore } from '@/store/formsStore';
 import { colors } from '@/theme/colors';
+import { formatBusinessDate, formatBusinessTime } from '@/utils/businessTime';
 
 export default function HomeScreen() {
   const { user } = useAuthStore();
-  const { activeShiftWarnings, currentActiveEntryId, timeEntries, jobs } = useClockingStore();
+  const { activeShiftWarnings, businessTimeZone, currentActiveEntryId, timeEntries, jobs } = useClockingStore();
   const { refreshWorkContext } = useClockingActions();
   const { refreshForms } = useFormsActions();
   const { toDo } = useFormsStore();
@@ -79,8 +80,8 @@ export default function HomeScreen() {
 
   const greeting = useMemo(() => getGreetingForTime(user?.name || 'Crew Member'), [user?.name]);
   const todayLabel = useMemo(
-    () => new Date(now).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' }),
-    [now]
+    () => formatBusinessDate(new Date(now), businessTimeZone, { weekday: 'long', month: 'long', day: 'numeric' }),
+    [businessTimeZone, now]
   );
 
   return (
@@ -111,7 +112,7 @@ export default function HomeScreen() {
             </View>
             <View>
               <Text style={styles.metricLabel}>Started</Text>
-              <Text style={styles.metricValue}>{new Date(activeShift.clockIn).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</Text>
+              <Text style={styles.metricValue}>{formatBusinessTime(new Date(activeShift.clockIn), businessTimeZone, { hour: 'numeric', minute: '2-digit' })}</Text>
             </View>
           </View>
           <Pressable accessibilityRole="button" onPress={() => router.push('/active-shift')}>

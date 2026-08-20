@@ -64,6 +64,13 @@ describe('formValidation', () => {
     expect(validateFormValues([dateField], { date: '2026-08-19' })).toEqual({});
   });
 
+  it('uses the business-local date for automatic date defaults', () => {
+    const dateField = field({ id: 'date', type: 'date', label: 'Date' });
+    const utcBoundary = new Date('2026-08-20T02:30:00.000Z');
+    expect(initialFormValues([dateField], {}, utcBoundary, 'America/Toronto')).toEqual({ date: '2026-08-19' });
+    expect(initialFormValues([dateField], {}, utcBoundary, 'Pacific/Auckland')).toEqual({ date: '2026-08-20' });
+  });
+
   it('validates required text and contract length limits', () => {
     const fields = [
       field({ id: 'short', type: 'single_line_text', label: 'Short', required: true }),
