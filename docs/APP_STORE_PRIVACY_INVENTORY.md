@@ -4,7 +4,7 @@ This is a code-observed worksheet for completing App Store Connect privacy quest
 
 ## Summary
 
-The app is an authenticated employee timekeeping client. Account, work, time-entry, photo, and correction records are associated with user, employee, business, job, or time-entry identifiers and therefore appear linked to identity. The code contains no advertising, cross-app tracking, analytics SDK, crash-reporting SDK, or location collection.
+The app is an authenticated employee timekeeping client. Account, work, time-entry, photo, form, and correction records are associated with user, employee, business, job, form, submission, or time-entry identifiers and therefore appear linked to identity. The code contains no advertising, cross-app tracking, product analytics, or location collection. Sentry is configured for production error and native crash diagnostics when `EXPO_PUBLIC_SENTRY_DSN` is set.
 
 ## Data Inventory
 
@@ -21,7 +21,9 @@ The app is an authenticated employee timekeeping client. Account, work, time-ent
 | Job-site photos | Captured or selected by the employee, up to five per clock-out | Attach visual work evidence to a time entry | Yes, through time-entry and file IDs | No | Prepared through OliveOps API and uploaded using presigned object-storage URLs |
 | Photo metadata | File name, MIME type, byte size, category, entity type, and time-entry ID | Prepare, validate, associate, and clean up uploads | Yes | No | OliveOps API and object-storage service |
 | Time-correction data | Request type, requested times/job/activity, reason, status, submitter/reviewer IDs | Request and review corrections to work records | Yes | No | OliveOps production API |
+| Form responses and submission records | Employee-entered answers, form/context identifiers, submission status, and review status where provided | Complete employer-assigned and on-demand field workflows | Yes | No | OliveOps production API |
 | Request and idempotency identifiers | Generated for clocking requests | Security, reliability, and duplicate-request prevention | Associated with the relevant work request | No | OliveOps production API |
+| Crash and error diagnostics | Sanitized exception messages, stack traces, and limited app/device/OS/runtime context when Sentry is enabled | App stability and diagnostics | Not deliberately linked by the app; confirm Sentry/backend configuration | No | Sentry |
 
 App Store Connect category mapping must be confirmed against Apple's current definitions. Likely areas to evaluate include Contact Info, User Content, Identifiers, and Other Data. Do not select or omit a category solely from this document without checking the current questionnaire and backend practices.
 
@@ -38,7 +40,7 @@ The mobile code and declared dependencies do not show collection of:
 - Audio or microphone recordings
 - Browsing or search history
 - Analytics events or product-usage telemetry
-- Crash diagnostics or performance telemetry
+- Performance traces, session replay, screenshots, view hierarchy, breadcrumbs, or failed-request capture
 - Advertising data
 
 Drive Time is a work-activity classification only. The app does not request location permission or use a geolocation API.
@@ -57,7 +59,8 @@ Standard infrastructure may process network metadata such as IP addresses in ser
 - No ATT prompt or IDFA access is implemented.
 - No ad network is installed.
 - No cross-app or cross-site tracking code was found.
-- No analytics, attribution, session-recording, or crash-reporting SDK was found.
+- No analytics, attribution, advertising, or session-recording SDK was found.
+- Sentry is configured only for sanitized errors and native crash diagnostics; performance tracing, profiling, replay, logs, breadcrumbs, screenshots, view hierarchy, and failed-request capture are disabled.
 - The observed data is used for authentication and OliveOps workforce functionality, not advertising.
 
 Based on application code, the tracking answer appears to be No. Reconfirm against backend integrations and organizational data-sharing practices.
@@ -66,7 +69,8 @@ Based on application code, the tracking answer appears to be No. Reconfirm again
 
 - Application API data is sent to `https://app.oliveops.ca`.
 - Photo binaries are uploaded through presigned object-storage URLs. The provider, region, retention, access controls, and contractual role must be confirmed by infrastructure owners.
-- No third-party analytics, advertising, or social SDK is present.
+- Sanitized error and native crash diagnostics are sent to Sentry only when `EXPO_PUBLIC_SENTRY_DSN` is configured.
+- No third-party analytics, advertising, attribution, or social SDK is present.
 
 For App Store Connect, distinguish service providers processing data on OliveOps' behalf from data shared for those parties' own purposes. Confirm this distinction with the privacy owner.
 

@@ -17,7 +17,7 @@ See also:
 - iOS bundle identifier: `ca.oliveops.app`
 - Android package: `ca.oliveops.mobile`
 - iPhone-only v1: `supportsTablet: false`
-- Custom URL scheme: not configured; current app flows do not require one
+- Custom URL scheme: `oliveops`; current app flows do not depend on deep links
 - Encryption declaration: `usesNonExemptEncryption: false`
 - Production API: `https://app.oliveops.ca`
 - EAS build profiles: development, internal preview, and store production
