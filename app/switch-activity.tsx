@@ -16,6 +16,7 @@ import { useUnbillableCategories } from '@/hooks/useUnbillableCategories';
 import { createRequestMeta } from '@/services/requestGuards';
 import { useAuthStore } from '@/store/authStore';
 import { useClockingStore } from '@/store/clockingStore';
+import { useOptionalOfflineClockStore } from '@/store/offlineClockContext';
 import { useFormsWorkflowStore, type FormsWorkflowIntent } from '@/store/formsWorkflowStore';
 import { colors } from '@/theme/colors';
 import type { TimeEntryWorkType } from '@/types/domain';
@@ -31,6 +32,7 @@ type ActivityOption = {
 export default function SwitchActivityScreen() {
   const { user } = useAuthStore();
   const { currentActiveEntryId, jobs, timeEntries } = useClockingStore();
+  const offlineClock = useOptionalOfflineClockStore();
   const { loading, refreshWorkContext, switchActivity } = useClockingActions();
   const { getRequiredForms, refreshForms } = useFormsActions();
   const { workflow, startWorkflow, clearWorkflow } = useFormsWorkflowStore();
@@ -60,18 +62,23 @@ export default function SwitchActivityScreen() {
   }, [refreshWorkContext]);
 
   const activeEntry = useMemo(() => {
-    return resolveCurrentActiveEntry(timeEntries, user?.employeeId, currentActiveEntryId);
-  }, [currentActiveEntryId, timeEntries, user?.employeeId]);
+    const effectiveEntries = offlineClock?.effectiveTimeEntries ?? timeEntries;
+    const effectiveActiveId = offlineClock?.effectiveCurrentActiveEntryId ?? currentActiveEntryId;
+    return resolveCurrentActiveEntry(effectiveEntries, user?.employeeId, effectiveActiveId);
+  }, [currentActiveEntryId, offlineClock?.effectiveCurrentActiveEntryId, offlineClock?.effectiveTimeEntries, timeEntries, user?.employeeId]);
 
   const assignedJobs = useMemo(() => {
     const employeeId = user?.employeeId;
-    return jobs.filter((job) => {
+    const availableJobs = jobs.length > 0
+      ? jobs
+      : (offlineClock?.cache?.jobs ?? []).map((job) => ({ ...job, assignedEmployeeIds: employeeId ? [employeeId] : [] }));
+    return availableJobs.filter((job) => {
       if (job.status !== 'scheduled' && job.status !== 'in_progress') return false;
       if (!employeeId) return true;
       if (!Array.isArray(job.assignedEmployeeIds) || job.assignedEmployeeIds.length === 0) return true;
       return job.assignedEmployeeIds.includes(employeeId);
     });
-  }, [jobs, user?.employeeId]);
+  }, [jobs, offlineClock?.cache?.jobs, user?.employeeId]);
 
   const activityOptions = useMemo<ActivityOption[]>(() => [
       {
@@ -270,7 +277,7 @@ export default function SwitchActivityScreen() {
     }
 
     setRetryMeta(null);
-    setStatus('Activity switched successfully.');
+    setStatus('pendingSync' in result && result.pendingSync ? 'Activity change saved on this device. It will sync when online.' : 'Activity switched successfully.');
     if (previousJobId && previousJobId !== nextJobId) {
       const advisory = await getRequiredForms('after_leaving_job', { jobId: previousJobId });
       if (advisory.ok && advisory.forms.length > 0) {

@@ -2,9 +2,7 @@
 
 ## Status
 
-Offline Clocking Phase 1 is blocked on this backend contract. The current mobile requests for Clock In, Switch Activity, and Clock Out do not carry a client event timestamp. Replaying a durable command later would therefore record server receipt time instead of the employee's original action time.
-
-This change must be deployed and production-verified before the mobile client enables an offline clocking queue.
+This contract is deployed and production-verified. Offline Clocking Phase 1 uses the optional `clientOccurredAt` field described here for durable replay with the employee's original event time.
 
 ## Compatibility
 
@@ -84,7 +82,7 @@ For requests that include `clientOccurredAt`, the server must perform all of the
 1. Parse a timezone-qualified RFC 3339 instant and normalize it to UTC.
 2. Capture `serverReceivedAt` independently using the server clock.
 3. Reject a timestamp more than 5 minutes after `serverReceivedAt`.
-4. Reject a timestamp more than 7 days before `serverReceivedAt`. Older events must use the time-correction workflow.
+4. Reject a timestamp more than 24 hours before `serverReceivedAt`. Older events must use the time-correction workflow.
 5. Enforce the authenticated employee's timeline ordering.
 6. Clock In must occur after the employee's last completed clock event and only when no server-active shift exists.
 7. Switch Activity must occur after the active segment's start and while an active shift exists.
@@ -92,7 +90,7 @@ For requests that include `clientOccurredAt`, the server must perform all of the
 9. Reject overlap with, or inversion of, any existing employee time entry or activity segment.
 10. Revalidate current job assignment, job status, activity availability, and unbillable category authorization at sync time.
 
-The 5-minute future tolerance and 7-day offline age are proposed Phase 1 policy constants. Product/security should approve them explicitly before deployment. They must be enforced server-side, not inferred by the mobile app.
+The deployed Phase 1 policy allows a 5-minute future tolerance and a 24-hour offline age. These bounds are enforced server-side, not inferred by the mobile app.
 
 Do not shift, clamp, or rewrite a rejected timestamp. Preserve the original request for correction evidence.
 
@@ -102,12 +100,13 @@ Return stable machine-readable codes without exposing internal details:
 
 | Status | Code | Meaning |
 |---|---|---|
-| 400 | `INVALID_CLIENT_OCCURRED_AT` | Missing offset, malformed value, or invalid instant |
-| 409 | `CLOCK_IDEMPOTENCY_CONFLICT` | Same idempotency key with a different normalized payload or timestamp |
-| 409 | `CLOCK_TIMELINE_CONFLICT` | Event conflicts with current clock state or ordering |
-| 409 | `CLOCK_ACTIVE_SHIFT_CONFLICT` | Required active/inactive state changed, including another-device mutation |
-| 403 | `CLOCK_CONTEXT_NOT_AUTHORIZED` | Job/category/entry is no longer authorized |
-| 422 | `CLOCK_EVENT_TIME_OUT_OF_RANGE` | Event is too old or unreasonably in the future |
+| 400 | `offline_event_invalid_timestamp` | Missing offset, malformed value, or invalid instant |
+| 409 | `clock_idempotency_conflict` | Same idempotency key with a different normalized payload or timestamp |
+| 409 | `offline_event_order_conflict` | Event conflicts with the employee timeline ordering |
+| 409 | `offline_shift_state_conflict` | Required active/inactive state changed, including another-device mutation |
+| 403 | `offline_job_unauthorized` | Job is no longer authorized for the employee |
+| 422 | `offline_event_too_old` | Event is more than 24 hours old |
+| 422 | `offline_event_in_future` | Event is beyond the 5-minute future tolerance |
 
 Include a safe user-facing `error` string. The mobile client will preserve rejected commands as `needs_attention` and direct the employee to Time Corrections where appropriate.
 
@@ -122,7 +121,7 @@ Required behavior:
 - A retry after the server committed but the client lost the response is reported as success/replay, not as a second mutation.
 - The same key with a changed `clientOccurredAt` or other logical field returns `409 CLOCK_IDEMPOTENCY_CONFLICT`.
 - Idempotency records remain scoped to the authenticated employee/business and cannot be replayed across identities.
-- Retention must be at least the accepted offline age window plus retry margin; recommend 8 days minimum if the 7-day age policy is approved.
+- Retention must be at least the accepted 24-hour offline age window plus retry margin.
 
 ## Success Response
 
@@ -186,7 +185,7 @@ Before mobile implementation resumes, verify against the deployed production API
 
 ## Mobile Work After Backend Deployment
 
-Once this contract is deployed and verified, mobile implementation can safely add:
+The deployed contract allows mobile to safely implement:
 
 - A versioned, identity-scoped durable command queue without tokens or full API responses.
 - Immutable absolute `eventOccurredAt` and separate queue/sync timestamps.
@@ -198,4 +197,4 @@ Once this contract is deployed and verified, mobile implementation can safely ad
 - Pending, synced, and needs-attention UI plus manual retry.
 - Logout warning and queue isolation across employees.
 
-Do not enable offline success UI or durable queue replay until the backend contract is available. Doing so would misrecord employee work time at sync time.
+The mobile client still treats all queued changes as pending until the server confirms or replays them.

@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { PrimaryActionButton } from '@/components/PrimaryActionButton';
 import { Screen } from '@/components/Screen';
 import { StatusBanner } from '@/components/StatusBanner';
 import { useAuthStore } from '@/store/authStore';
+import { useOptionalOfflineClockStore } from '@/store/offlineClockContext';
 import { colors } from '@/theme/colors';
 
 const PRIVACY_URL = 'https://www.oliveops.ca/privacy';
@@ -13,6 +14,7 @@ const SUPPORT_URL = 'mailto:support@oliveops.ca';
 
 export default function SettingsScreen() {
   const { logout, user } = useAuthStore();
+  const offlineClock = useOptionalOfflineClockStore();
   const [linkError, setLinkError] = useState<string | null>(null);
 
   async function openExternalUrl(url: string) {
@@ -25,6 +27,21 @@ export default function SettingsScreen() {
   }
 
   async function onLogout() {
+    if ((offlineClock?.commands.length ?? 0) > 0) {
+      Alert.alert(
+        'Unsynced clocking changes',
+        'Logging out will not delete these changes, but they cannot sync until this employee logs in again.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Log Out', style: 'destructive', onPress: () => { void completeLogout(); } },
+        ],
+      );
+      return;
+    }
+    await completeLogout();
+  }
+
+  async function completeLogout() {
     await logout();
     router.replace('/login');
   }

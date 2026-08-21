@@ -15,6 +15,7 @@ import { useUnbillableCategories } from '@/hooks/useUnbillableCategories';
 import { createRequestMeta } from '@/services/requestGuards';
 import { useAuthStore } from '@/store/authStore';
 import { useClockingStore } from '@/store/clockingStore';
+import { useOptionalOfflineClockStore } from '@/store/offlineClockContext';
 import { useFormsWorkflowStore, type FormsWorkflowIntent } from '@/store/formsWorkflowStore';
 import { colors } from '@/theme/colors';
 import type { TimeEntryWorkType } from '@/types/domain';
@@ -29,6 +30,7 @@ type ActivityOption = {
 export default function ClockInScreen() {
   const { user } = useAuthStore();
   const { jobs } = useClockingStore();
+  const offlineClock = useOptionalOfflineClockStore();
   const { clockIn, loading, refreshWorkContext } = useClockingActions();
   const { getRequiredForms, refreshForms } = useFormsActions();
   const { workflow, startWorkflow, clearWorkflow } = useFormsWorkflowStore();
@@ -58,13 +60,16 @@ export default function ClockInScreen() {
 
   const assignedJobs = useMemo(() => {
     const employeeId = user?.employeeId;
-    return jobs.filter((job) => {
+    const availableJobs = jobs.length > 0
+      ? jobs
+      : (offlineClock?.cache?.jobs ?? []).map((job) => ({ ...job, assignedEmployeeIds: employeeId ? [employeeId] : [] }));
+    return availableJobs.filter((job) => {
       if (job.status !== 'scheduled' && job.status !== 'in_progress') return false;
       if (!employeeId) return true;
       if (!Array.isArray(job.assignedEmployeeIds) || job.assignedEmployeeIds.length === 0) return true;
       return job.assignedEmployeeIds.includes(employeeId);
     });
-  }, [jobs, user?.employeeId]);
+  }, [jobs, offlineClock?.cache?.jobs, user?.employeeId]);
 
   const activityOptions = useMemo<ActivityOption[]>(() => [
       {
@@ -258,8 +263,8 @@ export default function ClockInScreen() {
     }
 
     setRetryMeta(null);
-  clearWorkflow();
-    setStatus('Clock-in submitted successfully.');
+    clearWorkflow();
+    setStatus('pendingSync' in result && result.pendingSync ? 'Clock-in saved on this device. It will sync when online.' : 'Clock-in submitted successfully.');
     router.replace('/active-shift');
   }
 

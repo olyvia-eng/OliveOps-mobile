@@ -26,6 +26,7 @@ import { isOnline } from '@/services/connectivity';
 import { createRequestMeta } from '@/services/requestGuards';
 import { useAuthStore } from '@/store/authStore';
 import { useClockingStore } from '@/store/clockingStore';
+import { useOptionalOfflineClockStore } from '@/store/offlineClockContext';
 import { useFormsWorkflowStore } from '@/store/formsWorkflowStore';
 import { colors } from '@/theme/colors';
 import { toUserFacingError } from '@/utils/userFacingError';
@@ -67,6 +68,7 @@ function extensionForMimeType(mimeType: string) {
 export default function ClockOutScreen() {
   const { user, accessToken } = useAuthStore();
   const { currentActiveEntryId, timeEntries, jobs, businessTimeZone } = useClockingStore();
+  const offlineClock = useOptionalOfflineClockStore();
   const { clockOut, loading, refreshWorkContext } = useClockingActions();
   const { getRequiredForms, refreshForms } = useFormsActions();
   const { workflow, startWorkflow, clearWorkflow } = useFormsWorkflowStore();
@@ -79,6 +81,7 @@ export default function ClockOutScreen() {
   const [permissionSettingsRequired, setPermissionSettingsRequired] = useState(false);
   const [navigatingAfterSuccess, setNavigatingAfterSuccess] = useState(false);
   const [postActionForms, setPostActionForms] = useState<EmployeeForm[]>([]);
+  const [offline, setOffline] = useState(false);
   const attachmentsRef = useRef<PhotoAttachment[]>([]);
   const submittedRef = useRef(false);
   const cleanedFileIdsRef = useRef<Set<string>>(new Set());
@@ -87,8 +90,10 @@ export default function ClockOutScreen() {
   const hasIncompletePhoto = attachments.some((attachment) => attachment.status !== 'uploaded');
 
   const activeEntry = useMemo(() => {
-    return resolveCurrentActiveEntry(timeEntries, user?.employeeId, currentActiveEntryId);
-  }, [currentActiveEntryId, timeEntries, user?.employeeId]);
+    const effectiveEntries = offlineClock?.effectiveTimeEntries ?? timeEntries;
+    const effectiveActiveId = offlineClock?.effectiveCurrentActiveEntryId ?? currentActiveEntryId;
+    return resolveCurrentActiveEntry(effectiveEntries, user?.employeeId, effectiveActiveId);
+  }, [currentActiveEntryId, offlineClock?.effectiveCurrentActiveEntryId, offlineClock?.effectiveTimeEntries, timeEntries, user?.employeeId]);
 
   useEffect(() => {
     void refreshWorkContext();
@@ -97,6 +102,10 @@ export default function ClockOutScreen() {
   useEffect(() => {
     attachmentsRef.current = attachments;
   }, [attachments]);
+
+  useEffect(() => {
+    void isOnline().then((online) => setOffline(!online));
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -115,8 +124,12 @@ export default function ClockOutScreen() {
   }, [activeEntry, jobs]);
 
   const shiftSegments = useMemo(
-    () => getCurrentShiftSegments(timeEntries, user?.employeeId, currentActiveEntryId),
-    [currentActiveEntryId, timeEntries, user?.employeeId],
+    () => getCurrentShiftSegments(
+      offlineClock?.effectiveTimeEntries ?? timeEntries,
+      user?.employeeId,
+      offlineClock?.effectiveCurrentActiveEntryId ?? currentActiveEntryId,
+    ),
+    [currentActiveEntryId, offlineClock?.effectiveCurrentActiveEntryId, offlineClock?.effectiveTimeEntries, timeEntries, user?.employeeId],
   );
   const totalShiftMinutes = useMemo(() => shiftSegments.reduce((total, segment) => {
     const startedAt = Date.parse(segment.clockIn);
@@ -148,7 +161,13 @@ export default function ClockOutScreen() {
     }
   }
 
-  function promptPhotoSource() {
+  async function promptPhotoSource() {
+    if (!await isOnline()) {
+      setOffline(true);
+      setError('Photos require a connection. You can clock out now without photos.');
+      return;
+    }
+    setOffline(false);
     if (attachments.length >= MAX_TIME_ENTRY_PHOTOS) {
       setError(`You can attach up to ${MAX_TIME_ENTRY_PHOTOS} photos.`);
       return;
@@ -364,7 +383,8 @@ export default function ClockOutScreen() {
     setError(null);
     setSuccess(null);
 
-    const uploadedPhotoAttachmentFileIds = attachments
+    const online = await isOnline();
+    const uploadedPhotoAttachmentFileIds = (online ? attachments : [])
       .filter((attachment) => attachment.status === 'uploaded' && Boolean(attachment.fileId))
       .map((attachment) => attachment.fileId as string);
     const fingerprint = JSON.stringify({
@@ -392,9 +412,17 @@ export default function ClockOutScreen() {
     }
 
     setRetryMeta(null);
+    const pendingSync = 'pendingSync' in result && result.pendingSync;
+    if (pendingSync) {
+      await Promise.all(uploadedPhotoAttachmentFileIds.map(cleanupUploadedAttachment));
+    }
     submittedRef.current = true;
-    setSuccess('Clock-out submitted successfully.');
+    setSuccess(pendingSync ? 'Clock-out saved on this device. It will sync when online.' : 'Clock-out submitted successfully.');
     setNavigatingAfterSuccess(true);
+    if (pendingSync) {
+      router.replace('/home');
+      return;
+    }
     const leavingJobId = activeEntry.jobIds?.[0] ?? activeEntry.jobId;
     const checks = [getRequiredForms('after_clock_out')];
     if (leavingJobId) {
@@ -529,6 +557,7 @@ export default function ClockOutScreen() {
             <StatusBadge label={`${attachments.length}/${MAX_TIME_ENTRY_PHOTOS}`} />
           </View>
           <Text style={styles.photoMeta}>Attach photos of completed work.</Text>
+          {offline ? <StatusBanner tone="offline" message="Photos require a connection. You can clock out now without photos." /> : null}
 
           {attachments.map((attachment) => (
             <View key={attachment.localId} style={styles.photoPreviewBlock}>
@@ -560,12 +589,12 @@ export default function ClockOutScreen() {
             </View>
           ))}
 
-          {attachments.length < MAX_TIME_ENTRY_PHOTOS ? (
+          {!offline && attachments.length < MAX_TIME_ENTRY_PHOTOS ? (
             <Pressable
               accessibilityRole="button"
               style={({ pressed }) => [styles.photoAddButton, pressed && styles.photoAddButtonPressed]}
               disabled={uploadingPhoto || loading}
-              onPress={promptPhotoSource}
+              onPress={() => { void promptPhotoSource(); }}
             >
               <Text style={styles.photoAddButtonText}>Add Photo</Text>
             </Pressable>

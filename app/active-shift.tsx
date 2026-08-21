@@ -5,6 +5,7 @@ import { PrimaryActionButton } from '@/components/PrimaryActionButton';
 import { SecondaryButton } from '@/components/SecondaryButton';
 import { Screen } from '@/components/Screen';
 import { StatusBanner } from '@/components/StatusBanner';
+import { OfflineClockStatus } from '@/components/OfflineClockStatus';
 import { EmptyState, ScreenHeader, SectionHeader, StatusBadge } from '@/components/MobilePrimitives';
 import {
   formatDurationForEntry,
@@ -20,17 +21,23 @@ import {
 } from '@/features/clocking/presentation';
 import { useAuthStore } from '@/store/authStore';
 import { useClockingStore } from '@/store/clockingStore';
+import { useOptionalOfflineClockStore } from '@/store/offlineClockContext';
 import { colors } from '@/theme/colors';
 import { formatBusinessTime } from '@/utils/businessTime';
 
 export default function ActiveShiftScreen() {
   const { user } = useAuthStore();
   const { activeShiftWarnings, businessTimeZone, currentActiveEntryId, timeEntries, jobs } = useClockingStore();
+  const offlineClock = useOptionalOfflineClockStore();
   const [now, setNow] = useState(Date.now());
 
   const entry = useMemo(() => {
-    return resolveCurrentActiveEntry(timeEntries, user?.employeeId, currentActiveEntryId);
-  }, [currentActiveEntryId, timeEntries, user?.employeeId]);
+    return resolveCurrentActiveEntry(
+      offlineClock?.effectiveTimeEntries ?? timeEntries,
+      user?.employeeId,
+      offlineClock?.effectiveCurrentActiveEntryId ?? currentActiveEntryId,
+    );
+  }, [currentActiveEntryId, offlineClock?.effectiveCurrentActiveEntryId, offlineClock?.effectiveTimeEntries, timeEntries, user?.employeeId]);
 
   useEffect(() => {
     if (!entry) return;
@@ -55,8 +62,12 @@ export default function ActiveShiftScreen() {
   }, [entry]);
 
   const shiftSegments = useMemo(
-    () => getCurrentShiftSegments(timeEntries, user?.employeeId, currentActiveEntryId),
-    [currentActiveEntryId, timeEntries, user?.employeeId],
+    () => getCurrentShiftSegments(
+      offlineClock?.effectiveTimeEntries ?? timeEntries,
+      user?.employeeId,
+      offlineClock?.effectiveCurrentActiveEntryId ?? currentActiveEntryId,
+    ),
+    [currentActiveEntryId, offlineClock?.effectiveCurrentActiveEntryId, offlineClock?.effectiveTimeEntries, timeEntries, user?.employeeId],
   );
 
   const showLongShiftWarning = Boolean(entry && activeShiftWarnings.possibleForgottenClockOut);
@@ -68,6 +79,7 @@ export default function ActiveShiftScreen() {
   return (
     <Screen>
       <ScreenHeader title="Active Shift" subtitle="Live shift details" />
+      <OfflineClockStatus />
       {!entry ? (
         <EmptyState
           title="No active shift"

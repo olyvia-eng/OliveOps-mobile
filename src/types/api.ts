@@ -85,6 +85,7 @@ export interface ClockInRequest {
   unbillableCategoryId?: string;
   requestId: string;
   idempotencyKey: string;
+  clientOccurredAt?: string;
 }
 
 export interface ClockOutRequest {
@@ -93,6 +94,7 @@ export interface ClockOutRequest {
   notes: string;
   requestId: string;
   idempotencyKey: string;
+  clientOccurredAt?: string;
   photoAttachmentFileIds?: string[];
   photoAttachmentFileId?: string;
 }
@@ -103,6 +105,7 @@ export interface SwitchActivityRequest {
   unbillableCategoryId?: string;
   requestId: string;
   idempotencyKey: string;
+  clientOccurredAt?: string;
 }
 
 export interface ActiveUnbillableCategoriesResponse {

@@ -5,6 +5,7 @@ import { beginRequest, createRequestMeta, endRequest } from '@/services/requestG
 import { isOnline } from '@/services/connectivity';
 import { useAuthStore } from '@/store/authStore';
 import { useClockingStore } from '@/store/clockingStore';
+import { useOptionalOfflineClockStore } from '@/store/offlineClockContext';
 import type { TimeEntryWorkType } from '@/types/domain';
 import { toUserFacingError } from '@/utils/userFacingError';
 
@@ -20,6 +21,7 @@ export function useClockingActions() {
     setTimeCorrections,
     setTimeEntries,
   } = useClockingStore();
+  const offlineClock = useOptionalOfflineClockStore();
   const [loading, setLoading] = useState(false);
   const authIdentity = status === 'authenticated' && user
     ? `${user.businessId}:${user.id}:${user.employeeId ?? ''}:${accessToken ?? ''}`
@@ -59,6 +61,22 @@ export function useClockingActions() {
       unbillableCategoryId?: string,
       requestMeta?: { requestId: string; idempotencyKey: string }
     ) {
+      const meta = requestMeta ?? createRequestMeta(employeeId);
+      if (offlineClock) {
+        setLoading(true);
+        try {
+          return await offlineClock.submitClockIn({
+            employeeId,
+            workType,
+            jobIds,
+            unbillableCategoryId: typeof unbillableCategoryId === 'string' && unbillableCategoryId.trim()
+              ? unbillableCategoryId.trim()
+              : undefined,
+          }, { ...meta, clientOccurredAt: new Date().toISOString() });
+        } finally {
+          setLoading(false);
+        }
+      }
       const key = `clocking:${employeeId}`;
       if (!beginRequest(key)) {
         return { ok: false, error: 'Another clocking action is already in progress.' };
@@ -71,7 +89,6 @@ export function useClockingActions() {
           return { ok: false, error: 'Offline. Reconnect and retry clock-in.' };
         }
 
-        const meta = requestMeta ?? createRequestMeta(employeeId);
         const result = await clockingApi.clockIn({
           employeeId,
           workType,
@@ -107,6 +124,22 @@ export function useClockingActions() {
       photoAttachmentFileIds?: string[],
       requestMeta?: { requestId: string; idempotencyKey: string }
     ) {
+      const meta = requestMeta ?? createRequestMeta(entryId);
+      const normalizedPhotoAttachmentFileIds = Array.isArray(photoAttachmentFileIds)
+        ? [...new Set(photoAttachmentFileIds.filter((value) => typeof value === 'string').map((value) => value.trim()).filter(Boolean))]
+        : [];
+      if (offlineClock && normalizedPhotoAttachmentFileIds.length === 0) {
+        setLoading(true);
+        try {
+          return await offlineClock.submitClockOut({
+            entryId: entryId.startsWith('local-clock:') ? undefined : entryId,
+            breakMinutes: 0,
+            notes,
+          }, { ...meta, clientOccurredAt: new Date().toISOString() });
+        } finally {
+          setLoading(false);
+        }
+      }
       const key = `clocking:${user?.employeeId ?? entryId}`;
       if (!beginRequest(key)) {
         return { ok: false, error: 'Another clocking action is already in progress.' };
@@ -119,10 +152,6 @@ export function useClockingActions() {
           return { ok: false, error: 'Offline. Reconnect and retry clock-out.' };
         }
 
-        const meta = requestMeta ?? createRequestMeta(entryId);
-        const normalizedPhotoAttachmentFileIds = Array.isArray(photoAttachmentFileIds)
-          ? [...new Set(photoAttachmentFileIds.filter((value) => typeof value === 'string').map((value) => value.trim()).filter(Boolean))]
-          : [];
         const result = await clockingApi.clockOut({
           entryId,
           breakMinutes: 0,
@@ -165,6 +194,21 @@ export function useClockingActions() {
         return { ok: false, error: 'Employee profile is not linked to this account.' };
       }
 
+      const meta = requestMeta ?? createRequestMeta(employeeId);
+      if (offlineClock) {
+        setLoading(true);
+        try {
+          return await offlineClock.submitSwitchActivity({
+            workType,
+            jobIds,
+            unbillableCategoryId: typeof unbillableCategoryId === 'string' && unbillableCategoryId.trim()
+              ? unbillableCategoryId.trim()
+              : undefined,
+          }, { ...meta, clientOccurredAt: new Date().toISOString() });
+        } finally {
+          setLoading(false);
+        }
+      }
       const key = `clocking:${employeeId}`;
       if (!beginRequest(key)) {
         return { ok: false, error: 'Another clocking action is already in progress.' };
@@ -177,7 +221,6 @@ export function useClockingActions() {
           return { ok: false, error: 'Offline. Reconnect and retry switch activity.' };
         }
 
-        const meta = requestMeta ?? createRequestMeta(employeeId);
         const result = await clockingApi.switchActivity({
           workType,
           jobIds,
@@ -226,6 +269,7 @@ export function useClockingActions() {
   }), [
     accessToken,
     authIdentity,
+    offlineClock,
     setActivityConfigs,
     setActiveShiftWarnings,
     setBusinessTimeZone,

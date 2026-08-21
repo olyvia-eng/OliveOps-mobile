@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import { loadActiveUnbillableCategories } from '@/api/clockingApi';
 import { useAuthStore } from '@/store/authStore';
 import { useClockingStore } from '@/store/clockingStore';
+import { useOptionalOfflineClockStore } from '@/store/offlineClockContext';
 import { toUserFacingError } from '@/utils/userFacingError';
 
 const CATEGORY_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -19,6 +20,7 @@ export function useUnbillableCategories() {
     setUnbillableCategoriesError,
     setUnbillableCategoriesLoading,
   } = useClockingStore();
+  const offlineClock = useOptionalOfflineClockStore();
 
   const businessId = user?.businessId ?? null;
 
@@ -75,11 +77,20 @@ export function useUnbillableCategories() {
     await loadIfNeeded(true);
   }, [loadIfNeeded]);
 
+  const cachedCategories = offlineClock?.cache?.unbillableCategories.map((category, index) => ({
+    ...category,
+    description: '',
+    sortOrder: index,
+    createdAt: offlineClock.cache?.updatedAt ?? '',
+    updatedAt: offlineClock.cache?.updatedAt ?? '',
+  })) ?? [];
+  const effectiveCategories = unbillableCategories.length > 0 ? unbillableCategories : cachedCategories;
+
   return {
-    categories: unbillableCategories,
-    loading: unbillableCategoriesLoading,
-    error: unbillableCategoriesError,
-    hasLoaded: Boolean(unbillableCategoriesLoadedAt),
+    categories: effectiveCategories,
+    loading: effectiveCategories.length > 0 ? false : unbillableCategoriesLoading,
+    error: effectiveCategories.length > 0 ? null : unbillableCategoriesError,
+    hasLoaded: Boolean(unbillableCategoriesLoadedAt || cachedCategories.length > 0),
     loadIfNeeded,
     retry,
   };

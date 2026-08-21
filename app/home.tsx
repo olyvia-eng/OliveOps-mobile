@@ -5,6 +5,7 @@ import { PrimaryActionButton } from '@/components/PrimaryActionButton';
 import { SecondaryButton } from '@/components/SecondaryButton';
 import { Screen } from '@/components/Screen';
 import { OfflineNotice } from '@/components/OfflineNotice';
+import { OfflineClockStatus } from '@/components/OfflineClockStatus';
 import { StatusBanner } from '@/components/StatusBanner';
 import { ActionCard, ListRow, ScreenHeader, SectionHeader, StatusBadge } from '@/components/MobilePrimitives';
 import {
@@ -19,6 +20,7 @@ import { useClockingActions } from '@/hooks/useClockingActions';
 import { useFormsActions } from '@/hooks/useFormsActions';
 import { useAuthStore } from '@/store/authStore';
 import { useClockingStore } from '@/store/clockingStore';
+import { useOptionalOfflineClockStore } from '@/store/offlineClockContext';
 import { useFormsStore } from '@/store/formsStore';
 import { colors } from '@/theme/colors';
 import { formatBusinessDate, formatBusinessTime } from '@/utils/businessTime';
@@ -26,6 +28,7 @@ import { formatBusinessDate, formatBusinessTime } from '@/utils/businessTime';
 export default function HomeScreen() {
   const { user } = useAuthStore();
   const { activeShiftWarnings, businessTimeZone, currentActiveEntryId, timeEntries, jobs } = useClockingStore();
+  const offlineClock = useOptionalOfflineClockStore();
   const { refreshWorkContext } = useClockingActions();
   const { refreshForms } = useFormsActions();
   const { toDo } = useFormsStore();
@@ -49,8 +52,12 @@ export default function HomeScreen() {
   }, [refreshForms]);
 
   const activeShift = useMemo(() => {
-    return resolveCurrentActiveEntry(timeEntries, user?.employeeId, currentActiveEntryId);
-  }, [currentActiveEntryId, timeEntries, user?.employeeId]);
+    return resolveCurrentActiveEntry(
+      offlineClock?.effectiveTimeEntries ?? timeEntries,
+      user?.employeeId,
+      offlineClock?.effectiveCurrentActiveEntryId ?? currentActiveEntryId,
+    );
+  }, [currentActiveEntryId, offlineClock?.effectiveCurrentActiveEntryId, offlineClock?.effectiveTimeEntries, timeEntries, user?.employeeId]);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 30_000);
@@ -87,6 +94,7 @@ export default function HomeScreen() {
   return (
     <Screen testID="home-scroll">
       <OfflineNotice />
+      <OfflineClockStatus />
 
       <View style={styles.topRow}>
         <Text style={styles.brandText}>OliveOps</Text>

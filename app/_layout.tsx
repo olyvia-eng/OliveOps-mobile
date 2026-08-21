@@ -7,6 +7,7 @@ import { useClockingActions } from '@/hooks/useClockingActions';
 import { useAuthStore } from '@/store/authStore';
 import { AuthProvider } from '@/store/authStore';
 import { ClockingProvider } from '@/store/clockingStore';
+import { OfflineClockProvider } from '@/store/offlineClockStore';
 import { FormsProvider } from '@/store/formsStore';
 import { FormsWorkflowProvider } from '@/store/formsWorkflowStore';
 import { colors } from '@/theme/colors';
@@ -64,8 +65,9 @@ function RootLayout() {
         <FormsProvider>
           <FormsWorkflowProvider>
             <ClockingProvider>
-              <AppLifecycleSync />
-              <Stack
+              <OfflineClockProvider>
+                <AppLifecycleSync />
+                <Stack
             screenOptions={{
               headerStyle: { backgroundColor: colors.background },
               headerTintColor: colors.textPrimary,
@@ -89,7 +91,8 @@ function RootLayout() {
             <Stack.Screen name="form" options={secondaryScreenOptions('Complete Form')} />
             <Stack.Screen name="form-submission" options={secondaryScreenOptions('Completed Form')} />
             <Stack.Screen name="settings" options={secondaryScreenOptions('Settings')} />
-              </Stack>
+                </Stack>
+              </OfflineClockProvider>
             </ClockingProvider>
           </FormsWorkflowProvider>
         </FormsProvider>
