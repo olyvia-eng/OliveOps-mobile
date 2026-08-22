@@ -11,6 +11,7 @@ const mockClearWorkflow = jest.fn();
 let mockWorkflow: any = null;
 const mockLoadUnbillableCategoriesIfNeeded = jest.fn().mockResolvedValue(undefined);
 const mockRetryUnbillableCategories = jest.fn().mockResolvedValue(undefined);
+let mockOfflineClock: any;
 
 const mockUseClockingActions = jest.fn(() => ({
   clockIn: mockClockIn,
@@ -91,6 +92,10 @@ jest.mock('@/store/clockingStore', () => ({
   useClockingStore: () => mockUseClockingStore(),
 }));
 
+jest.mock('@/store/offlineClockContext', () => ({
+  useOptionalOfflineClockStore: () => mockOfflineClock,
+}));
+
 jest.mock('@/store/formsWorkflowStore', () => ({
   useFormsWorkflowStore: () => ({
     workflow: mockWorkflow,
@@ -156,6 +161,7 @@ describe('ClockInScreen', () => {
     mockStartWorkflow.mockClear();
     mockClearWorkflow.mockClear();
     mockWorkflow = null;
+    mockOfflineClock = undefined;
     mockLoadUnbillableCategoriesIfNeeded.mockClear();
     mockRetryUnbillableCategories.mockClear();
     mockUseUnbillableCategories.mockReset();
@@ -187,6 +193,20 @@ describe('ClockInScreen', () => {
       retry: mockRetryUnbillableCategories,
     });
     mockClockIn.mockResolvedValue({ ok: true });
+  });
+
+  it('routes an effective pending clock-in back to Active Shift', async () => {
+    mockOfflineClock = {
+      hydrated: true,
+      effectiveState: { activeEntry: { id: 'local-clock:shift-1:key-1' } },
+      cache: null,
+    };
+
+    await act(async () => {
+      create(React.createElement(ClockInScreen));
+    });
+
+    expect(router.replace).toHaveBeenCalledWith('/active-shift');
   });
 
   it('shows offline notice and disables submit until a job is selected', async () => {

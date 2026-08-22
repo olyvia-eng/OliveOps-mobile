@@ -6,6 +6,8 @@ const mockLoadBootstrap = jest.fn();
 const mockClockIn = jest.fn();
 const mockClockOut = jest.fn();
 const mockSwitchActivity = jest.fn();
+const mockUpdateEligibilityCache = jest.fn().mockResolvedValue(undefined);
+let mockOfflineClock: any;
 const authenticatedUser = {
   id: 'user-1',
   businessId: 'biz-1',
@@ -32,6 +34,10 @@ jest.mock('@/store/authStore', () => ({
     accessToken: 'token-1',
     user: authenticatedUser,
   }),
+}));
+
+jest.mock('@/store/offlineClockContext', () => ({
+  useOptionalOfflineClockStore: () => mockOfflineClock,
 }));
 
 import { useClockingActions } from '@/hooks/useClockingActions';
@@ -85,6 +91,8 @@ describe('useClockingActions bootstrap behavior', () => {
     mockClockIn.mockReset();
     mockClockOut.mockReset();
     mockSwitchActivity.mockReset();
+    mockUpdateEligibilityCache.mockClear();
+    mockOfflineClock = undefined;
     mockLoadBootstrap.mockResolvedValue(bootstrapPayload());
     mockClockIn.mockResolvedValue({ ok: true, timeEntry: activeEntry() });
     mockSwitchActivity.mockResolvedValue({ ok: true, timeEntry: activeEntry('entry-2') });
@@ -119,6 +127,30 @@ describe('useClockingActions bootstrap behavior', () => {
     });
 
     expect(mockLoadBootstrap).toHaveBeenCalledTimes(1);
+  });
+
+  it('updates offline eligibility only after a successful bootstrap', async () => {
+    mockOfflineClock = { updateEligibilityCache: mockUpdateEligibilityCache };
+    await act(async () => {
+      tree = create(
+        React.createElement(ClockingProvider, null, React.createElement(ActionsProbe))
+      );
+    });
+
+    await act(async () => {
+      await currentActions.refreshWorkContext();
+    });
+    expect(mockUpdateEligibilityCache).toHaveBeenCalledWith({
+      jobs: bootstrapPayload().jobs,
+      activityConfigs: [],
+    });
+
+    mockUpdateEligibilityCache.mockClear();
+    mockLoadBootstrap.mockRejectedValueOnce(new TypeError('offline'));
+    await act(async () => {
+      await currentActions.refreshWorkContext();
+    });
+    expect(mockUpdateEligibilityCache).not.toHaveBeenCalled();
   });
 
   it('reconciles after each mutation without retriggering mount refreshes', async () => {

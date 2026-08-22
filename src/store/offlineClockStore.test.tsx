@@ -283,6 +283,65 @@ describe('OfflineClockProvider', () => {
     expect(mockStoredCommands[0].status).toBe('needs_attention');
     expect(mockStoredCommands[1].status).toBe('pending');
     expect(mockSwitchActivity).not.toHaveBeenCalled();
-    expect(offlineClock.effectiveState.syncStatus).toBe('needs_attention');
+    expect(offlineClock.effectiveState.needsAttentionCount).toBe(1);
+    expect(offlineClock.effectiveState.currentShiftConflict).toBeNull();
+  });
+
+  it('syncs a newer shift while preserving historical attention', async () => {
+    mockStoredCommands.push(
+      command({ status: 'needs_attention', lastErrorCategory: 'offline_shift_state_conflict' }),
+      command({
+        id: 'key-new',
+        localShiftId: 'local-shift-2',
+        logicalPayload: { employeeId: 'employee-1', workType: 'job', jobIds: ['job-2'] },
+        requestId: 'request-new',
+        idempotencyKey: 'key-new',
+        clientOccurredAt: '2026-08-21T10:00:00.000Z',
+        queuedAt: '2026-08-21T10:00:00.100Z',
+      }),
+    );
+    mockClockIn.mockResolvedValue({
+      ok: true,
+      timeEntry: {
+        id: 'server-entry-2', employeeId: 'employee-1', workType: 'job', jobIds: ['job-2'],
+        clockIn: '2026-08-21T10:00:00.000Z', breakMinutes: 0, notes: '', status: 'clocked_in',
+      },
+    });
+
+    tree = await renderProvider();
+
+    expect(mockClockIn).toHaveBeenCalledWith(expect.objectContaining({ idempotencyKey: 'key-new' }), 'token-1');
+    expect(mockStoredCommands[0].status).toBe('needs_attention');
+    expect(mockStoredCommands[1].status).toBe('synced');
+    expect(offlineClock.effectiveState.needsAttentionCount).toBe(1);
+  });
+
+  it('does not enqueue another clock-in while a local clock-in is effective', async () => {
+    mockStoredCommands.push(command());
+    mockClockIn.mockRejectedValue(new TypeError('offline'));
+    tree = await renderProvider();
+
+    let result: Awaited<ReturnType<typeof offlineClock.submitClockIn>> | undefined;
+    await act(async () => {
+      result = await offlineClock.submitClockIn(
+        { employeeId: 'employee-1', workType: 'job', jobIds: ['job-2'] },
+        { requestId: 'request-2', idempotencyKey: 'key-2', clientOccurredAt: '2026-08-20T10:05:00.000Z' },
+      );
+    });
+
+    expect(result).toEqual({ ok: false, error: 'You are already clocked in.' });
+    expect(mockStoredCommands).toHaveLength(1);
+  });
+
+  it('keeps an authorization failure pending instead of inventing a conflict', async () => {
+    mockStoredCommands.push(command());
+    mockClockIn.mockRejectedValue(new ApiError('Session expired', 401, 'UNAUTHORIZED'));
+
+    tree = await renderProvider();
+
+    expect(mockStoredCommands[0].status).toBe('pending');
+    expect(mockStoredCommands[0].lastErrorCategory).toBe('unauthorized');
+    expect(offlineClock.effectiveState.needsAttentionCount).toBe(0);
+    expect(offlineClock.effectiveState.activeEntry).not.toBeNull();
   });
 });

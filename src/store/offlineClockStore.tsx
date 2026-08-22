@@ -3,7 +3,7 @@ import { AppState } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
 import * as Sentry from '@sentry/react-native';
 import * as clockingApi from '@/api/clockingApi';
-import { buildEffectiveClockState } from '@/features/offlineClocking/model';
+import { buildEffectiveClockState, nextReplayableCommand } from '@/features/offlineClocking/model';
 import {
   OFFLINE_CLOCK_SCHEMA_VERSION,
   type OfflineClockCache,
@@ -44,6 +44,7 @@ const NEEDS_ATTENTION_CODES = new Set([
   'offline_job_unauthorized',
   'clock_idempotency_conflict',
 ]);
+const LOCAL_NEEDS_ATTENTION_CODES = new Set(['offline_shift_dependency']);
 
 const BACKOFF_MS = [0, 5_000, 15_000, 60_000, 5 * 60_000];
 
@@ -103,6 +104,38 @@ export function OfflineClockProvider({ children }: { children: React.ReactNode }
     setCommands((current) => current.map((command) => command.id === next.id ? next : command));
   }, []);
 
+  const updateEligibilityCache = useCallback(async (update: {
+    jobs?: typeof clocking.jobs;
+    unbillableCategories?: typeof clocking.unbillableCategories;
+    activityConfigs?: NonNullable<typeof clocking.activityConfigs>;
+  }) => {
+    if (!identityKey || status !== 'authenticated') return;
+    const previous = cacheRef.current?.identityKey === identityKey ? cacheRef.current : null;
+    const next: OfflineClockCache = {
+      schemaVersion: OFFLINE_CLOCK_SCHEMA_VERSION,
+      identityKey,
+      updatedAt: new Date().toISOString(),
+      jobs: update.jobs?.map(({ id, title, status: jobStatus }) => ({ id, title, status: jobStatus }))
+        ?? previous?.jobs
+        ?? [],
+      unbillableCategories: update.unbillableCategories?.map(({ id, name, active }) => ({ id, name, active }))
+        ?? previous?.unbillableCategories
+        ?? [],
+      driveTimeAvailable: update.activityConfigs?.some((item) => item.type === 'drive_time')
+        ?? previous?.driveTimeAvailable
+        ?? true,
+      jobWorkAvailable: update.activityConfigs?.some((item) => item.type === 'job')
+        ?? previous?.jobWorkAvailable
+        ?? true,
+      unbillableAvailable: update.activityConfigs?.some((item) => item.type === 'non_billable')
+        ?? previous?.unbillableAvailable
+        ?? false,
+    };
+    cacheRef.current = next;
+    setCache(next);
+    await saveOfflineClockCache(next);
+  }, [identityKey, status]);
+
   useEffect(() => {
     let cancelled = false;
     setHydrated(false);
@@ -128,28 +161,6 @@ export function OfflineClockProvider({ children }: { children: React.ReactNode }
     return () => { cancelled = true; };
   }, [identityKey, status]);
 
-  useEffect(() => {
-    if (!identityKey || status !== 'authenticated' || !hydrated) return;
-    if (clocking.jobs.length === 0 && clocking.unbillableCategories.length === 0 && !clocking.activityConfigs) return;
-    const previous = cacheRef.current?.identityKey === identityKey ? cacheRef.current : null;
-    const next: OfflineClockCache = {
-      schemaVersion: OFFLINE_CLOCK_SCHEMA_VERSION,
-      identityKey,
-      updatedAt: new Date().toISOString(),
-      jobs: clocking.jobs.length > 0
-        ? clocking.jobs.map(({ id, title, status: jobStatus }) => ({ id, title, status: jobStatus }))
-        : previous?.jobs ?? [],
-      unbillableCategories: clocking.unbillableCategories.length > 0
-        ? clocking.unbillableCategories.map(({ id, name, active }) => ({ id, name, active }))
-        : previous?.unbillableCategories ?? [],
-      driveTimeAvailable: clocking.activityConfigs?.some((item) => item.type === 'drive_time') ?? previous?.driveTimeAvailable ?? true,
-      jobWorkAvailable: clocking.activityConfigs?.some((item) => item.type === 'job') ?? previous?.jobWorkAvailable ?? true,
-      unbillableAvailable: clocking.activityConfigs?.some((item) => item.type === 'non_billable') ?? previous?.unbillableAvailable ?? false,
-    };
-    setCache(next);
-    void saveOfflineClockCache(next);
-  }, [clocking.activityConfigs, clocking.jobs, clocking.unbillableCategories, hydrated, identityKey, status]);
-
   const syncNow = useCallback(async () => {
     if (syncPromiseRef.current) return syncPromiseRef.current;
     if (!identityKey || status !== 'authenticated' || !user?.employeeId || !accessToken) return;
@@ -158,7 +169,7 @@ export function OfflineClockProvider({ children }: { children: React.ReactNode }
       let completedAny = false;
       while (true) {
         const queued = await loadOfflineCommands(identityKey);
-        const stored = queued[0];
+        const stored = nextReplayableCommand(queued);
         if (!stored) {
           if (completedAny && identityRef.current === identityKey) {
             try {
@@ -171,6 +182,10 @@ export function OfflineClockProvider({ children }: { children: React.ReactNode }
               clocking.setCurrentActiveEntryId(payload.currentActiveEntryId ?? null);
               clocking.setActiveShiftWarnings(payload.activeShiftWarnings);
               clocking.setActivityConfigs(payload.activityConfigs);
+              await updateEligibilityCache({
+                jobs: scopeJobsForSession(payload.jobs ?? [], user),
+                activityConfigs: payload.activityConfigs ?? [],
+              });
             } catch {
               Sentry.captureMessage('offline_clock_bootstrap_reconcile_failed', 'warning');
             }
@@ -178,7 +193,6 @@ export function OfflineClockProvider({ children }: { children: React.ReactNode }
           return;
         }
         if (identityRef.current !== identityKey) return;
-        if (stored.status === 'needs_attention') return;
 
         const syncing = { ...stored, status: 'syncing' as const, retryCount: stored.retryCount + 1 };
         await updateOfflineCommand(syncing);
@@ -235,7 +249,7 @@ export function OfflineClockProvider({ children }: { children: React.ReactNode }
           setCommands((current) => current.filter((command) => command.id !== stored.id));
         } catch (error) {
           const code = errorCode(error);
-          if (NEEDS_ATTENTION_CODES.has(code ?? '') || !isRetryable(error)) {
+          if (NEEDS_ATTENTION_CODES.has(code ?? '') || LOCAL_NEEDS_ATTENTION_CODES.has(code ?? '')) {
             const attention = { ...syncing, status: 'needs_attention' as const, lastErrorCategory: code ?? 'offline_clock_conflict' };
             await updateOfflineCommand(attention);
             replaceCommand(attention);
@@ -244,9 +258,11 @@ export function OfflineClockProvider({ children }: { children: React.ReactNode }
             const pending = { ...syncing, status: 'pending' as const, lastErrorCategory: code ?? 'network_unavailable' };
             await updateOfflineCommand(pending);
             replaceCommand(pending);
-            const delay = BACKOFF_MS[Math.min(pending.retryCount, BACKOFF_MS.length - 1)];
-            if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
-            retryTimerRef.current = setTimeout(() => { void syncNow(); }, delay);
+            if (isRetryable(error)) {
+              const delay = BACKOFF_MS[Math.min(pending.retryCount, BACKOFF_MS.length - 1)];
+              if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+              retryTimerRef.current = setTimeout(() => { void syncNow(); }, delay);
+            }
           }
           return;
         } finally {
@@ -263,7 +279,7 @@ export function OfflineClockProvider({ children }: { children: React.ReactNode }
         syncPromiseRef.current = null;
       });
     return syncPromiseRef.current;
-  }, [accessToken, clocking, identityKey, replaceCommand, status, user?.employeeId]);
+  }, [accessToken, clocking, identityKey, replaceCommand, status, updateEligibilityCache, user]);
 
   useEffect(() => {
     if (!hydrated || status !== 'authenticated') return;
@@ -329,9 +345,12 @@ export function OfflineClockProvider({ children }: { children: React.ReactNode }
     return { ok: true, pendingSync: Boolean(recorded) };
   }, [hydrated, identityKey, syncNow, user?.businessId, user?.employeeId]);
 
-  const submitClockIn = useCallback((payload: OfflineClockInPayload, meta: SubmitMeta) => (
-    record('clock_in', opaqueId('local-shift'), payload, meta)
-  ), [record]);
+  const submitClockIn = useCallback((payload: OfflineClockInPayload, meta: SubmitMeta) => {
+    if (effectiveState.activeEntry) {
+      return Promise.resolve({ ok: false, error: 'You are already clocked in.' } as RecordedResult);
+    }
+    return record('clock_in', opaqueId('local-shift'), payload, meta);
+  }, [effectiveState.activeEntry, record]);
   const submitSwitchActivity = useCallback((payload: OfflineSwitchPayload, meta: SubmitMeta) => {
     if (!effectiveState.localShiftId) return Promise.resolve({ ok: false, error: 'No active shift found.' } as RecordedResult);
     return record('switch_activity', effectiveState.localShiftId, payload, meta);
@@ -351,8 +370,9 @@ export function OfflineClockProvider({ children }: { children: React.ReactNode }
     submitClockIn,
     submitSwitchActivity,
     submitClockOut,
+    updateEligibilityCache,
     syncNow,
-  }), [cache, commands, effectiveState, effectiveTimeEntries, hydrated, submitClockIn, submitClockOut, submitSwitchActivity, syncNow]);
+  }), [cache, commands, effectiveState, effectiveTimeEntries, hydrated, submitClockIn, submitClockOut, submitSwitchActivity, syncNow, updateEligibilityCache]);
 
   return <OfflineClockContext.Provider value={value}>{children}</OfflineClockContext.Provider>;
 }

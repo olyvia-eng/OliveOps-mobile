@@ -1,7 +1,8 @@
 import { createContext, useContext } from 'react';
 import type { OfflineClockCache, OfflineClockCommand, OfflineClockInPayload, OfflineClockOutPayload, OfflineSwitchPayload } from '@/features/offlineClocking/types';
 import type { buildEffectiveClockState } from '@/features/offlineClocking/model';
-import type { TimeEntry } from '@/types/domain';
+import type { ActivityConfig } from '@/types/api';
+import type { Job, TimeEntry, UnbillableCategory } from '@/types/domain';
 
 export type OfflineClockSubmitMeta = { requestId: string; idempotencyKey: string; clientOccurredAt: string };
 export type OfflineClockRecordedResult = { ok: true; pendingSync: boolean } | { ok: false; error: string };
@@ -16,6 +17,11 @@ export type OfflineClockContextValue = {
   submitClockIn: (payload: OfflineClockInPayload, meta: OfflineClockSubmitMeta) => Promise<OfflineClockRecordedResult>;
   submitSwitchActivity: (payload: OfflineSwitchPayload, meta: OfflineClockSubmitMeta) => Promise<OfflineClockRecordedResult>;
   submitClockOut: (payload: OfflineClockOutPayload, meta: OfflineClockSubmitMeta) => Promise<OfflineClockRecordedResult>;
+  updateEligibilityCache: (update: {
+    jobs?: Job[];
+    unbillableCategories?: UnbillableCategory[];
+    activityConfigs?: ActivityConfig[];
+  }) => Promise<void>;
   syncNow: () => Promise<void>;
 };
 

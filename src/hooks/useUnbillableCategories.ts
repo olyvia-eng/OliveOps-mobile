@@ -54,6 +54,7 @@ export function useUnbillableCategories() {
           return a.name.localeCompare(b.name);
         });
       setUnbillableCategories(activeItems, businessId);
+      await offlineClock?.updateEligibilityCache({ unbillableCategories: activeItems });
     } catch (error) {
       setUnbillableCategoriesError(
         toUserFacingError(error, 'Could not load unbillable categories. Please try again.'),
@@ -64,6 +65,7 @@ export function useUnbillableCategories() {
   }, [
     accessToken,
     businessId,
+    offlineClock,
     resetUnbillableCategories,
     setUnbillableCategories,
     setUnbillableCategoriesError,

@@ -58,6 +58,12 @@ export default function ClockInScreen() {
     void refreshWorkContext();
   }, [refreshWorkContext]);
 
+  useEffect(() => {
+    if (offlineClock?.hydrated && offlineClock.effectiveState.activeEntry) {
+      router.replace('/active-shift');
+    }
+  }, [offlineClock?.effectiveState.activeEntry, offlineClock?.hydrated]);
+
   const assignedJobs = useMemo(() => {
     const employeeId = user?.employeeId;
     const availableJobs = jobs.length > 0

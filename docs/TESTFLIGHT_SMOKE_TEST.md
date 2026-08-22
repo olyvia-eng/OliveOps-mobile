@@ -149,13 +149,29 @@ Time History currently displays time-entry and correction state, not photo previ
 
 ## Offline and Error Behavior
 
-- [ ] Disable Wi-Fi and cellular and confirm the offline notice appears.
-- [ ] From Login, attempt to sign in while offline; confirm no sign-in request succeeds and a reconnect message appears.
-- [ ] Attempt Clock In, Switch Activity, Clock Out, photo upload, history/correction refresh, and correction submission as practical.
-- [ ] Confirm each blocked network action shows a friendly offline/retry message and does not duplicate a request.
-- [ ] Re-enable connectivity and manually retry; confirm the action succeeds.
-- [ ] Confirm no action claims to have queued or background-synced while offline; that behavior is not implemented.
+- [ ] While online, open Clock In and confirm all authorized jobs, Drive Time, and active unbillable categories are available.
+- [ ] Disable Wi-Fi and cellular and confirm the connectivity notice appears without a red clock conflict.
+- [ ] Return to Clock In after Home navigation and a refresh attempt; confirm cached jobs and activities remain available and the selected job does not reset.
+- [ ] Clock in offline and confirm Home and Active Shift continuously show `Clocked in — Pending sync` with the selected activity, job, and original event time.
+- [ ] Force-close and reopen while still offline; confirm the pending shift and cached eligibility hydrate without a temporary `No active shift` state or conflict.
+- [ ] Navigate between Home, Clock In, and Active Shift and trigger connectivity updates; confirm the app does not bounce between clocked-in and clocked-out routes.
+- [ ] Re-enable connectivity and confirm the saved command syncs once, changes to authoritative state, and does not create a duplicate shift.
+- [ ] With an authoritative active shift, clock out offline; confirm Home remains `Clocked out — Pending sync` even if refresh still has the old server shift.
+- [ ] Complete an offline Clock In, Switch Activity, Drive Time, and Clock Out sequence; confirm every local state is coherent, then reconnect and verify ordered replay.
+- [ ] Repeat Clock In taps and a triggered Forms continuation while offline; confirm exactly one logical clock-in is represented and synced.
+- [ ] Load a synthetic `needs_attention` command from an older shift, then start a new valid shift; confirm Home shows `1 time change needs attention`, the current shift remains usable, and Review opens Time Correction.
+- [ ] Confirm a historical attention item does not show the current-shift conflict message on Active Shift and does not block a newer shift from syncing.
+- [ ] Confirm network failure, timeout, offline bootstrap mismatch, and `401` do not turn pending commands into `needs_attention`.
+- [ ] Confirm photo upload, history refresh, and correction submission still require connectivity and show a friendly retry message.
 - [ ] Confirm no raw backend error, stack trace, token, URL signature, storage-provider detail, or HTTP status is shown to the user.
+
+### Intentional Offline Data Reset
+
+Never reset a device that contains real pending employee time changes. First reconnect, verify the queue reaches zero, and resolve or record every needs-attention item.
+
+For a synthetic TestFlight fixture, uninstall OliveOps from the iPhone and reinstall it from TestFlight. iOS removes the app's SQLite container, including queued commands, local shift mappings, and cached eligibility. Server time entries are not deleted; reset the synthetic employee's authoritative clock state separately before the next run.
+
+For local Jest/development fixtures, use the existing test storage reset and reinstall the development build when device SQLite must be cleared. There is intentionally no employee-facing production reset control and the app never silently deletes pending or needs-attention commands.
 
 ## Final Acceptance
 

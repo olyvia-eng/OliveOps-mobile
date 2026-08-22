@@ -22,6 +22,10 @@ export function useClockingActions() {
     setTimeEntries,
   } = useClockingStore();
   const offlineClock = useOptionalOfflineClockStore();
+  const submitOfflineClockIn = offlineClock?.submitClockIn;
+  const submitOfflineClockOut = offlineClock?.submitClockOut;
+  const submitOfflineSwitchActivity = offlineClock?.submitSwitchActivity;
+  const updateEligibilityCache = offlineClock?.updateEligibilityCache;
   const [loading, setLoading] = useState(false);
   const authIdentity = status === 'authenticated' && user
     ? `${user.businessId}:${user.id}:${user.employeeId ?? ''}:${accessToken ?? ''}`
@@ -44,13 +48,18 @@ export function useClockingActions() {
       return;
     }
 
-    setJobs(scopeJobsForSession(payload.jobs ?? [], user));
+    const scopedJobs = scopeJobsForSession(payload.jobs ?? [], user);
+    setJobs(scopedJobs);
     setBusinessTimeZone(payload.timezone);
     setTimeEntries(scopeTimeEntriesForSession(payload.timeEntries ?? [], user));
     setTimeCorrections(payload.timeCorrections ?? []);
     setCurrentActiveEntryId(payload.currentActiveEntryId ?? null);
     setActiveShiftWarnings(payload.activeShiftWarnings);
     setActivityConfigs(payload.activityConfigs);
+    await updateEligibilityCache?.({
+      jobs: scopedJobs,
+      activityConfigs: payload.activityConfigs ?? [],
+    });
   }
 
   const actions = useMemo(() => ({
@@ -62,10 +71,10 @@ export function useClockingActions() {
       requestMeta?: { requestId: string; idempotencyKey: string }
     ) {
       const meta = requestMeta ?? createRequestMeta(employeeId);
-      if (offlineClock) {
+      if (submitOfflineClockIn) {
         setLoading(true);
         try {
-          return await offlineClock.submitClockIn({
+          return await submitOfflineClockIn({
             employeeId,
             workType,
             jobIds,
@@ -128,10 +137,10 @@ export function useClockingActions() {
       const normalizedPhotoAttachmentFileIds = Array.isArray(photoAttachmentFileIds)
         ? [...new Set(photoAttachmentFileIds.filter((value) => typeof value === 'string').map((value) => value.trim()).filter(Boolean))]
         : [];
-      if (offlineClock && normalizedPhotoAttachmentFileIds.length === 0) {
+      if (submitOfflineClockOut && normalizedPhotoAttachmentFileIds.length === 0) {
         setLoading(true);
         try {
-          return await offlineClock.submitClockOut({
+          return await submitOfflineClockOut({
             entryId: entryId.startsWith('local-clock:') ? undefined : entryId,
             breakMinutes: 0,
             notes,
@@ -195,10 +204,10 @@ export function useClockingActions() {
       }
 
       const meta = requestMeta ?? createRequestMeta(employeeId);
-      if (offlineClock) {
+      if (submitOfflineSwitchActivity) {
         setLoading(true);
         try {
-          return await offlineClock.submitSwitchActivity({
+          return await submitOfflineSwitchActivity({
             workType,
             jobIds,
             unbillableCategoryId: typeof unbillableCategoryId === 'string' && unbillableCategoryId.trim()
@@ -269,7 +278,6 @@ export function useClockingActions() {
   }), [
     accessToken,
     authIdentity,
-    offlineClock,
     setActivityConfigs,
     setActiveShiftWarnings,
     setBusinessTimeZone,
@@ -277,7 +285,11 @@ export function useClockingActions() {
     setJobs,
     setTimeCorrections,
     setTimeEntries,
+    submitOfflineClockIn,
+    submitOfflineClockOut,
+    submitOfflineSwitchActivity,
     upsertTimeEntry,
+    updateEligibilityCache,
     user,
   ]);
 

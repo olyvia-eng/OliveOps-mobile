@@ -58,6 +58,10 @@ export default function HomeScreen() {
       offlineClock?.effectiveCurrentActiveEntryId ?? currentActiveEntryId,
     );
   }, [currentActiveEntryId, offlineClock?.effectiveCurrentActiveEntryId, offlineClock?.effectiveTimeEntries, timeEntries, user?.employeeId]);
+  const effectiveJobs = useMemo(() => jobs.length > 0
+    ? jobs
+    : (offlineClock?.cache?.jobs ?? []).map((job) => ({ ...job, assignedEmployeeIds: [] })),
+  [jobs, offlineClock?.cache?.jobs]);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 30_000);
@@ -66,8 +70,8 @@ export default function HomeScreen() {
 
   const currentJobLabel = useMemo(() => {
     if (!activeShift) return 'Not clocked in';
-    return resolveJobTitle(activeShift, jobs);
-  }, [activeShift, jobs]);
+    return resolveJobTitle(activeShift, effectiveJobs);
+  }, [activeShift, effectiveJobs]);
 
   const currentActivityLabel = useMemo(() => {
     if (!activeShift) return 'None';
@@ -94,7 +98,7 @@ export default function HomeScreen() {
   return (
     <Screen testID="home-scroll">
       <OfflineNotice />
-      <OfflineClockStatus />
+      <OfflineClockStatus showHistoricalAttention />
 
       <View style={styles.topRow}>
         <Text style={styles.brandText}>OliveOps</Text>
@@ -105,11 +109,14 @@ export default function HomeScreen() {
 
       <ScreenHeader title={greeting} subtitle={todayLabel} />
 
-      {loadError ? <StatusBanner tone="error" message={loadError} /> : null}
+      {loadError && !loadError.startsWith('Offline.') ? <StatusBanner tone="error" message={loadError} /> : null}
 
       {activeShift ? (
         <View style={styles.activeCard}>
-          <StatusBadge label="Active Shift" tone="active" />
+          <StatusBadge
+            label={offlineClock?.effectiveState.currentShiftPendingCount ? 'Clocked in — Pending sync' : 'Active Shift'}
+            tone="active"
+          />
           <Text style={styles.activeTitle}>You're clocked in</Text>
           <Text style={styles.activeJob}>{currentJobLabel}</Text>
           <Text style={styles.activeActivity}>{currentActivityLabel}</Text>
@@ -129,7 +136,9 @@ export default function HomeScreen() {
         </View>
       ) : (
         <ActionCard>
-          <StatusBadge label="Not clocked in" />
+          <StatusBadge label={offlineClock?.effectiveState.lastClockOutAt && offlineClock.effectiveState.currentShiftPendingCount
+            ? 'Clocked out — Pending sync'
+            : 'Not clocked in'} />
           <Text style={styles.idleTitle}>Ready to start your shift?</Text>
           <Text style={styles.idleText}>Choose what you're working on and clock in.</Text>
         </ActionCard>

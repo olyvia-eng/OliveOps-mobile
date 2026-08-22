@@ -38,6 +38,10 @@ export default function ActiveShiftScreen() {
       offlineClock?.effectiveCurrentActiveEntryId ?? currentActiveEntryId,
     );
   }, [currentActiveEntryId, offlineClock?.effectiveCurrentActiveEntryId, offlineClock?.effectiveTimeEntries, timeEntries, user?.employeeId]);
+  const effectiveJobs = useMemo(() => jobs.length > 0
+    ? jobs
+    : (offlineClock?.cache?.jobs ?? []).map((job) => ({ ...job, assignedEmployeeIds: [] })),
+  [jobs, offlineClock?.cache?.jobs]);
 
   useEffect(() => {
     if (!entry) return;
@@ -48,8 +52,8 @@ export default function ActiveShiftScreen() {
 
   const jobLabel = useMemo(() => {
     if (!entry) return 'No active job';
-    return resolveJobTitle(entry, jobs);
-  }, [entry, jobs]);
+    return resolveJobTitle(entry, effectiveJobs);
+  }, [effectiveJobs, entry]);
 
   const activityLabel = useMemo(() => {
     if (!entry) return 'No active activity';
@@ -89,7 +93,10 @@ export default function ActiveShiftScreen() {
       ) : (
         <>
           <View style={styles.hero}>
-            <StatusBadge label="Clocked in" tone="active" />
+            <StatusBadge
+              label={offlineClock?.effectiveState.currentShiftPendingCount ? 'Clocked in — Pending sync' : 'Clocked in'}
+              tone="active"
+            />
             <Text style={styles.heroLabel}>Current Activity</Text>
             <Text style={styles.heroActivity}>{entry.workType === 'non_billable' ? unbillableCategoryLabel : activityLabel}</Text>
             {entry.workType === 'job' ? <Text style={styles.heroJob}>{jobLabel}</Text> : null}
@@ -108,11 +115,11 @@ export default function ActiveShiftScreen() {
                   </View>
                   <View style={styles.segmentContent}>
                     <View style={styles.segmentTop}>
-                      <Text style={styles.segmentTitle}>{getWorkTypeLabel(segment.workType)}{segment.workType === 'job' ? ` — ${resolveEntryPrimaryLabel(segment, jobs)}` : ''}</Text>
+                      <Text style={styles.segmentTitle}>{getWorkTypeLabel(segment.workType)}{segment.workType === 'job' ? ` — ${resolveEntryPrimaryLabel(segment, effectiveJobs)}` : ''}</Text>
                       <Text style={styles.segmentDuration}>{formatDurationForEntry(segment, now)}</Text>
                     </View>
                     <Text style={styles.segmentTime}>{formatEntryTimeRange(segment, segment.id === entry.id, businessTimeZone)}</Text>
-                    {segment.workType === 'non_billable' ? <Text style={styles.segmentMeta}>{resolveEntryPrimaryLabel(segment, jobs)}</Text> : null}
+                    {segment.workType === 'non_billable' ? <Text style={styles.segmentMeta}>{resolveEntryPrimaryLabel(segment, effectiveJobs)}</Text> : null}
                   </View>
                 </View>
               ))}

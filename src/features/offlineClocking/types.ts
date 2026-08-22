@@ -55,6 +55,8 @@ export type EffectiveClockState = {
   localShiftId: string | null;
   pendingCount: number;
   needsAttentionCount: number;
+  currentShiftPendingCount: number;
+  currentShiftConflict: OfflineClockCommand | null;
   syncStatus: 'synced' | 'pending' | 'needs_attention';
   lastClockOutAt?: string;
 };

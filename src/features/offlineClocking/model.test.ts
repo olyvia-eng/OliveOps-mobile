@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
-import { buildEffectiveClockState } from './model';
+import { buildEffectiveClockState, nextReplayableCommand } from './model';
 import type { OfflineClockCommand } from './types';
 
 function command(
@@ -80,17 +80,37 @@ describe('offline clock effective state', () => {
     expect(state.syncStatus).toBe('pending');
   });
 
-  it('surfaces needs-attention state without deleting later evidence', () => {
+  it('keeps historical attention separate from a newer effective shift', () => {
     const failed = command('1', 'clock_in', '2026-08-20T11:02:00.000Z', {
       employeeId: 'emp-1', workType: 'job', jobIds: ['job-a'],
     }, 'needs_attention');
-    const later = command('2', 'clock_out', '2026-08-20T20:32:00.000Z', {
-      breakMinutes: 0, notes: '',
+    const later = command('2', 'clock_in', '2026-08-21T11:02:00.000Z', {
+      employeeId: 'emp-1', workType: 'job', jobIds: ['job-b'],
     });
+    later.localShiftId = 'shift-2';
 
     const state = buildEffectiveClockState(null, [failed, later]);
-    expect(state.pendingCount).toBe(2);
+    expect(state.activeEntry).toEqual(expect.objectContaining({ jobIds: ['job-b'] }));
+    expect(state.localShiftId).toBe('shift-2');
+    expect(state.pendingCount).toBe(1);
     expect(state.needsAttentionCount).toBe(1);
-    expect(state.syncStatus).toBe('needs_attention');
+    expect(state.currentShiftPendingCount).toBe(1);
+    expect(state.currentShiftConflict).toBeNull();
+    expect(state.syncStatus).toBe('pending');
+  });
+
+  it('replays a newer shift without bypassing a conflict in the same shift', () => {
+    const failed = command('1', 'clock_in', '2026-08-20T11:02:00.000Z', {
+      employeeId: 'emp-1', workType: 'job', jobIds: ['job-a'],
+    }, 'needs_attention');
+    const blocked = command('2', 'clock_out', '2026-08-20T12:02:00.000Z', {
+      breakMinutes: 0, notes: '',
+    });
+    const newer = command('3', 'clock_in', '2026-08-21T11:02:00.000Z', {
+      employeeId: 'emp-1', workType: 'job', jobIds: ['job-b'],
+    });
+    newer.localShiftId = 'shift-2';
+
+    expect(nextReplayableCommand([failed, blocked, newer])).toBe(newer);
   });
 });

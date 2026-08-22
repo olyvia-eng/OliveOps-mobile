@@ -31,15 +31,13 @@ export function buildEffectiveClockState(
   const unresolved = commands
     .filter((command) => command.status !== 'synced')
     .sort((left, right) => left.queuedAt.localeCompare(right.queuedAt) || left.id.localeCompare(right.id));
-  const needsAttentionCount = unresolved.filter((command) => command.status === 'needs_attention').length;
+  const pending = unresolved.filter((command) => command.status !== 'needs_attention');
+  const needsAttention = unresolved.filter((command) => command.status === 'needs_attention');
   let activeEntry = serverActiveEntry;
-  let localShiftId = serverActiveEntry
-    ? unresolved[0]?.localShiftId ?? `server:${serverActiveEntry.id}`
-    : null;
+  let localShiftId = serverActiveEntry ? `server:${serverActiveEntry.id}` : null;
   let lastClockOutAt: string | undefined;
 
-  for (const command of unresolved) {
-    if (command.status === 'needs_attention') break;
+  for (const command of pending) {
     if (command.type === 'clock_in') {
       const payload = command.logicalPayload as OfflineClockInPayload;
       activeEntry = {
@@ -73,16 +71,40 @@ export function buildEffectiveClockState(
     void payload;
   }
 
+  const currentShiftConflict = needsAttention.find((command) => command.localShiftId === localShiftId) ?? null;
+  const currentShiftPendingCount = localShiftId
+    ? pending.filter((command) => command.localShiftId === localShiftId).length
+    : 0;
+
   return {
     activeEntry,
     localShiftId,
-    pendingCount: unresolved.length,
-    needsAttentionCount,
-    syncStatus: needsAttentionCount > 0 ? 'needs_attention' : unresolved.length > 0 ? 'pending' : 'synced',
+    pendingCount: pending.length,
+    needsAttentionCount: needsAttention.length,
+    currentShiftPendingCount,
+    currentShiftConflict,
+    syncStatus: currentShiftConflict ? 'needs_attention' : currentShiftPendingCount > 0 ? 'pending' : 'synced',
     lastClockOutAt,
   };
 }
 
 export function blocksFollowingCommands(command: OfflineClockCommand) {
   return command.status === 'needs_attention';
+}
+
+export function nextReplayableCommand(commands: OfflineClockCommand[]) {
+  const blockedShiftIds = new Set<string>();
+  const ordered = commands
+    .filter((command) => command.status !== 'synced')
+    .sort((left, right) => left.queuedAt.localeCompare(right.queuedAt) || left.id.localeCompare(right.id));
+
+  for (const command of ordered) {
+    if (blocksFollowingCommands(command)) {
+      blockedShiftIds.add(command.localShiftId);
+      continue;
+    }
+    if (!blockedShiftIds.has(command.localShiftId)) return command;
+  }
+
+  return null;
 }
