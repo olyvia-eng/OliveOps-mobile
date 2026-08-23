@@ -9,8 +9,9 @@ import { StatusBanner } from '@/components/StatusBanner';
 import { UnbillableCategorySelector } from '@/components/UnbillableCategorySelector';
 import { ActivitySelector } from '@/components/ActivitySelector';
 import { ListRow, ScreenHeader, SectionHeader } from '@/components/MobilePrimitives';
-import { getWorkTypeLabel, resolveCurrentActiveEntry, resolveJobTitle } from '@/features/clocking/presentation';
+import { getWorkTypeLabel, resolveJobTitle } from '@/features/clocking/presentation';
 import { useClockingActions } from '@/hooks/useClockingActions';
+import { useEffectiveClockState } from '@/hooks/useEffectiveClockState';
 import { useFormsActions } from '@/hooks/useFormsActions';
 import { useUnbillableCategories } from '@/hooks/useUnbillableCategories';
 import { createRequestMeta } from '@/services/requestGuards';
@@ -31,8 +32,9 @@ type ActivityOption = {
 
 export default function SwitchActivityScreen() {
   const { user } = useAuthStore();
-  const { currentActiveEntryId, jobs, timeEntries } = useClockingStore();
+  const { jobs } = useClockingStore();
   const offlineClock = useOptionalOfflineClockStore();
+  const effectiveClock = useEffectiveClockState();
   const { loading, refreshWorkContext, switchActivity } = useClockingActions();
   const { getRequiredForms, refreshForms } = useFormsActions();
   const { workflow, startWorkflow, clearWorkflow } = useFormsWorkflowStore();
@@ -61,11 +63,13 @@ export default function SwitchActivityScreen() {
     void refreshWorkContext();
   }, [refreshWorkContext]);
 
-  const activeEntry = useMemo(() => {
-    const effectiveEntries = offlineClock?.effectiveTimeEntries ?? timeEntries;
-    const effectiveActiveId = offlineClock?.effectiveCurrentActiveEntryId ?? currentActiveEntryId;
-    return resolveCurrentActiveEntry(effectiveEntries, user?.employeeId, effectiveActiveId);
-  }, [currentActiveEntryId, offlineClock?.effectiveCurrentActiveEntryId, offlineClock?.effectiveTimeEntries, timeEntries, user?.employeeId]);
+  const activeEntry = effectiveClock.activeEntry;
+
+  useEffect(() => {
+    if (effectiveClock.hydrated && effectiveClock.effectiveStatus === 'clocked_out_pending') {
+      router.replace('/home');
+    }
+  }, [effectiveClock.effectiveStatus, effectiveClock.hydrated]);
 
   const assignedJobs = useMemo(() => {
     const employeeId = user?.employeeId;

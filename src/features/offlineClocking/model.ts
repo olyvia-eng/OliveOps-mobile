@@ -18,7 +18,6 @@ function applyActivity(
     jobIds: payload.jobIds,
     unbillableCategoryId: payload.unbillableCategoryId,
     unbillableCategoryName: undefined,
-    clockIn: command.clientOccurredAt,
     clockOut: undefined,
     status: 'clocked_in',
   };
@@ -27,6 +26,7 @@ function applyActivity(
 export function buildEffectiveClockState(
   serverActiveEntry: TimeEntry | null,
   commands: OfflineClockCommand[],
+  serverShiftStartedAt?: string,
 ): EffectiveClockState {
   const unresolved = commands
     .filter((command) => command.status !== 'synced')
@@ -35,6 +35,8 @@ export function buildEffectiveClockState(
   const needsAttention = unresolved.filter((command) => command.status === 'needs_attention');
   let activeEntry = serverActiveEntry;
   let localShiftId = serverActiveEntry ? `server:${serverActiveEntry.id}` : null;
+  let shiftStartedAt = serverShiftStartedAt ?? serverActiveEntry?.clockIn;
+  let currentSegmentStartedAt = serverActiveEntry?.clockIn;
   let lastClockOutAt: string | undefined;
 
   for (const command of pending) {
@@ -53,6 +55,8 @@ export function buildEffectiveClockState(
         status: 'clocked_in',
       };
       localShiftId = command.localShiftId;
+      shiftStartedAt = command.clientOccurredAt;
+      currentSegmentStartedAt = command.clientOccurredAt;
       lastClockOutAt = undefined;
       continue;
     }
@@ -61,12 +65,14 @@ export function buildEffectiveClockState(
 
     if (command.type === 'switch_activity') {
       activeEntry = applyActivity(activeEntry, command, command.logicalPayload as OfflineSwitchPayload);
+      currentSegmentStartedAt = command.clientOccurredAt;
       continue;
     }
 
     const payload = command.logicalPayload as OfflineClockOutPayload;
     activeEntry = null;
     localShiftId = command.localShiftId;
+    currentSegmentStartedAt = undefined;
     lastClockOutAt = command.clientOccurredAt;
     void payload;
   }
@@ -75,9 +81,25 @@ export function buildEffectiveClockState(
   const currentShiftPendingCount = localShiftId
     ? pending.filter((command) => command.localShiftId === localShiftId).length
     : 0;
+  const effectiveStatus = currentShiftConflict
+    ? 'needs_attention'
+    : activeEntry
+      ? currentShiftPendingCount > 0 ? 'clocked_in_pending' : 'clocked_in_synced'
+      : currentShiftPendingCount > 0 ? 'clocked_out_pending' : 'clocked_out_synced';
 
   return {
     activeEntry,
+    effectiveActiveEntryId: activeEntry?.id ?? null,
+    effectiveStatus,
+    shiftStartedAt,
+    currentSegmentStartedAt,
+    currentActivity: activeEntry ? {
+      workType: activeEntry.workType,
+      jobId: activeEntry.jobId,
+      jobIds: activeEntry.jobIds,
+      unbillableCategoryId: activeEntry.unbillableCategoryId,
+      unbillableCategoryName: activeEntry.unbillableCategoryName,
+    } : null,
     localShiftId,
     pendingCount: pending.length,
     needsAttentionCount: needsAttention.length,

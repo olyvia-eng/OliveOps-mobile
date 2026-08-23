@@ -45,9 +45,12 @@ describe('offline clock effective state', () => {
     expect(state.activeEntry).toEqual(expect.objectContaining({
       workType: 'drive_time',
       jobIds: [],
-      clockIn: '2026-08-20T16:03:00.000Z',
+      clockIn: '2026-08-20T11:02:00.000Z',
       status: 'clocked_in',
     }));
+    expect(state.effectiveStatus).toBe('clocked_in_pending');
+    expect(state.shiftStartedAt).toBe('2026-08-20T11:02:00.000Z');
+    expect(state.currentSegmentStartedAt).toBe('2026-08-20T16:03:00.000Z');
     expect(state.localShiftId).toBe('shift-1');
     expect(state.pendingCount).toBe(3);
     expect(state.syncStatus).toBe('pending');
@@ -76,8 +79,38 @@ describe('offline clock effective state', () => {
 
     const state = buildEffectiveClockState(serverEntry, [clockOut]);
     expect(state.activeEntry).toBeNull();
+    expect(state.effectiveActiveEntryId).toBeNull();
+    expect(state.effectiveStatus).toBe('clocked_out_pending');
+    expect(state.shiftStartedAt).toBe('2026-08-20T11:02:00.000Z');
     expect(state.lastClockOutAt).toBe('2026-08-20T20:32:00.000Z');
     expect(state.syncStatus).toBe('pending');
+  });
+
+  it('does not resurrect a server shift when bootstrap repeats during pending clock-out', () => {
+    const serverEntry = {
+      id: 'entry-1', employeeId: 'emp-1', workType: 'job' as const, jobIds: ['job-a'],
+      clockIn: '2026-08-20T07:00:00.000Z', breakMinutes: 0, notes: '', status: 'clocked_in' as const,
+    };
+    const clockOut = command('2', 'clock_out', '2026-08-20T12:00:00.000Z', {
+      entryId: 'entry-1', breakMinutes: 0, notes: '',
+    });
+    clockOut.localShiftId = 'server:entry-1';
+
+    const refreshedState = buildEffectiveClockState(serverEntry, [clockOut]);
+    expect(refreshedState.effectiveStatus).toBe('clocked_out_pending');
+    expect(refreshedState.effectiveActiveEntryId).toBeNull();
+    expect(refreshedState.activeEntry).toBeNull();
+  });
+
+  it('does not remove a pending clock-in when bootstrap remains clocked out', () => {
+    const clockIn = command('1', 'clock_in', '2026-08-20T07:00:00.000Z', {
+      employeeId: 'emp-1', workType: 'job', jobIds: ['job-a'],
+    });
+
+    const refreshedState = buildEffectiveClockState(null, [clockIn]);
+    expect(refreshedState.effectiveStatus).toBe('clocked_in_pending');
+    expect(refreshedState.effectiveActiveEntryId).toContain('local-clock:shift-1');
+    expect(refreshedState.activeEntry?.clockIn).toBe('2026-08-20T07:00:00.000Z');
   });
 
   it('keeps historical attention separate from a newer effective shift', () => {
@@ -96,7 +129,33 @@ describe('offline clock effective state', () => {
     expect(state.needsAttentionCount).toBe(1);
     expect(state.currentShiftPendingCount).toBe(1);
     expect(state.currentShiftConflict).toBeNull();
+    expect(state.effectiveStatus).toBe('clocked_in_pending');
     expect(state.syncStatus).toBe('pending');
+  });
+
+  it('preserves shift start across multiple activity switches', () => {
+    const state = buildEffectiveClockState(null, [
+      command('1', 'clock_in', '2026-08-20T07:00:00.000Z', {
+        employeeId: 'emp-1', workType: 'job', jobIds: ['job-a'],
+      }),
+      command('2', 'switch_activity', '2026-08-20T09:00:00.000Z', {
+        workType: 'job', jobIds: ['job-b'],
+      }),
+      command('3', 'switch_activity', '2026-08-20T11:00:00.000Z', {
+        workType: 'drive_time', jobIds: [],
+      }),
+      command('4', 'switch_activity', '2026-08-20T12:00:00.000Z', {
+        workType: 'job', jobIds: ['job-c'],
+      }),
+    ]);
+
+    expect(state.activeEntry).toEqual(expect.objectContaining({
+      clockIn: '2026-08-20T07:00:00.000Z',
+      workType: 'job',
+      jobIds: ['job-c'],
+    }));
+    expect(state.shiftStartedAt).toBe('2026-08-20T07:00:00.000Z');
+    expect(state.currentSegmentStartedAt).toBe('2026-08-20T12:00:00.000Z');
   });
 
   it('replays a newer shift without bypassing a conflict in the same shift', () => {

@@ -10,6 +10,7 @@ import { UnbillableCategorySelector } from '@/components/UnbillableCategorySelec
 import { ActivitySelector } from '@/components/ActivitySelector';
 import { ListRow, ScreenHeader, SectionHeader } from '@/components/MobilePrimitives';
 import { useClockingActions } from '@/hooks/useClockingActions';
+import { useEffectiveClockState } from '@/hooks/useEffectiveClockState';
 import { useFormsActions } from '@/hooks/useFormsActions';
 import { useUnbillableCategories } from '@/hooks/useUnbillableCategories';
 import { createRequestMeta } from '@/services/requestGuards';
@@ -31,6 +32,7 @@ export default function ClockInScreen() {
   const { user } = useAuthStore();
   const { jobs } = useClockingStore();
   const offlineClock = useOptionalOfflineClockStore();
+  const effectiveClock = useEffectiveClockState();
   const { clockIn, loading, refreshWorkContext } = useClockingActions();
   const { getRequiredForms, refreshForms } = useFormsActions();
   const { workflow, startWorkflow, clearWorkflow } = useFormsWorkflowStore();
@@ -59,10 +61,14 @@ export default function ClockInScreen() {
   }, [refreshWorkContext]);
 
   useEffect(() => {
-    if (offlineClock?.hydrated && offlineClock.effectiveState.activeEntry) {
+    if (effectiveClock.hydrated && (
+      effectiveClock.effectiveStatus === 'clocked_in_pending'
+      || effectiveClock.effectiveStatus === 'clocked_in_synced'
+      || (effectiveClock.effectiveStatus === 'needs_attention' && effectiveClock.activeEntry)
+    )) {
       router.replace('/active-shift');
     }
-  }, [offlineClock?.effectiveState.activeEntry, offlineClock?.hydrated]);
+  }, [effectiveClock.activeEntry, effectiveClock.effectiveStatus, effectiveClock.hydrated]);
 
   const assignedJobs = useMemo(() => {
     const employeeId = user?.employeeId;

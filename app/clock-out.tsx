@@ -16,17 +16,16 @@ import {
   formatEntryTimeRange,
   getCurrentShiftSegments,
   getWorkTypeLabel,
-  resolveCurrentActiveEntry,
   resolveEntryPrimaryLabel,
   resolveJobTitle,
 } from '@/features/clocking/presentation';
 import { useClockingActions } from '@/hooks/useClockingActions';
+import { useEffectiveClockState } from '@/hooks/useEffectiveClockState';
 import { useFormsActions } from '@/hooks/useFormsActions';
 import { isOnline } from '@/services/connectivity';
 import { createRequestMeta } from '@/services/requestGuards';
 import { useAuthStore } from '@/store/authStore';
 import { useClockingStore } from '@/store/clockingStore';
-import { useOptionalOfflineClockStore } from '@/store/offlineClockContext';
 import { useFormsWorkflowStore } from '@/store/formsWorkflowStore';
 import { colors } from '@/theme/colors';
 import { toUserFacingError } from '@/utils/userFacingError';
@@ -67,8 +66,8 @@ function extensionForMimeType(mimeType: string) {
 
 export default function ClockOutScreen() {
   const { user, accessToken } = useAuthStore();
-  const { currentActiveEntryId, timeEntries, jobs, businessTimeZone } = useClockingStore();
-  const offlineClock = useOptionalOfflineClockStore();
+  const { jobs, businessTimeZone } = useClockingStore();
+  const effectiveClock = useEffectiveClockState();
   const { clockOut, loading, refreshWorkContext } = useClockingActions();
   const { getRequiredForms, refreshForms } = useFormsActions();
   const { workflow, startWorkflow, clearWorkflow } = useFormsWorkflowStore();
@@ -89,15 +88,17 @@ export default function ClockOutScreen() {
   const uploadingPhoto = attachments.some((attachment) => attachment.status === 'uploading');
   const hasIncompletePhoto = attachments.some((attachment) => attachment.status !== 'uploaded');
 
-  const activeEntry = useMemo(() => {
-    const effectiveEntries = offlineClock?.effectiveTimeEntries ?? timeEntries;
-    const effectiveActiveId = offlineClock?.effectiveCurrentActiveEntryId ?? currentActiveEntryId;
-    return resolveCurrentActiveEntry(effectiveEntries, user?.employeeId, effectiveActiveId);
-  }, [currentActiveEntryId, offlineClock?.effectiveCurrentActiveEntryId, offlineClock?.effectiveTimeEntries, timeEntries, user?.employeeId]);
+  const activeEntry = effectiveClock.activeEntry;
 
   useEffect(() => {
     void refreshWorkContext();
   }, [refreshWorkContext]);
+
+  useEffect(() => {
+    if (effectiveClock.hydrated && effectiveClock.effectiveStatus === 'clocked_out_pending') {
+      router.replace('/home');
+    }
+  }, [effectiveClock.effectiveStatus, effectiveClock.hydrated]);
 
   useEffect(() => {
     attachmentsRef.current = attachments;
@@ -125,11 +126,11 @@ export default function ClockOutScreen() {
 
   const shiftSegments = useMemo(
     () => getCurrentShiftSegments(
-      offlineClock?.effectiveTimeEntries ?? timeEntries,
+      effectiveClock.timeEntries,
       user?.employeeId,
-      offlineClock?.effectiveCurrentActiveEntryId ?? currentActiveEntryId,
+      effectiveClock.effectiveActiveEntryId,
     ),
-    [currentActiveEntryId, offlineClock?.effectiveCurrentActiveEntryId, offlineClock?.effectiveTimeEntries, timeEntries, user?.employeeId],
+    [effectiveClock.effectiveActiveEntryId, effectiveClock.timeEntries, user?.employeeId],
   );
   const totalShiftMinutes = useMemo(() => shiftSegments.reduce((total, segment) => {
     const startedAt = Date.parse(segment.clockIn);

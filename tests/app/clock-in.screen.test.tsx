@@ -60,6 +60,8 @@ const mockUseAuthStore = jest.fn(() => ({
 }));
 
 const mockUseClockingStore = jest.fn(() => ({
+  currentActiveEntryId: null,
+  timeEntries: [],
   jobs: [
     { id: 'job-1', title: 'Site A', status: 'scheduled', assignedEmployeeIds: ['emp-1'] },
   ],
@@ -198,7 +200,11 @@ describe('ClockInScreen', () => {
   it('routes an effective pending clock-in back to Active Shift', async () => {
     mockOfflineClock = {
       hydrated: true,
-      effectiveState: { activeEntry: { id: 'local-clock:shift-1:key-1' } },
+      effectiveState: {
+        activeEntry: { id: 'local-clock:shift-1:key-1' },
+        effectiveStatus: 'clocked_in_pending',
+      },
+      effectiveTimeEntries: [],
       cache: null,
     };
 

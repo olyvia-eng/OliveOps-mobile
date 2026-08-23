@@ -29,11 +29,17 @@ const mockClockingState = {
 };
 
 const mockUseClockingStore = jest.fn(() => mockClockingState);
+let mockOfflineClock: any;
 
 jest.mock('expo-router', () => ({
   router: {
     push: jest.fn(),
+    replace: jest.fn(),
   },
+}));
+
+jest.mock('@/store/offlineClockContext', () => ({
+  useOptionalOfflineClockStore: () => mockOfflineClock,
 }));
 
 jest.mock('@/store/authStore', () => ({
@@ -73,6 +79,34 @@ describe('ActiveShiftScreen', () => {
     mockClockingState.currentActiveEntryId = null;
     mockClockingState.activeShiftWarnings.possibleForgottenClockOut = false;
     mockClockingState.timeEntries = [];
+    mockOfflineClock = undefined;
+  });
+
+  it('does not resurrect the server entry after a hydrated offline clock-out', async () => {
+    mockClockingState.currentActiveEntryId = 'entry-1';
+    mockClockingState.timeEntries = [{
+      id: 'entry-1', employeeId: 'emp-1', jobId: 'job-1', workType: 'job',
+      clockIn: '2026-08-07T10:00:00.000Z', breakMinutes: 0, notes: '', status: 'clocked_in',
+    }];
+    mockOfflineClock = {
+      hydrated: true,
+      cache: null,
+      effectiveState: {
+        activeEntry: null,
+        effectiveActiveEntryId: null,
+        effectiveStatus: 'clocked_out_pending',
+      },
+      effectiveTimeEntries: [{ ...mockClockingState.timeEntries[0], status: 'clocked_out' }],
+    };
+
+    let tree: any;
+    await act(async () => {
+      tree = create(<ActiveShiftScreen />);
+    });
+
+    const renderedText = tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ');
+    expect(renderedText).not.toContain('Front Walkway');
+    expect(require('expo-router').router.replace).toHaveBeenCalledWith('/home');
   });
 
   it('shows no-active-shift state with Clock In CTA', async () => {

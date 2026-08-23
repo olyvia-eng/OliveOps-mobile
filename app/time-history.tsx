@@ -13,8 +13,8 @@ import {
   hasPendingCorrectionForEntry,
   isAuthoritativeActiveEntry,
   resolveEntryPrimaryLabel,
-  resolveCurrentActiveEntry,
 } from '@/features/clocking/presentation';
+import { useEffectiveClockState } from '@/hooks/useEffectiveClockState';
 import { useAuthStore } from '@/store/authStore';
 import { useClockingStore } from '@/store/clockingStore';
 import { getTodayEntries, getWeekTotalHours } from '@/api/timeEntriesApi';
@@ -22,10 +22,11 @@ import { colors, spacing } from '@/theme/colors';
 
 export default function TimeHistoryScreen() {
   const { user } = useAuthStore();
-  const { businessTimeZone, currentActiveEntryId, timeEntries, timeCorrections, jobs } = useClockingStore();
+  const { businessTimeZone, timeCorrections, jobs } = useClockingStore();
+  const effectiveClock = useEffectiveClockState();
   const effectiveTimeEntries = useMemo(
-    () => buildEffectiveTimeEntries(timeEntries, timeCorrections),
-    [timeCorrections, timeEntries],
+    () => buildEffectiveTimeEntries(effectiveClock.timeEntries, timeCorrections),
+    [effectiveClock.timeEntries, timeCorrections],
   );
   const todayEntries = useMemo(
     () => getTodayEntries(effectiveTimeEntries, businessTimeZone),
@@ -40,11 +41,7 @@ export default function TimeHistoryScreen() {
     [businessTimeZone, effectiveTimeEntries],
   );
   const weekTotalLabel = useMemo(() => formatDurationMinutes(weekTotal * 60), [weekTotal]);
-  const activeEntry = useMemo(
-    () => resolveCurrentActiveEntry(timeEntries, user?.employeeId, currentActiveEntryId),
-    [currentActiveEntryId, timeEntries, user?.employeeId],
-  );
-  const authoritativeActiveEntryId = activeEntry?.id ?? null;
+  const authoritativeActiveEntryId = effectiveClock.effectiveActiveEntryId;
 
   return (
     <SafeAreaView style={styles.safe} edges={['left', 'right']}>

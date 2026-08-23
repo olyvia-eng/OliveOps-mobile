@@ -13,10 +13,10 @@ import {
   formatElapsedShort,
   getGreetingForTime,
   getWorkTypeLabel,
-  resolveCurrentActiveEntry,
   resolveJobTitle,
 } from '@/features/clocking/presentation';
 import { useClockingActions } from '@/hooks/useClockingActions';
+import { useEffectiveClockState } from '@/hooks/useEffectiveClockState';
 import { useFormsActions } from '@/hooks/useFormsActions';
 import { useAuthStore } from '@/store/authStore';
 import { useClockingStore } from '@/store/clockingStore';
@@ -27,8 +27,9 @@ import { formatBusinessDate, formatBusinessTime } from '@/utils/businessTime';
 
 export default function HomeScreen() {
   const { user } = useAuthStore();
-  const { activeShiftWarnings, businessTimeZone, currentActiveEntryId, timeEntries, jobs } = useClockingStore();
+  const { activeShiftWarnings, businessTimeZone, jobs } = useClockingStore();
   const offlineClock = useOptionalOfflineClockStore();
+  const effectiveClock = useEffectiveClockState();
   const { refreshWorkContext } = useClockingActions();
   const { refreshForms } = useFormsActions();
   const { toDo } = useFormsStore();
@@ -51,13 +52,7 @@ export default function HomeScreen() {
     void refreshForms();
   }, [refreshForms]);
 
-  const activeShift = useMemo(() => {
-    return resolveCurrentActiveEntry(
-      offlineClock?.effectiveTimeEntries ?? timeEntries,
-      user?.employeeId,
-      offlineClock?.effectiveCurrentActiveEntryId ?? currentActiveEntryId,
-    );
-  }, [currentActiveEntryId, offlineClock?.effectiveCurrentActiveEntryId, offlineClock?.effectiveTimeEntries, timeEntries, user?.employeeId]);
+  const activeShift = effectiveClock.activeEntry;
   const effectiveJobs = useMemo(() => jobs.length > 0
     ? jobs
     : (offlineClock?.cache?.jobs ?? []).map((job) => ({ ...job, assignedEmployeeIds: [] })),
@@ -80,14 +75,14 @@ export default function HomeScreen() {
 
   const runningDuration = useMemo(() => {
     if (!activeShift) return '0h 0m';
-    return formatElapsedShort(activeShift.clockIn, now);
-  }, [activeShift, now]);
+    return formatElapsedShort(effectiveClock.shiftStartedAt ?? activeShift.clockIn, now);
+  }, [activeShift, effectiveClock.shiftStartedAt, now]);
 
   const showLongShiftWarning = Boolean(activeShift && activeShiftWarnings.possibleForgottenClockOut);
   const longShiftWarning = useMemo(() => {
     if (!activeShift) return '';
-    return formatLongShiftWarning(activeShift.clockIn, now);
-  }, [activeShift, now]);
+    return formatLongShiftWarning(effectiveClock.shiftStartedAt ?? activeShift.clockIn, now);
+  }, [activeShift, effectiveClock.shiftStartedAt, now]);
 
   const greeting = useMemo(() => getGreetingForTime(user?.name || 'Crew Member'), [user?.name]);
   const todayLabel = useMemo(
@@ -114,7 +109,7 @@ export default function HomeScreen() {
       {activeShift ? (
         <View style={styles.activeCard}>
           <StatusBadge
-            label={offlineClock?.effectiveState.currentShiftPendingCount ? 'Clocked in — Pending sync' : 'Active Shift'}
+            label={effectiveClock.effectiveStatus === 'clocked_in_pending' ? 'Clocked in — Pending sync' : 'Active Shift'}
             tone="active"
           />
           <Text style={styles.activeTitle}>You're clocked in</Text>
@@ -127,7 +122,7 @@ export default function HomeScreen() {
             </View>
             <View>
               <Text style={styles.metricLabel}>Started</Text>
-              <Text style={styles.metricValue}>{formatBusinessTime(new Date(activeShift.clockIn), businessTimeZone, { hour: 'numeric', minute: '2-digit' })}</Text>
+              <Text style={styles.metricValue}>{formatBusinessTime(new Date(effectiveClock.shiftStartedAt ?? activeShift.clockIn), businessTimeZone, { hour: 'numeric', minute: '2-digit' })}</Text>
             </View>
           </View>
           <Pressable accessibilityRole="button" onPress={() => router.push('/active-shift')}>
@@ -136,7 +131,7 @@ export default function HomeScreen() {
         </View>
       ) : (
         <ActionCard>
-          <StatusBadge label={offlineClock?.effectiveState.lastClockOutAt && offlineClock.effectiveState.currentShiftPendingCount
+          <StatusBadge label={effectiveClock.effectiveStatus === 'clocked_out_pending'
             ? 'Clocked out — Pending sync'
             : 'Not clocked in'} />
           <Text style={styles.idleTitle}>Ready to start your shift?</Text>

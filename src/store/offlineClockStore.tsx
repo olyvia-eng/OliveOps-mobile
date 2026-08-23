@@ -12,7 +12,7 @@ import {
   type OfflineClockOutPayload,
   type OfflineSwitchPayload,
 } from '@/features/offlineClocking/types';
-import { resolveCurrentActiveEntry } from '@/features/clocking/presentation';
+import { getCurrentShiftSegments, resolveCurrentActiveEntry } from '@/features/clocking/presentation';
 import { scopeJobsForSession, scopeTimeEntriesForSession } from '@/features/clocking/scoping';
 import { beginRequest, endRequest } from '@/services/requestGuards';
 import {
@@ -85,9 +85,17 @@ export function OfflineClockProvider({ children }: { children: React.ReactNode }
     () => resolveCurrentActiveEntry(clocking.timeEntries, user?.employeeId, clocking.currentActiveEntryId),
     [clocking.currentActiveEntryId, clocking.timeEntries, user?.employeeId],
   );
+  const serverShiftStartedAt = useMemo(
+    () => getCurrentShiftSegments(
+      clocking.timeEntries,
+      user?.employeeId,
+      clocking.currentActiveEntryId,
+    )[0]?.clockIn,
+    [clocking.currentActiveEntryId, clocking.timeEntries, user?.employeeId],
+  );
   const effectiveState = useMemo(
-    () => buildEffectiveClockState(serverActiveEntry, commands),
-    [commands, serverActiveEntry],
+    () => buildEffectiveClockState(serverActiveEntry, commands, serverShiftStartedAt),
+    [commands, serverActiveEntry, serverShiftStartedAt],
   );
   const effectiveTimeEntries = useMemo(() => {
     if (!effectiveState.activeEntry) {
@@ -366,7 +374,7 @@ export function OfflineClockProvider({ children }: { children: React.ReactNode }
     cache,
     effectiveState,
     effectiveTimeEntries,
-    effectiveCurrentActiveEntryId: effectiveState.activeEntry?.id ?? null,
+    effectiveCurrentActiveEntryId: effectiveState.effectiveActiveEntryId,
     submitClockIn,
     submitSwitchActivity,
     submitClockOut,

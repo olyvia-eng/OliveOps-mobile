@@ -4,6 +4,12 @@ import type { Job, TimeEntry, UnbillableCategory } from '@/types/domain';
 export const OFFLINE_CLOCK_SCHEMA_VERSION = 1 as const;
 
 export type OfflineClockStatus = 'pending' | 'syncing' | 'needs_attention' | 'synced';
+export type EffectiveClockStatus =
+  | 'clocked_out_synced'
+  | 'clocked_out_pending'
+  | 'clocked_in_synced'
+  | 'clocked_in_pending'
+  | 'needs_attention';
 
 export type OfflineClockInPayload = Omit<ClockInRequest, 'requestId' | 'idempotencyKey' | 'clientOccurredAt'>;
 export type OfflineSwitchPayload = Omit<SwitchActivityRequest, 'requestId' | 'idempotencyKey' | 'clientOccurredAt'>;
@@ -52,6 +58,14 @@ export type OfflineClockCache = {
 
 export type EffectiveClockState = {
   activeEntry: TimeEntry | null;
+  effectiveActiveEntryId: string | null;
+  effectiveStatus: EffectiveClockStatus;
+  shiftStartedAt?: string;
+  currentSegmentStartedAt?: string;
+  currentActivity: Pick<
+    TimeEntry,
+    'workType' | 'jobId' | 'jobIds' | 'unbillableCategoryId' | 'unbillableCategoryName'
+  > | null;
   localShiftId: string | null;
   pendingCount: number;
   needsAttentionCount: number;

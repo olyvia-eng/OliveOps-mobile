@@ -12,10 +12,10 @@ import {
   formatEntryTimeRange,
   getCorrectionTypeLabel,
   getWorkTypeLabel,
-  resolveCurrentActiveEntry,
   resolveJobTitle,
 } from '@/features/clocking/presentation';
 import { useClockingActions } from '@/hooks/useClockingActions';
+import { useEffectiveClockState } from '@/hooks/useEffectiveClockState';
 import { useTimeCorrectionActions } from '@/hooks/useTimeCorrectionActions';
 import { useUnbillableCategories } from '@/hooks/useUnbillableCategories';
 import { useAuthStore } from '@/store/authStore';
@@ -37,7 +37,8 @@ const REQUEST_TYPE_OPTIONS: Array<{ id: TimeCorrectionRequestType; label: string
 export default function RequestTimeCorrectionScreen() {
   const params = useLocalSearchParams<{ timeEntryId?: string; requestType?: TimeCorrectionRequestType; postClockOut?: string }>();
   const { user } = useAuthStore();
-  const { businessTimeZone, jobs, timeEntries, currentActiveEntryId } = useClockingStore();
+  const { businessTimeZone, jobs, timeEntries } = useClockingStore();
+  const effectiveClock = useEffectiveClockState();
   const { clockOut, loading: clockingLoading } = useClockingActions();
   const { submitCorrection, loading } = useTimeCorrectionActions();
   const {
@@ -70,10 +71,7 @@ export default function RequestTimeCorrectionScreen() {
     return timeEntries.find((entry) => entry.id === entryId) ?? null;
   }, [entryId, timeEntries]);
 
-  const activeEntry = useMemo(
-    () => resolveCurrentActiveEntry(timeEntries, user?.employeeId, currentActiveEntryId),
-    [currentActiveEntryId, timeEntries, user?.employeeId],
-  );
+  const activeEntry = effectiveClock.activeEntry;
 
   const requiresActivitySelection = requestType === 'wrong_activity' || requestType === 'forgot_clock_in';
   const requiresUnbillableCategory = requiresActivitySelection && requestedActivity === 'non_billable';

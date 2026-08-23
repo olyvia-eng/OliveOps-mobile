@@ -15,10 +15,10 @@ import {
   getCurrentShiftSegments,
   getWorkTypeLabel,
   resolveEntryPrimaryLabel,
-  resolveCurrentActiveEntry,
   resolveJobTitle,
   resolveUnbillableCategoryName,
 } from '@/features/clocking/presentation';
+import { useEffectiveClockState } from '@/hooks/useEffectiveClockState';
 import { useAuthStore } from '@/store/authStore';
 import { useClockingStore } from '@/store/clockingStore';
 import { useOptionalOfflineClockStore } from '@/store/offlineClockContext';
@@ -27,21 +27,22 @@ import { formatBusinessTime } from '@/utils/businessTime';
 
 export default function ActiveShiftScreen() {
   const { user } = useAuthStore();
-  const { activeShiftWarnings, businessTimeZone, currentActiveEntryId, timeEntries, jobs } = useClockingStore();
+  const { activeShiftWarnings, businessTimeZone, jobs } = useClockingStore();
   const offlineClock = useOptionalOfflineClockStore();
+  const effectiveClock = useEffectiveClockState();
   const [now, setNow] = useState(Date.now());
 
-  const entry = useMemo(() => {
-    return resolveCurrentActiveEntry(
-      offlineClock?.effectiveTimeEntries ?? timeEntries,
-      user?.employeeId,
-      offlineClock?.effectiveCurrentActiveEntryId ?? currentActiveEntryId,
-    );
-  }, [currentActiveEntryId, offlineClock?.effectiveCurrentActiveEntryId, offlineClock?.effectiveTimeEntries, timeEntries, user?.employeeId]);
+  const entry = effectiveClock.activeEntry;
   const effectiveJobs = useMemo(() => jobs.length > 0
     ? jobs
     : (offlineClock?.cache?.jobs ?? []).map((job) => ({ ...job, assignedEmployeeIds: [] })),
   [jobs, offlineClock?.cache?.jobs]);
+
+  useEffect(() => {
+    if (effectiveClock.hydrated && effectiveClock.effectiveStatus === 'clocked_out_pending') {
+      router.replace('/home');
+    }
+  }, [effectiveClock.effectiveStatus, effectiveClock.hydrated]);
 
   useEffect(() => {
     if (!entry) return;
@@ -67,11 +68,11 @@ export default function ActiveShiftScreen() {
 
   const shiftSegments = useMemo(
     () => getCurrentShiftSegments(
-      offlineClock?.effectiveTimeEntries ?? timeEntries,
+      effectiveClock.timeEntries,
       user?.employeeId,
-      offlineClock?.effectiveCurrentActiveEntryId ?? currentActiveEntryId,
+      effectiveClock.effectiveActiveEntryId,
     ),
-    [currentActiveEntryId, offlineClock?.effectiveCurrentActiveEntryId, offlineClock?.effectiveTimeEntries, timeEntries, user?.employeeId],
+    [effectiveClock.effectiveActiveEntryId, effectiveClock.timeEntries, user?.employeeId],
   );
 
   const showLongShiftWarning = Boolean(entry && activeShiftWarnings.possibleForgottenClockOut);
@@ -94,14 +95,17 @@ export default function ActiveShiftScreen() {
         <>
           <View style={styles.hero}>
             <StatusBadge
-              label={offlineClock?.effectiveState.currentShiftPendingCount ? 'Clocked in — Pending sync' : 'Clocked in'}
+              label={effectiveClock.effectiveStatus === 'clocked_in_pending' ? 'Clocked in — Pending sync' : 'Clocked in'}
               tone="active"
             />
             <Text style={styles.heroLabel}>Current Activity</Text>
             <Text style={styles.heroActivity}>{entry.workType === 'non_billable' ? unbillableCategoryLabel : activityLabel}</Text>
             {entry.workType === 'job' ? <Text style={styles.heroJob}>{jobLabel}</Text> : null}
-            <Text style={styles.elapsedClock}>{formatElapsedClock(entry.clockIn, now)}</Text>
-            <Text style={styles.heroMeta}>Started {formatBusinessTime(new Date(entry.clockIn), businessTimeZone, { hour: 'numeric', minute: '2-digit' })}</Text>
+            <Text style={styles.elapsedClock}>{formatElapsedClock(effectiveClock.shiftStartedAt ?? entry.clockIn, now)}</Text>
+            <Text style={styles.heroMeta}>Started {formatBusinessTime(new Date(effectiveClock.shiftStartedAt ?? entry.clockIn), businessTimeZone, { hour: 'numeric', minute: '2-digit' })}</Text>
+            {effectiveClock.currentSegmentStartedAt && effectiveClock.currentSegmentStartedAt !== effectiveClock.shiftStartedAt ? (
+              <Text style={styles.heroMeta}>Current activity since {formatBusinessTime(new Date(effectiveClock.currentSegmentStartedAt), businessTimeZone, { hour: 'numeric', minute: '2-digit' })}</Text>
+            ) : null}
           </View>
 
           <View style={styles.timelineSection}>
