@@ -20,6 +20,7 @@ import { useTimeCorrectionActions } from '@/hooks/useTimeCorrectionActions';
 import { useUnbillableCategories } from '@/hooks/useUnbillableCategories';
 import { useAuthStore } from '@/store/authStore';
 import { useClockingStore } from '@/store/clockingStore';
+import { useOptionalOfflineClockStore } from '@/store/offlineClockContext';
 import { colors } from '@/theme/colors';
 import type { CreateTimeCorrectionRequest } from '@/types/api';
 import type { TimeCorrectionRequestType, TimeEntryWorkType } from '@/types/domain';
@@ -44,10 +45,14 @@ export default function RequestTimeCorrectionScreen() {
     requestedActivity?: TimeEntryWorkType;
     requestedJobId?: string;
     requestedUnbillableCategoryId?: string;
+    offlineCommandId?: string;
+    localShiftId?: string;
+    offlineReason?: string;
   }>();
   const { user } = useAuthStore();
   const { businessTimeZone, jobs, timeEntries } = useClockingStore();
   const effectiveClock = useEffectiveClockState();
+  const offlineClock = useOptionalOfflineClockStore();
   const { clockOut, loading: clockingLoading } = useClockingActions();
   const { submitCorrection, loading } = useTimeCorrectionActions();
   const {
@@ -77,15 +82,18 @@ export default function RequestTimeCorrectionScreen() {
   const [requestedActivity, setRequestedActivity] = useState<TimeEntryWorkType>(params.requestedActivity ?? 'job');
   const [requestedJobId, setRequestedJobId] = useState<string>(params.requestedJobId ?? '');
   const [requestedUnbillableCategoryId, setRequestedUnbillableCategoryId] = useState<string>(params.requestedUnbillableCategoryId ?? '');
-  const [reason, setReason] = useState('');
+  const [reason, setReason] = useState(typeof params.offlineReason === 'string' ? params.offlineReason : '');
   const [retryMeta, setRetryMeta] = useState<{ requestId: string; idempotencyKey: string } | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const targetEntry = useMemo(() => {
     if (!entryId) return null;
-    return timeEntries.find((entry) => entry.id === entryId) ?? null;
-  }, [entryId, timeEntries]);
+    return effectiveClock.timeEntries.find((entry) => entry.id === entryId)
+      ?? timeEntries.find((entry) => entry.id === entryId)
+      ?? null;
+  }, [effectiveClock.timeEntries, entryId, timeEntries]);
+  const targetEntryId = targetEntry?.id ?? entryId;
 
   const activeEntry = effectiveClock.activeEntry;
 
@@ -120,8 +128,8 @@ export default function RequestTimeCorrectionScreen() {
       reason: reason.trim(),
     };
 
-    if (targetEntry) {
-      payload.timeEntryId = targetEntry.id;
+    if (targetEntryId) {
+      payload.timeEntryId = targetEntryId;
     }
 
     if (requestType === 'forgot_clock_in') {
@@ -176,12 +184,12 @@ export default function RequestTimeCorrectionScreen() {
       return;
     }
 
-    if (requestType !== 'forgot_clock_in' && !targetEntry) {
+    if (requestType !== 'forgot_clock_in' && !targetEntryId) {
       setError('A historical entry is required for this correction type.');
       return;
     }
 
-    if (requestType !== 'forgot_clock_in' && targetEntry?.status !== 'clocked_out' && !requiresClockOutFirst) {
+    if (requestType !== 'forgot_clock_in' && targetEntry && targetEntry.status !== 'clocked_out' && !requiresClockOutFirst) {
       setError('You are still clocked in. Clock out first, then submit this correction.');
       return;
     }
@@ -232,7 +240,7 @@ export default function RequestTimeCorrectionScreen() {
 
     const meta = metaOverride
       ?? retryMeta
-      ?? createRequestMeta(targetEntry?.id ?? user?.employeeId ?? requestType);
+      ?? createRequestMeta(targetEntryId ?? user?.employeeId ?? requestType);
     setRetryMeta(meta);
     const payload = getPayload(meta);
     if (!payload) {
@@ -244,6 +252,10 @@ export default function RequestTimeCorrectionScreen() {
     if (!result.ok) {
       setError(result.error || 'Could not submit correction request.');
       return;
+    }
+
+    if (typeof params.offlineCommandId === 'string' && result.correction?.id) {
+      await offlineClock?.resolveCommandWithCorrection(params.offlineCommandId, result.correction.id);
     }
 
     setRetryMeta(null);
@@ -272,8 +284,9 @@ export default function RequestTimeCorrectionScreen() {
   const requiresClockOutFirst = Boolean(
     requestType === 'forgot_clock_out'
     && activeEntry
-    && (!targetEntry || targetEntry.id === activeEntry.id),
+    && (!targetEntryId || targetEntryId === activeEntry.id),
   );
+  const activeOfflineCorrectionBlocked = Boolean(params.offlineCommandId && requiresClockOutFirst);
 
   return (
     <Screen>
@@ -307,14 +320,23 @@ export default function RequestTimeCorrectionScreen() {
 
       {requiresClockOutFirst ? (
         <View style={styles.section}>
-          <StatusBanner tone="info" message="You are still clocked in." />
-          <Text style={styles.helperText}>Did you forget to clock out earlier?</Text>
-          <PrimaryActionButton label="Clock Out Now" onPress={() => router.push('/clock-out')} />
-          <PrimaryActionButton
-            label={submitting ? 'Submitting...' : 'Clock Out & Request Correction'}
-            disabled={submitting}
-            onPress={() => { void onClockOutAndRequestCorrection(); }}
+          <StatusBanner
+            tone={activeOfflineCorrectionBlocked ? 'error' : 'info'}
+            message={activeOfflineCorrectionBlocked
+              ? 'This shift is still active on the server. A correction cannot be requested until active-shift correction support is available.'
+              : 'You are still clocked in.'}
           />
+          {!activeOfflineCorrectionBlocked ? (
+            <>
+              <Text style={styles.helperText}>Did you forget to clock out earlier?</Text>
+              <PrimaryActionButton label="Clock Out Now" onPress={() => router.push('/clock-out')} />
+              <PrimaryActionButton
+                label={submitting ? 'Submitting...' : 'Clock Out & Request Correction'}
+                disabled={submitting}
+                onPress={() => { void onClockOutAndRequestCorrection(); }}
+              />
+            </>
+          ) : null}
         </View>
       ) : null}
 

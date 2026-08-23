@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
-import { buildEffectiveClockState, nextReplayableCommand } from './model';
+import { analyzeCommandDependencies, buildEffectiveClockState, nextReplayableCommand } from './model';
 import type { OfflineClockCommand } from './types';
 
 function command(
@@ -171,5 +171,31 @@ describe('offline clock effective state', () => {
     newer.localShiftId = 'shift-2';
 
     expect(nextReplayableCommand([failed, blocked, newer])).toBe(newer);
+  });
+
+  it('counts one root conflict while deriving later same-shift commands as blocked', () => {
+    const failed = command('1', 'switch_activity', '2026-08-20T11:02:00.000Z', {
+      workType: 'drive_time', jobIds: [],
+    }, 'needs_attention');
+    const blockedSwitch = command('2', 'switch_activity', '2026-08-20T12:02:00.000Z', {
+      workType: 'job', jobIds: ['job-b'],
+    });
+    const blockedOut = command('3', 'clock_out', '2026-08-20T13:02:00.000Z', {
+      breakMinutes: 0, notes: '',
+    });
+    const independent = command('4', 'clock_in', '2026-08-21T08:00:00.000Z', {
+      employeeId: 'emp-1', workType: 'job', jobIds: ['job-c'],
+    });
+    independent.localShiftId = 'shift-2';
+
+    const dependencies = analyzeCommandDependencies([blockedOut, independent, failed, blockedSwitch]);
+    const state = buildEffectiveClockState(null, [blockedOut, independent, failed, blockedSwitch]);
+
+    expect(dependencies.actionable).toEqual([failed]);
+    expect(dependencies.blocked).toEqual([blockedSwitch, blockedOut]);
+    expect(dependencies.replayable).toEqual([independent]);
+    expect(state.needsAttentionCount).toBe(1);
+    expect(state.blockedCount).toBe(2);
+    expect(state.pendingCount).toBe(1);
   });
 });

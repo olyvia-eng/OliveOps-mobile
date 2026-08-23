@@ -38,6 +38,8 @@ export type OfflineClockCommand = {
   retryCount: number;
   lastErrorCategory?: string;
   resolvedServerEntryId?: string;
+  correctionRequestId?: string;
+  correctionRequestedAt?: string;
 };
 
 export type OfflineShiftMapping = {
@@ -70,7 +72,10 @@ export type EffectiveClockState = {
   localShiftId: string | null;
   pendingCount: number;
   needsAttentionCount: number;
+  blockedCount: number;
+  correctionRequestedCount: number;
   currentShiftPendingCount: number;
+  currentShiftBlockedCount: number;
   currentShiftConflict: OfflineClockCommand | null;
   syncStatus: 'synced' | 'pending' | 'needs_attention';
   lastClockOutAt?: string;

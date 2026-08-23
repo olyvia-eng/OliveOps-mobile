@@ -6,6 +6,7 @@ let mockParams: any = {};
 let mockCorrectionLoading = false;
 const mockSubmitCorrection = jest.fn();
 const mockClockOut = jest.fn();
+const mockResolveCommandWithCorrection = jest.fn();
 const mockLoadUnbillableCategoriesIfNeeded = jest.fn().mockResolvedValue(undefined);
 
 const mockUseAuthStore = jest.fn(() => ({
@@ -101,6 +102,10 @@ jest.mock('@/store/clockingStore', () => ({
   useClockingStore: () => mockUseClockingStore(),
 }));
 
+jest.mock('@/store/offlineClockContext', () => ({
+  useOptionalOfflineClockStore: () => ({ resolveCommandWithCorrection: mockResolveCommandWithCorrection }),
+}));
+
 jest.mock('@/hooks/useClockingActions', () => ({
   useClockingActions: () => mockUseClockingActions(),
 }));
@@ -154,6 +159,7 @@ describe('RequestTimeCorrectionScreen', () => {
     mockClockingState.currentActiveEntryId = null;
     mockSubmitCorrection.mockReset();
     mockClockOut.mockReset();
+    mockResolveCommandWithCorrection.mockReset();
     mockLoadUnbillableCategoriesIfNeeded.mockClear();
     mockUseUnbillableCategories.mockReset();
     mockUseUnbillableCategories.mockReturnValue({
@@ -249,6 +255,62 @@ describe('RequestTimeCorrectionScreen', () => {
 
     const inputs = tree.root.findAllByType('textinput');
     expect(inputs.some((node: any) => node.props.value === '10:04')).toBe(true);
+  });
+
+  it('does not work around an active offline conflict by clocking out at the current time', async () => {
+    mockParams = {
+      requestType: 'forgot_clock_out',
+      timeEntryId: 'entry-active',
+      intendedAt: '2026-08-23T14:03:00.000Z',
+      offlineAction: 'clock_out',
+      offlineCommandId: 'failed-out',
+    };
+    mockClockingState.currentActiveEntryId = 'entry-active';
+
+    let tree: any;
+    await act(async () => {
+      tree = create(<RequestTimeCorrectionScreen />);
+    });
+
+    expect(tree.root.findAllByType('status-banner').map((node: any) => node.props.message))
+      .toContain('This shift is still active on the server. A correction cannot be requested until active-shift correction support is available.');
+    expect(tree.root.findAllByType('primary-button').some(
+      (node: any) => node.props.label === 'Clock Out & Request Correction',
+    )).toBe(false);
+    expect(mockClockOut).not.toHaveBeenCalled();
+  });
+
+  it('submits against a mapped server entry omitted from bootstrap and resolves the offline command', async () => {
+    mockParams = {
+      timeEntryId: 'mapped-entry-not-loaded',
+      offlineCommandId: 'failed-out',
+      localShiftId: 'local-shift-1',
+      requestType: 'forgot_clock_out',
+      intendedAt: '2026-08-23T14:03:00.000Z',
+      offlineAction: 'clock_out',
+      offlineReason: 'Offline clock-out could not sync.',
+    };
+
+    let tree: any;
+    await act(async () => {
+      tree = create(<RequestTimeCorrectionScreen />);
+    });
+
+    expect(tree.root.findByProps({ testID: 'correction-reason-input' }).props.value)
+      .toBe('Offline clock-out could not sync.');
+    await act(async () => {
+      await tree.root.findAllByType('primary-button')
+        .find((node: any) => node.props.label === 'Submit Request').props.onPress();
+    });
+
+    expect(mockSubmitCorrection).toHaveBeenCalledWith(expect.objectContaining({
+      timeEntryId: 'mapped-entry-not-loaded',
+      requestType: 'forgot_clock_out',
+      requestedClockOutAt: '2026-08-23T14:03:00.000Z',
+    }));
+    expect(mockResolveCommandWithCorrection).toHaveBeenCalledWith('failed-out', 'corr-1');
+    expect(tree.root.findAllByType('status-banner').map((node: any) => node.props.message))
+      .not.toContain('A historical entry is required for this correction type.');
   });
 
   it('clock out and request correction clocks out before creating correction', async () => {

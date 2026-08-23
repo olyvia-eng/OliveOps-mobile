@@ -411,6 +411,30 @@ describe('OfflineClockProvider', () => {
     expect(offlineClock.effectiveState.activeEntry?.id).toBe('server-entry-b');
   });
 
+  it('persists the correction relationship without marking the failed command synced', async () => {
+    const failed = command({
+      id: 'failed-out',
+      type: 'clock_out',
+      logicalPayload: { breakMinutes: 0, notes: '' },
+      status: 'needs_attention',
+      resolvedServerEntryId: 'server-entry-b',
+    });
+    mockStoredCommands.push(failed);
+    tree = await renderProvider();
+
+    await act(async () => {
+      await offlineClock.resolveCommandWithCorrection('failed-out', 'correction-1');
+    });
+
+    expect(mockStoredCommands[0]).toEqual(expect.objectContaining({
+      status: 'needs_attention',
+      correctionRequestId: 'correction-1',
+      correctionRequestedAt: expect.any(String),
+    }));
+    expect(offlineClock.effectiveState.needsAttentionCount).toBe(0);
+    expect(offlineClock.effectiveState.correctionRequestedCount).toBe(1);
+  });
+
   it('marks the first conflict for attention and does not send later commands', async () => {
     mockStoredCommands.push(
       command(),
@@ -479,6 +503,88 @@ describe('OfflineClockProvider', () => {
 
     expect(result).toEqual({ ok: false, error: 'You are already clocked in.' });
     expect(mockStoredCommands).toHaveLength(1);
+  });
+
+  it('persists one command when the same logical action is submitted twice concurrently', async () => {
+    mockClockIn.mockRejectedValue(new TypeError('offline'));
+    tree = await renderProvider();
+    const payload = { employeeId: 'employee-1', workType: 'job' as const, jobIds: ['job-1'] };
+    const meta = {
+      requestId: 'request-one-action',
+      idempotencyKey: 'key-one-action',
+      clientOccurredAt: '2026-08-20T10:00:00.000Z',
+    };
+
+    await act(async () => {
+      await Promise.all([
+        offlineClock.submitClockIn(payload, meta),
+        offlineClock.submitClockIn(payload, meta),
+      ]);
+    });
+
+    expect(mockStoredCommands.filter((item) => item.id === 'key-one-action')).toHaveLength(1);
+  });
+
+  it('keeps a newer shift mapping and replay independent from an older conflicted shift', async () => {
+    const oldConflict = command({
+      id: 'old-conflict',
+      localShiftId: 'shift-a',
+      status: 'needs_attention',
+      resolvedServerEntryId: 'server-entry-a',
+    });
+    const oldBlocked = command({
+      id: 'old-blocked',
+      localShiftId: 'shift-a',
+      type: 'clock_out',
+      logicalPayload: { breakMinutes: 0, notes: '' },
+      clientOccurredAt: '2026-08-20T11:00:00.000Z',
+      queuedAt: '2026-08-20T11:00:00.100Z',
+    });
+    const newClockIn = command({
+      id: 'new-in',
+      localShiftId: 'shift-b',
+      requestId: 'request-new-in',
+      idempotencyKey: 'new-in',
+      clientOccurredAt: '2026-08-21T10:00:00.000Z',
+      queuedAt: '2026-08-21T10:00:00.100Z',
+    });
+    const newSwitch = command({
+      id: 'new-switch',
+      localShiftId: 'shift-b',
+      type: 'switch_activity',
+      logicalPayload: { workType: 'drive_time', jobIds: [] },
+      requestId: 'request-new-switch',
+      idempotencyKey: 'new-switch',
+      clientOccurredAt: '2026-08-21T10:30:00.000Z',
+      queuedAt: '2026-08-21T10:30:00.100Z',
+    });
+    const newClockOut = command({
+      id: 'new-out',
+      localShiftId: 'shift-b',
+      type: 'clock_out',
+      logicalPayload: { breakMinutes: 0, notes: '' },
+      requestId: 'request-new-out',
+      idempotencyKey: 'new-out',
+      clientOccurredAt: '2026-08-21T11:00:00.000Z',
+      queuedAt: '2026-08-21T11:00:00.100Z',
+    });
+    mockStoredCommands.push(oldConflict, oldBlocked, newClockIn, newSwitch, newClockOut);
+    mockClockIn.mockResolvedValue({ ok: true, timeEntry: commandEntry('server-entry-b1') });
+    mockSwitchActivity.mockResolvedValue({
+      ok: true,
+      timeEntry: { ...commandEntry('server-entry-b2'), workType: 'drive_time', jobIds: [] },
+    });
+    mockClockOut.mockResolvedValue({ ok: true });
+
+    tree = await renderProvider();
+
+    expect(mockClockIn).toHaveBeenCalledWith(expect.objectContaining({ idempotencyKey: 'new-in' }), 'token-1');
+    expect(mockClockOut).toHaveBeenCalledWith(expect.objectContaining({ entryId: 'server-entry-b2' }), 'token-1');
+    expect(mockShiftMappings.get('business-1:user-1:employee-1:shift-b')).toBe('server-entry-b2');
+    expect(mockShiftMappings.get('business-1:user-1:employee-1:shift-a')).toBeUndefined();
+    expect(mockStoredCommands.find((item) => item.id === 'old-conflict')?.status).toBe('needs_attention');
+    expect(mockStoredCommands.find((item) => item.id === 'old-blocked')?.status).toBe('pending');
+    expect(mockStoredCommands.filter((item) => item.localShiftId === 'shift-b').every((item) => item.status === 'synced')).toBe(true);
   });
 
   it('keeps an authorization failure pending instead of inventing a conflict', async () => {

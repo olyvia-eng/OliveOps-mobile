@@ -376,6 +376,19 @@ export function OfflineClockProvider({ children }: { children: React.ReactNode }
     return record('clock_out', effectiveState.localShiftId, payload, meta);
   }, [effectiveState.localShiftId, record]);
 
+  const resolveCommandWithCorrection = useCallback(async (commandId: string, correctionRequestId: string) => {
+    if (!identityKey) return;
+    const command = commands.find((item) => item.id === commandId && item.status === 'needs_attention');
+    if (!command || command.correctionRequestId) return;
+    const resolved = {
+      ...command,
+      correctionRequestId,
+      correctionRequestedAt: new Date().toISOString(),
+    };
+    await updateOfflineCommand(resolved);
+    replaceCommand(resolved);
+  }, [commands, identityKey, replaceCommand]);
+
   const value = useMemo<OfflineClockContextValue>(() => ({
     hydrated,
     commands,
@@ -387,8 +400,9 @@ export function OfflineClockProvider({ children }: { children: React.ReactNode }
     submitSwitchActivity,
     submitClockOut,
     updateEligibilityCache,
+    resolveCommandWithCorrection,
     syncNow,
-  }), [cache, commands, effectiveState, effectiveTimeEntries, hydrated, submitClockIn, submitClockOut, submitSwitchActivity, syncNow, updateEligibilityCache]);
+  }), [cache, commands, effectiveState, effectiveTimeEntries, hydrated, resolveCommandWithCorrection, submitClockIn, submitClockOut, submitSwitchActivity, syncNow, updateEligibilityCache]);
 
   return <OfflineClockContext.Provider value={value}>{children}</OfflineClockContext.Provider>;
 }

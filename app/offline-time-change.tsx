@@ -6,6 +6,9 @@ import { Screen } from '@/components/Screen';
 import { SecondaryButton } from '@/components/SecondaryButton';
 import { ScreenHeader, SectionHeader } from '@/components/MobilePrimitives';
 import {
+  analyzeCommandDependencies,
+} from '@/features/offlineClocking/model';
+import {
   getOfflineCommandActionLabel,
   getOfflineCommandReason,
   resolveOfflineCommandActivity,
@@ -22,6 +25,8 @@ export default function OfflineTimeChangeScreen() {
   const offlineClock = useOptionalOfflineClockStore();
   const effectiveClock = useEffectiveClockState();
   const { businessTimeZone, jobs } = useClockingStore();
+  const dependencies = analyzeCommandDependencies(offlineClock?.commands ?? []);
+  const reviewCommands = [...dependencies.actionable, ...dependencies.correctionRequested];
   const command = offlineClock?.commands.find((item) => (
     item.status === 'needs_attention'
     && (typeof params.commandId !== 'string' || item.id === params.commandId)
@@ -31,6 +36,12 @@ export default function OfflineTimeChangeScreen() {
     ? resolveOfflineCommandActivity(command, offlineClock?.commands ?? [], effectiveClock.currentActivity)
     : null;
   const intendedAt = command ? new Date(command.clientOccurredAt) : null;
+  const blockedCount = command
+    ? dependencies.blocked.filter(
+      (item) => item.localShiftId === command.localShiftId,
+    ).length
+    : 0;
+  const reviewIndex = command ? reviewCommands.findIndex((item) => item.id === command.id) : -1;
   const jobLabel = useMemo(() => {
     const jobId = activity?.jobIds?.[0];
     if (!jobId) return null;
@@ -62,15 +73,25 @@ export default function OfflineTimeChangeScreen() {
     ?? (effectiveClock.activeEntry && !effectiveClock.activeEntry.id.startsWith('local-clock:')
       ? effectiveClock.activeEntry.id
       : undefined);
+  const recordedActive = Boolean(
+    effectiveClock.activeEntry
+    && (
+      command.resolvedServerEntryId === effectiveClock.activeEntry.id
+      || effectiveClock.localShiftId === command.localShiftId
+    ),
+  );
 
   return (
     <Screen>
       <ScreenHeader title="Time Change Needs Attention" subtitle={actionLabel} />
 
       <View style={styles.summary}>
+        {reviewCommands.length > 1 && reviewIndex >= 0 ? (
+          <Text style={styles.time}>{reviewIndex + 1} of {reviewCommands.length}</Text>
+        ) : null}
         <Text style={styles.action}>{actionLabel}</Text>
         <Text style={styles.time}>
-          {formatBusinessDate(intendedAt, businessTimeZone, { month: 'short', day: 'numeric', year: 'numeric' })}
+          {formatBusinessDate(intendedAt, businessTimeZone, { weekday: 'long', month: 'long', day: 'numeric' })}
           {' at '}
           {formatBusinessTime(intendedAt, businessTimeZone, { hour: 'numeric', minute: '2-digit' })}
         </Text>
@@ -79,7 +100,7 @@ export default function OfflineTimeChangeScreen() {
 
       <View style={styles.section}>
         <SectionHeader title="Recorded Status" />
-        <Text style={styles.value}>{effectiveClock.activeEntry ? 'Clocked in' : 'Clocked out'}</Text>
+        <Text style={styles.value}>{recordedActive ? 'Still clocked in' : 'Clocked out'}</Text>
       </View>
 
       <View style={styles.section}>
@@ -90,21 +111,44 @@ export default function OfflineTimeChangeScreen() {
         {categoryLabel ? <Text style={styles.detail}>{categoryLabel}</Text> : null}
       </View>
 
-      <PrimaryActionButton
+      {blockedCount > 0 ? (
+        <View style={styles.section}>
+          <SectionHeader title="Affected Later Changes" />
+          <Text style={styles.value}>
+            {blockedCount} later {blockedCount === 1 ? 'change is' : 'changes are'} waiting for this issue to be resolved.
+          </Text>
+        </View>
+      ) : null}
+
+      {command.correctionRequestId ? (
+        <Text style={styles.value}>Correction requested</Text>
+      ) : <PrimaryActionButton
         label="Request Time Correction"
         onPress={() => router.push({
           pathname: '/request-time-correction',
           params: {
             timeEntryId: serverEntryId,
+            offlineCommandId: command.id,
+            localShiftId: command.localShiftId,
             requestType,
             intendedAt: command.clientOccurredAt,
             offlineAction: command.type,
             requestedActivity: activity?.workType,
             requestedJobId: activity?.jobIds?.[0],
             requestedUnbillableCategoryId: activity?.unbillableCategoryId,
+            offlineReason: getOfflineCommandReason(command.lastErrorCategory),
           },
         })}
-      />
+      />}
+      {reviewCommands.length > 1 && reviewIndex >= 0 ? (
+        <SecondaryButton
+          label="Review Next"
+          onPress={() => router.replace({
+            pathname: '/offline-time-change',
+            params: { commandId: reviewCommands[(reviewIndex + 1) % reviewCommands.length].id },
+          })}
+        />
+      ) : null}
       <SecondaryButton label="Back" onPress={() => router.back()} />
     </Screen>
   );
