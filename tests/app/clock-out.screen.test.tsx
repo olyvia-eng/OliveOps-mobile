@@ -12,6 +12,7 @@ const mockCreateRequestMeta = jest.fn();
 let mockWorkflow: any = null;
 const mockOpenSettings = jest.fn().mockResolvedValue(undefined);
 let activeShiftClosed = false;
+let mockEffectiveClockOverride: any = null;
 
 const mockUseClockingActions = jest.fn(() => ({
   clockOut: mockClockOut,
@@ -78,6 +79,21 @@ jest.mock('expo-image-picker', () => ({
 
 jest.mock('@/hooks/useClockingActions', () => ({
   useClockingActions: () => mockUseClockingActions(),
+}));
+
+jest.mock('@/hooks/useEffectiveClockState', () => ({
+  useEffectiveClockState: () => {
+    if (mockEffectiveClockOverride) return mockEffectiveClockOverride;
+    const state = mockUseClockingStore();
+    const activeEntry = state.timeEntries.find((entry) => entry.id === state.currentActiveEntryId) ?? null;
+    return {
+      activeEntry,
+      effectiveActiveEntryId: activeEntry?.id ?? null,
+      effectiveStatus: activeEntry ? 'clocked_in' : 'clocked_out',
+      timeEntries: state.timeEntries,
+      hydrated: false,
+    };
+  },
 }));
 
 jest.mock('@/hooks/useFormsActions', () => ({
@@ -164,6 +180,7 @@ import { completeUpload, deleteUploadedFile, prepareUpload, uploadUriToS3 } from
 describe('ClockOutScreen', () => {
   beforeEach(() => {
     activeShiftClosed = false;
+    mockEffectiveClockOverride = null;
     (Alert.alert as jest.Mock).mockReset();
     (router.replace as jest.Mock).mockReset();
     mockClockOut.mockReset();
@@ -235,6 +252,43 @@ describe('ClockOutScreen', () => {
     expect(noShiftBanners).toHaveLength(0);
     expect(mockClockOut).toHaveBeenCalledTimes(1);
     expect(router.replace).toHaveBeenCalledWith('/home');
+  });
+
+  it('clocks out a hydrated local-only pending shift without a no-shift banner', async () => {
+    const localEntry = {
+      id: 'local:shift-1',
+      employeeId: 'emp-1',
+      workType: 'job',
+      jobIds: ['job-1'],
+      clockIn: '2026-08-06T10:00:00.000Z',
+      breakMinutes: 0,
+      notes: '',
+      status: 'clocked_in',
+    };
+    mockEffectiveClockOverride = {
+      activeEntry: localEntry,
+      effectiveActiveEntryId: localEntry.id,
+      effectiveStatus: 'clocked_in_pending',
+      timeEntries: [localEntry],
+      hydrated: true,
+    };
+    (Alert.alert as jest.Mock).mockImplementation(
+      (_title: string, _message: string, actions: Array<{ onPress?: () => void }>) => actions?.[1]?.onPress?.(),
+    );
+
+    let tree: any;
+    await act(async () => {
+      tree = create(<ClockOutScreen />);
+    });
+    await act(async () => {
+      tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Clock Out').props.onPress();
+    });
+
+    expect(mockClockOut).toHaveBeenCalledTimes(1);
+    expect(mockClockOut.mock.calls[0][0]).toBe('local:shift-1');
+    expect(tree.root.findAllByType('status-banner').filter(
+      (node: any) => node.props.message === 'No active shift found. Refresh and try again.',
+    )).toHaveLength(0);
   });
 
   it('reuses retry metadata only while the clock-out payload is unchanged', async () => {

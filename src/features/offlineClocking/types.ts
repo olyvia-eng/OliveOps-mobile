@@ -37,6 +37,7 @@ export type OfflineClockCommand = {
   status: OfflineClockStatus;
   retryCount: number;
   lastErrorCategory?: string;
+  resolvedServerEntryId?: string;
 };
 
 export type OfflineShiftMapping = {

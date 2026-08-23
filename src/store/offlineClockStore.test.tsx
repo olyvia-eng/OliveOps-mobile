@@ -28,10 +28,10 @@ let mockAuthState = {
 
 const mockClockingState = {
   jobs: [],
-  timeEntries: [],
+  timeEntries: [] as ReturnType<typeof commandEntry>[],
   timeCorrections: [],
   unbillableCategories: [],
-  currentActiveEntryId: null,
+  currentActiveEntryId: null as string | null,
   activeShiftWarnings: { possibleForgottenClockOut: false, thresholdHours: 12 },
   activityConfigs: undefined,
   setJobs: jest.fn(),
@@ -98,6 +98,19 @@ import { OfflineClockProvider, useOfflineClockStore } from '@/store/offlineClock
 
 let offlineClock: ReturnType<typeof useOfflineClockStore>;
 
+function commandEntry(id: string) {
+  return {
+    id,
+    employeeId: 'employee-1',
+    workType: 'job' as const,
+    jobIds: ['job-1'],
+    clockIn: '2026-08-20T10:00:00.000Z',
+    breakMinutes: 0,
+    notes: '',
+    status: 'clocked_in' as const,
+  };
+}
+
 function OfflineClockProbe() {
   offlineClock = useOfflineClockStore();
   return React.createElement('offline-clock-probe', {
@@ -143,6 +156,8 @@ describe('OfflineClockProvider', () => {
     jest.setSystemTime(new Date('2026-08-20T10:00:00.000Z'));
     mockStoredCommands.splice(0);
     mockShiftMappings.clear();
+    mockClockingState.timeEntries = [];
+    mockClockingState.currentActiveEntryId = null;
     mockAuthState = {
       ...mockAuthState,
       accessToken: 'token-1',
@@ -261,6 +276,139 @@ describe('OfflineClockProvider', () => {
     }, 'token-1');
     expect(mockStoredCommands.every((item) => item.status === 'synced')).toBe(true);
     expect(mockLoadBootstrap).toHaveBeenCalledWith('token-1', { force: true });
+  });
+
+  it('updates the logical shift mapping after every switch before clock-out', async () => {
+    mockClockIn.mockRejectedValue(new TypeError('offline'));
+    mockSwitchActivity.mockRejectedValue(new TypeError('offline'));
+    mockClockOut.mockRejectedValue(new TypeError('offline'));
+    tree = await renderProvider();
+
+    await act(async () => {
+      await offlineClock.submitClockIn(
+        { employeeId: 'employee-1', workType: 'job', jobIds: ['job-1'] },
+        { requestId: 'request-in', idempotencyKey: 'key-in', clientOccurredAt: '2026-08-20T10:00:00.000Z' },
+      );
+    });
+    const localShiftId = offlineClock.effectiveState.localShiftId;
+    await act(async () => {
+      await offlineClock.submitSwitchActivity(
+        { workType: 'drive_time', jobIds: [] },
+        { requestId: 'request-switch-1', idempotencyKey: 'key-switch-1', clientOccurredAt: '2026-08-20T10:15:00.000Z' },
+      );
+    });
+    await act(async () => {
+      await offlineClock.submitSwitchActivity(
+        { workType: 'job', jobIds: ['job-2'] },
+        { requestId: 'request-switch-2', idempotencyKey: 'key-switch-2', clientOccurredAt: '2026-08-20T10:30:00.000Z' },
+      );
+    });
+    await act(async () => {
+      await offlineClock.submitClockOut(
+        { breakMinutes: 0, notes: '' },
+        { requestId: 'request-out', idempotencyKey: 'key-out', clientOccurredAt: '2026-08-20T11:00:00.000Z' },
+      );
+    });
+
+    mockClockIn.mockReset().mockResolvedValue({
+      ok: true,
+      timeEntry: { ...commandEntry('server-entry-a'), workType: 'job', jobIds: ['job-1'] },
+    });
+    mockSwitchActivity
+      .mockReset()
+      .mockResolvedValueOnce({
+        ok: true,
+        timeEntry: { ...commandEntry('server-entry-b'), workType: 'drive_time', jobIds: [] },
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        timeEntry: { ...commandEntry('server-entry-c'), workType: 'job', jobIds: ['job-2'] },
+      });
+    mockClockOut.mockReset().mockResolvedValue({ ok: true });
+
+    await act(async () => offlineClock.syncNow());
+
+    expect(mockShiftMappings.get(`business-1:user-1:employee-1:${localShiftId}`)).toBe('server-entry-c');
+    expect(mockClockOut).toHaveBeenCalledWith(expect.objectContaining({ entryId: 'server-entry-c' }), 'token-1');
+    expect(mockStoredCommands.every((item) => item.status === 'synced')).toBe(true);
+  });
+
+  it('retains only a conflicted clock-out after earlier full-shift commands replay', async () => {
+    mockClockIn.mockRejectedValue(new TypeError('offline'));
+    mockSwitchActivity.mockRejectedValue(new TypeError('offline'));
+    mockClockOut.mockRejectedValue(new TypeError('offline'));
+    tree = await renderProvider();
+
+    await act(async () => {
+      await offlineClock.submitClockIn(
+        { employeeId: 'employee-1', workType: 'job', jobIds: ['job-1'] },
+        { requestId: 'request-in', idempotencyKey: 'key-in', clientOccurredAt: '2026-08-20T10:00:00.000Z' },
+      );
+    });
+    const localShiftId = offlineClock.effectiveState.localShiftId;
+    await act(async () => {
+      await offlineClock.submitSwitchActivity(
+        { workType: 'drive_time', jobIds: [] },
+        { requestId: 'request-switch', idempotencyKey: 'key-switch', clientOccurredAt: '2026-08-20T10:30:00.000Z' },
+      );
+    });
+    await act(async () => {
+      await offlineClock.submitClockOut(
+        { breakMinutes: 0, notes: 'Done' },
+        { requestId: 'request-out', idempotencyKey: 'key-out', clientOccurredAt: '2026-08-20T11:00:00.000Z' },
+      );
+    });
+
+    const latestServerEntry = { ...commandEntry('server-entry-b'), workType: 'drive_time' as const, jobIds: [] };
+    mockClockingState.timeEntries = [latestServerEntry];
+    mockClockingState.currentActiveEntryId = latestServerEntry.id;
+    mockClockIn.mockReset().mockResolvedValue({ ok: true, timeEntry: commandEntry('server-entry-a') });
+    mockSwitchActivity.mockReset().mockResolvedValue({ ok: true, timeEntry: latestServerEntry });
+    mockClockOut.mockReset().mockRejectedValue(
+      new ApiError('Shift changed', 409, 'OFFLINE_SHIFT_STATE_CONFLICT'),
+    );
+
+    await act(async () => offlineClock.syncNow());
+
+    expect(mockClockIn).toHaveBeenCalledTimes(1);
+    expect(mockSwitchActivity).toHaveBeenCalledTimes(1);
+    expect(mockClockOut).toHaveBeenCalledWith(expect.objectContaining({ entryId: 'server-entry-b' }), 'token-1');
+    expect(mockShiftMappings.get(`business-1:user-1:employee-1:${localShiftId}`)).toBe('server-entry-b');
+    expect(mockStoredCommands.filter((item) => item.status !== 'synced')).toEqual([
+      expect.objectContaining({
+        id: 'key-out',
+        status: 'needs_attention',
+        lastErrorCategory: 'offline_shift_state_conflict',
+        resolvedServerEntryId: 'server-entry-b',
+      }),
+    ]);
+    expect(offlineClock.effectiveState.activeEntry?.id).toBe('server-entry-b');
+    expect(offlineClock.effectiveState.effectiveStatus).toBe('needs_attention');
+  });
+
+  it('preserves failed clock-out intent as the current shift conflict', async () => {
+    const failedClockOut = command({
+      id: 'key-out',
+      localShiftId: 'local-shift-1',
+      type: 'clock_out',
+      logicalPayload: { breakMinutes: 0, notes: '' },
+      requestId: 'request-out',
+      idempotencyKey: 'key-out',
+      clientOccurredAt: '2026-08-20T11:00:00.000Z',
+      queuedAt: '2026-08-20T11:00:00.100Z',
+      status: 'needs_attention',
+      lastErrorCategory: 'offline_shift_state_conflict',
+      resolvedServerEntryId: 'server-entry-b',
+    });
+    mockStoredCommands.push(failedClockOut);
+    mockClockingState.timeEntries = [commandEntry('server-entry-b')];
+    mockClockingState.currentActiveEntryId = 'server-entry-b';
+
+    tree = await renderProvider();
+
+    expect(offlineClock.effectiveState.effectiveStatus).toBe('needs_attention');
+    expect(offlineClock.effectiveState.currentShiftConflict?.id).toBe('key-out');
+    expect(offlineClock.effectiveState.activeEntry?.id).toBe('server-entry-b');
   });
 
   it('marks the first conflict for attention and does not send later commands', async () => {

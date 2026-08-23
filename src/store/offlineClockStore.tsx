@@ -203,8 +203,9 @@ export function OfflineClockProvider({ children }: { children: React.ReactNode }
         if (identityRef.current !== identityKey) return;
 
         const syncing = { ...stored, status: 'syncing' as const, retryCount: stored.retryCount + 1 };
-        await updateOfflineCommand(syncing);
-        replaceCommand(syncing);
+        let attempted = syncing;
+        await updateOfflineCommand(attempted);
+        replaceCommand(attempted);
         const guardKey = `clocking:${stored.employeeId}`;
         if (!beginRequest(guardKey)) {
           const pending = { ...syncing, status: 'pending' as const };
@@ -235,13 +236,20 @@ export function OfflineClockProvider({ children }: { children: React.ReactNode }
               idempotencyKey: stored.idempotencyKey,
               clientOccurredAt: stored.clientOccurredAt,
             } satisfies SwitchActivityRequest, accessToken);
-            await completeOfflineCommand(syncing);
+            await completeOfflineCommand(attempted, {
+              identityKey,
+              localShiftId: stored.localShiftId,
+              serverEntryId: response.timeEntry.id,
+            });
             clocking.upsertTimeEntry(response.timeEntry);
             clocking.setCurrentActiveEntryId(response.timeEntry.id);
           } else {
             const payload = stored.logicalPayload as OfflineClockOutPayload;
             const entryId = payload.entryId ?? await loadShiftMapping(identityKey, stored.localShiftId);
             if (!entryId) throw Object.assign(new Error('Offline shift dependency is unresolved.'), { code: 'offline_shift_dependency' });
+            attempted = { ...syncing, resolvedServerEntryId: entryId };
+            await updateOfflineCommand(attempted);
+            replaceCommand(attempted);
             const response = await clockingApi.clockOut({
               ...payload,
               entryId,
@@ -249,7 +257,7 @@ export function OfflineClockProvider({ children }: { children: React.ReactNode }
               idempotencyKey: stored.idempotencyKey,
               clientOccurredAt: stored.clientOccurredAt,
             } satisfies ClockOutRequest, accessToken);
-            await completeOfflineCommand(syncing);
+            await completeOfflineCommand(attempted);
             if (response.timeEntry) clocking.upsertTimeEntry(response.timeEntry);
             clocking.setCurrentActiveEntryId(null);
           }
@@ -258,12 +266,12 @@ export function OfflineClockProvider({ children }: { children: React.ReactNode }
         } catch (error) {
           const code = errorCode(error);
           if (NEEDS_ATTENTION_CODES.has(code ?? '') || LOCAL_NEEDS_ATTENTION_CODES.has(code ?? '')) {
-            const attention = { ...syncing, status: 'needs_attention' as const, lastErrorCategory: code ?? 'offline_clock_conflict' };
+            const attention = { ...attempted, status: 'needs_attention' as const, lastErrorCategory: code ?? 'offline_clock_conflict' };
             await updateOfflineCommand(attention);
             replaceCommand(attention);
             Sentry.captureMessage(code ?? 'offline_clock_sync_conflict', 'warning');
           } else {
-            const pending = { ...syncing, status: 'pending' as const, lastErrorCategory: code ?? 'network_unavailable' };
+            const pending = { ...attempted, status: 'pending' as const, lastErrorCategory: code ?? 'network_unavailable' };
             await updateOfflineCommand(pending);
             replaceCommand(pending);
             if (isRetryable(error)) {

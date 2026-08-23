@@ -15,21 +15,25 @@ export function OfflineClockStatus({ showHistoricalAttention = false }: { showHi
       <>
         <StatusBanner tone="error" message={getOfflineConflictMessage(currentShiftConflict.lastErrorCategory)} />
         <SecondaryButton
-          label="Request Time Correction"
-          onPress={() => router.push('/request-time-correction')}
+          label="Review"
+          onPress={() => router.push({ pathname: '/offline-time-change', params: { commandId: currentShiftConflict.id } })}
         />
       </>
     );
   }
 
   if (showHistoricalAttention && historicalAttentionCount > 0) {
+    const historicalCommand = offlineClock.commands.find((command) => command.status === 'needs_attention');
     return (
       <>
         <StatusBanner
           tone="error"
           message={`${historicalAttentionCount} time ${historicalAttentionCount === 1 ? 'change needs' : 'changes need'} attention.`}
         />
-        <SecondaryButton label="Review" onPress={() => router.push('/request-time-correction')} />
+        <SecondaryButton
+          label="Review"
+          onPress={() => router.push({ pathname: '/offline-time-change', params: { commandId: historicalCommand?.id } })}
+        />
         {pendingCount > 0 ? (
           <StatusBanner
             tone="offline"

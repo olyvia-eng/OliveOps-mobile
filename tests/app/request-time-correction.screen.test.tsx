@@ -233,6 +233,24 @@ describe('RequestTimeCorrectionScreen', () => {
     expect(submit.props.disabled).toBe(true);
   });
 
+  it('prefills a failed offline clock-out timestamp', async () => {
+    mockParams = {
+      requestType: 'forgot_clock_out',
+      timeEntryId: 'entry-active',
+      intendedAt: '2026-08-23T14:04:00.000Z',
+      offlineAction: 'clock_out',
+    };
+    mockClockingState.currentActiveEntryId = 'entry-active';
+
+    let tree: any;
+    await act(async () => {
+      tree = create(<RequestTimeCorrectionScreen />);
+    });
+
+    const inputs = tree.root.findAllByType('textinput');
+    expect(inputs.some((node: any) => node.props.value === '10:04')).toBe(true);
+  });
+
   it('clock out and request correction clocks out before creating correction', async () => {
     mockParams = { requestType: 'forgot_clock_out' };
     mockClockingState.currentActiveEntryId = 'entry-active';

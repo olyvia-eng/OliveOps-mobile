@@ -23,7 +23,7 @@ import { useClockingStore } from '@/store/clockingStore';
 import { colors } from '@/theme/colors';
 import type { CreateTimeCorrectionRequest } from '@/types/api';
 import type { TimeCorrectionRequestType, TimeEntryWorkType } from '@/types/domain';
-import { businessDateKey, businessLocalDateTimeToIso } from '@/utils/businessTime';
+import { businessDateKey, businessLocalDateTimeToIso, formatBusinessTime } from '@/utils/businessTime';
 
 const REQUEST_TYPE_OPTIONS: Array<{ id: TimeCorrectionRequestType; label: string }> = [
   { id: 'forgot_clock_in', label: 'Forgot to clock in' },
@@ -35,7 +35,16 @@ const REQUEST_TYPE_OPTIONS: Array<{ id: TimeCorrectionRequestType; label: string
 ];
 
 export default function RequestTimeCorrectionScreen() {
-  const params = useLocalSearchParams<{ timeEntryId?: string; requestType?: TimeCorrectionRequestType; postClockOut?: string }>();
+  const params = useLocalSearchParams<{
+    timeEntryId?: string;
+    requestType?: TimeCorrectionRequestType;
+    postClockOut?: string;
+    intendedAt?: string;
+    offlineAction?: string;
+    requestedActivity?: TimeEntryWorkType;
+    requestedJobId?: string;
+    requestedUnbillableCategoryId?: string;
+  }>();
   const { user } = useAuthStore();
   const { businessTimeZone, jobs, timeEntries } = useClockingStore();
   const effectiveClock = useEffectiveClockState();
@@ -53,14 +62,21 @@ export default function RequestTimeCorrectionScreen() {
   const defaultRequestType = typeof params.requestType === 'string'
     ? params.requestType
     : (entryId ? 'wrong_time' : 'forgot_clock_in');
+  const intendedAt = typeof params.intendedAt === 'string' && Number.isFinite(Date.parse(params.intendedAt))
+    ? new Date(params.intendedAt)
+    : null;
 
   const [requestType, setRequestType] = useState<TimeCorrectionRequestType>(defaultRequestType);
-  const [requestedDate, setRequestedDate] = useState(() => businessDateKey(new Date(), businessTimeZone));
-  const [requestedStartTime, setRequestedStartTime] = useState('08:00');
-  const [requestedEndTime, setRequestedEndTime] = useState('17:00');
-  const [requestedActivity, setRequestedActivity] = useState<TimeEntryWorkType>('job');
-  const [requestedJobId, setRequestedJobId] = useState<string>('');
-  const [requestedUnbillableCategoryId, setRequestedUnbillableCategoryId] = useState<string>('');
+  const [requestedDate, setRequestedDate] = useState(() => businessDateKey(intendedAt ?? new Date(), businessTimeZone));
+  const [requestedStartTime, setRequestedStartTime] = useState(() => intendedAt && params.offlineAction === 'clock_in'
+    ? formatBusinessTime(intendedAt, businessTimeZone, { hour: '2-digit', minute: '2-digit', hour12: false })
+    : '08:00');
+  const [requestedEndTime, setRequestedEndTime] = useState(() => intendedAt && params.offlineAction === 'clock_out'
+    ? formatBusinessTime(intendedAt, businessTimeZone, { hour: '2-digit', minute: '2-digit', hour12: false })
+    : '17:00');
+  const [requestedActivity, setRequestedActivity] = useState<TimeEntryWorkType>(params.requestedActivity ?? 'job');
+  const [requestedJobId, setRequestedJobId] = useState<string>(params.requestedJobId ?? '');
+  const [requestedUnbillableCategoryId, setRequestedUnbillableCategoryId] = useState<string>(params.requestedUnbillableCategoryId ?? '');
   const [reason, setReason] = useState('');
   const [retryMeta, setRetryMeta] = useState<{ requestId: string; idempotencyKey: string } | null>(null);
   const [status, setStatus] = useState<string | null>(null);
@@ -121,7 +137,9 @@ export default function RequestTimeCorrectionScreen() {
     }
 
     if (requestType === 'forgot_clock_out') {
-      const sourceDate = targetEntry ? businessDateKey(new Date(targetEntry.clockIn), businessTimeZone) : requestedDate;
+      const sourceDate = params.offlineAction
+        ? requestedDate
+        : targetEntry ? businessDateKey(new Date(targetEntry.clockIn), businessTimeZone) : requestedDate;
       payload.requestedClockOutAt = combineDateAndTime(sourceDate, requestedEndTime);
     }
 

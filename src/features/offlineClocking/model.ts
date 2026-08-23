@@ -5,6 +5,12 @@ function localEntryId(localShiftId: string, commandId: string) {
   return `local-clock:${localShiftId}:${commandId}`;
 }
 
+function compareCommands(left: OfflineClockCommand, right: OfflineClockCommand) {
+  return left.clientOccurredAt.localeCompare(right.clientOccurredAt)
+    || left.queuedAt.localeCompare(right.queuedAt)
+    || left.id.localeCompare(right.id);
+}
+
 function applyActivity(
   current: TimeEntry,
   command: OfflineClockCommand,
@@ -30,11 +36,15 @@ export function buildEffectiveClockState(
 ): EffectiveClockState {
   const unresolved = commands
     .filter((command) => command.status !== 'synced')
-    .sort((left, right) => left.queuedAt.localeCompare(right.queuedAt) || left.id.localeCompare(right.id));
+    .sort(compareCommands);
   const pending = unresolved.filter((command) => command.status !== 'needs_attention');
   const needsAttention = unresolved.filter((command) => command.status === 'needs_attention');
   let activeEntry = serverActiveEntry;
-  let localShiftId = serverActiveEntry ? `server:${serverActiveEntry.id}` : null;
+  const mappedAttention = serverActiveEntry
+    ? needsAttention.find((command) => command.resolvedServerEntryId === serverActiveEntry.id)
+    : undefined;
+  let localShiftId = mappedAttention?.localShiftId
+    ?? (serverActiveEntry ? `server:${serverActiveEntry.id}` : null);
   let shiftStartedAt = serverShiftStartedAt ?? serverActiveEntry?.clockIn;
   let currentSegmentStartedAt = serverActiveEntry?.clockIn;
   let lastClockOutAt: string | undefined;
@@ -118,7 +128,7 @@ export function nextReplayableCommand(commands: OfflineClockCommand[]) {
   const blockedShiftIds = new Set<string>();
   const ordered = commands
     .filter((command) => command.status !== 'synced')
-    .sort((left, right) => left.queuedAt.localeCompare(right.queuedAt) || left.id.localeCompare(right.id));
+    .sort(compareCommands);
 
   for (const command of ordered) {
     if (blocksFollowingCommands(command)) {

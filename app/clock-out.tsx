@@ -400,6 +400,7 @@ export default function ClockOutScreen() {
         : createRequestMeta(activeEntry.id);
     const meta = { requestId: reusableMeta.requestId, idempotencyKey: reusableMeta.idempotencyKey };
     setRetryMeta({ ...meta, fingerprint });
+    setNavigatingAfterSuccess(true);
 
     const result = await clockOut(
       activeEntry.id,
@@ -408,6 +409,7 @@ export default function ClockOutScreen() {
       meta
     );
     if (!result.ok) {
+      setNavigatingAfterSuccess(false);
       setError(result.error || 'Clock-out failed.');
       return;
     }
@@ -419,7 +421,6 @@ export default function ClockOutScreen() {
     }
     submittedRef.current = true;
     setSuccess(pendingSync ? 'Clock-out saved on this device. It will sync when online.' : 'Clock-out submitted successfully.');
-    setNavigatingAfterSuccess(true);
     if (pendingSync) {
       router.replace('/home');
       return;

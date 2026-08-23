@@ -21,6 +21,7 @@ import { OfflineClockStatus } from './OfflineClockStatus';
 describe('OfflineClockStatus', () => {
   it('shows historical attention separately from pending queue health', async () => {
     mockOfflineClock = {
+      commands: [{ id: 'old-command', status: 'needs_attention' }],
       effectiveState: {
         currentShiftConflict: null,
         needsAttentionCount: 1,
@@ -41,8 +42,9 @@ describe('OfflineClockStatus', () => {
 
   it('shows the conflict message only when the effective shift is affected', async () => {
     mockOfflineClock = {
+      commands: [{ id: 'failed-out', status: 'needs_attention' }],
       effectiveState: {
-        currentShiftConflict: { lastErrorCategory: 'offline_shift_state_conflict' },
+        currentShiftConflict: { id: 'failed-out', lastErrorCategory: 'offline_shift_state_conflict' },
         needsAttentionCount: 1,
         pendingCount: 0,
       },
@@ -54,6 +56,6 @@ describe('OfflineClockStatus', () => {
       tree = create(<OfflineClockStatus showHistoricalAttention />);
     });
     expect(tree.root.findByType('status-banner').props.message).toBe('Current shift conflict.');
-    expect(tree.root.findByType('secondary-button').props.label).toBe('Request Time Correction');
+    expect(tree.root.findByType('secondary-button').props.label).toBe('Review');
   });
 });
