@@ -169,6 +169,7 @@ export default function HomeScreen() {
             detail={toDo.length > 0 ? `${toDo.length} due` : undefined}
             onPress={() => router.push('/forms')}
           />
+          <ListRow title="Time Off" subtitle="Request time off and view status" onPress={() => router.push('/time-off')} />
           <ListRow title="Time History" subtitle="Review entries and weekly totals" onPress={() => router.push('/time-history')} />
           <ListRow title="Correction Requests" subtitle="View or request a time correction" onPress={() => router.push('/my-correction-requests')} />
         </View>

@@ -10,6 +10,7 @@ export const ENDPOINTS = {
   timeCorrectionsCreate: '/api/time-corrections?action=create',
   timeCorrectionsList: '/api/time-corrections?action=list&mine=true',
   timeCorrectionsEffectiveTimeEntries: '/api/time-corrections?action=effective-time-entries',
+  timeOffRequests: '/api/time-off-requests',
   employeeForms: '/api/employee?action=forms',
   employeeRequiredForms: '/api/employee?action=required',
   employeeFormSubmission: '/api/employee?action=submission',

@@ -10,6 +10,7 @@ import { ClockingProvider } from '@/store/clockingStore';
 import { OfflineClockProvider } from '@/store/offlineClockStore';
 import { FormsProvider } from '@/store/formsStore';
 import { FormsWorkflowProvider } from '@/store/formsWorkflowStore';
+import { TimeOffProvider } from '@/store/timeOffStore';
 import { colors } from '@/theme/colors';
 
 function CompactBackButton() {
@@ -62,10 +63,11 @@ function RootLayout() {
   return (
     <AppErrorBoundary>
       <AuthProvider>
-        <FormsProvider>
-          <FormsWorkflowProvider>
-            <ClockingProvider>
-              <OfflineClockProvider>
+        <TimeOffProvider>
+          <FormsProvider>
+            <FormsWorkflowProvider>
+              <ClockingProvider>
+                <OfflineClockProvider>
                 <AppLifecycleSync />
                 <Stack
             screenOptions={{
@@ -91,12 +93,16 @@ function RootLayout() {
             <Stack.Screen name="forms" options={secondaryScreenOptions('Forms')} />
             <Stack.Screen name="form" options={secondaryScreenOptions('Complete Form')} />
             <Stack.Screen name="form-submission" options={secondaryScreenOptions('Completed Form')} />
+            <Stack.Screen name="time-off" options={secondaryScreenOptions('Time Off')} />
+            <Stack.Screen name="request-time-off" options={secondaryScreenOptions('Request Time Off')} />
+            <Stack.Screen name="time-off-detail" options={secondaryScreenOptions('Time Off Details')} />
             <Stack.Screen name="settings" options={secondaryScreenOptions('Settings')} />
-                </Stack>
-              </OfflineClockProvider>
-            </ClockingProvider>
-          </FormsWorkflowProvider>
-        </FormsProvider>
+                  </Stack>
+                </OfflineClockProvider>
+              </ClockingProvider>
+            </FormsWorkflowProvider>
+          </FormsProvider>
+        </TimeOffProvider>
       </AuthProvider>
     </AppErrorBoundary>
   );

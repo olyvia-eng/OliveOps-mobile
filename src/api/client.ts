@@ -59,6 +59,7 @@ export async function apiRequest<T>(path: string, init: RequestInitWithAuth = {}
       response.status,
       typeof payload?.code === 'string' ? payload.code : undefined,
       typeof payload?.fieldId === 'string' ? payload.fieldId : undefined,
+      payload,
     );
   }
 

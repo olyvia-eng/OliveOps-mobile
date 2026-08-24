@@ -122,6 +122,10 @@ jest.mock('react-native', () => {
 import HomeScreen from '../../app/home';
 import { router } from 'expo-router';
 
+function textOf(node: any) {
+  return node.findAllByType('text').map((item: any) => String(item.props.children)).join(' ');
+}
+
 describe('HomeScreen', () => {
   let tree: any;
 
@@ -161,6 +165,16 @@ describe('HomeScreen', () => {
     });
     await act(async () => formsRow.props.onPress());
     expect(router.push).toHaveBeenCalledWith('/forms');
+  });
+
+  it('opens Time Off from Quick Actions', async () => {
+    await act(async () => {
+      tree = create(React.createElement(HomeScreen));
+    });
+
+    const row = tree.root.findAllByType('pressable').find((node: any) => textOf(node).includes('Time Off'));
+    await act(async () => row.props.onPress());
+    expect(router.push).toHaveBeenCalledWith('/time-off');
   });
 
   it('shows only the outstanding To Do count for Forms', async () => {
