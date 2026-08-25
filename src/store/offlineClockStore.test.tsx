@@ -208,6 +208,73 @@ describe('OfflineClockProvider', () => {
     expect(offlineClock.effectiveState.pendingCount).toBe(1);
   });
 
+  it('removes a provisional shift without needs-attention when replay returns required forms', async () => {
+    const clockIn = command();
+    const dependentSwitch = command({
+      id: 'key-switch',
+      type: 'switch_activity',
+      logicalPayload: { workType: 'drive_time', jobIds: [] },
+      requestId: 'request-switch',
+      idempotencyKey: 'key-switch',
+      clientOccurredAt: '2026-08-20T10:30:00.000Z',
+      queuedAt: '2026-08-20T10:30:00.100Z',
+    });
+    mockStoredCommands.push(clockIn, dependentSwitch);
+    mockClockIn.mockResolvedValue({
+      ok: true,
+      blocked: true,
+      status: 'clock_in_pending_required_forms',
+      workflowOccurrenceId: 'occurrence-1',
+      requiredFormCount: 1,
+      completedRequiredFormCount: 0,
+      remainingRequiredFormCount: 1,
+      requiredForms: [{ requirementId: 'requirement-1', formId: 'form-1' }],
+      remainingForms: [{ requirementId: 'requirement-1', formId: 'form-1' }],
+      reminderForms: [],
+      clockInIntent: { employeeId: 'employee-1', workType: 'job', jobIds: ['job-1'] },
+    });
+
+    tree = await renderProvider();
+
+    expect(mockStoredCommands.every((item) => item.status === 'synced')).toBe(true);
+    expect(mockSwitchActivity).not.toHaveBeenCalled();
+    expect(offlineClock.commands).toHaveLength(0);
+    expect(offlineClock.effectiveState.activeEntry).toBeNull();
+    expect(offlineClock.effectiveState.effectiveStatus).toBe('clocked_out_synced');
+    expect(offlineClock.effectiveState.pendingCount).toBe(0);
+    expect(offlineClock.effectiveState.needsAttentionCount).toBe(0);
+    expect(mockCaptureMessage).not.toHaveBeenCalledWith('required_before_clock_in_forms', expect.anything());
+    expect(mockLoadBootstrap).toHaveBeenCalledWith('token-1', { force: true });
+  });
+
+  it('retires obsolete required-form needs-attention shifts during restart recovery', async () => {
+    mockStoredCommands.push(
+      command({
+        status: 'needs_attention',
+        lastErrorCode: 'required_before_clock_in_forms',
+        lastErrorCategory: 'server_rejected',
+      }),
+      command({
+        id: 'dependent-switch',
+        type: 'switch_activity',
+        logicalPayload: { workType: 'drive_time', jobIds: [] },
+        requestId: 'dependent-request',
+        idempotencyKey: 'dependent-switch',
+        clientOccurredAt: '2026-08-20T10:30:00.000Z',
+        queuedAt: '2026-08-20T10:30:00.100Z',
+      }),
+    );
+
+    tree = await renderProvider();
+
+    expect(mockStoredCommands.every((item) => item.status === 'synced')).toBe(true);
+    expect(offlineClock.commands).toHaveLength(0);
+    expect(offlineClock.effectiveState.activeEntry).toBeNull();
+    expect(offlineClock.effectiveState.needsAttentionCount).toBe(0);
+    expect(mockClockIn).not.toHaveBeenCalled();
+    expect(mockSwitchActivity).not.toHaveBeenCalled();
+  });
+
   it('replays in order with immutable metadata and resolves a local shift before clock-out', async () => {
     mockClockIn.mockRejectedValue(new TypeError('offline'));
     mockSwitchActivity.mockRejectedValue(new TypeError('offline'));

@@ -159,9 +159,18 @@ export function OfflineClockProvider({ children }: { children: React.ReactNode }
       setHydrated(true);
       return () => { cancelled = true; };
     }
-    void Promise.all([loadOfflineCommands(identityKey), loadOfflineClockCache(identityKey)]).then(([stored, storedCache]) => {
+    void Promise.all([loadOfflineCommands(identityKey), loadOfflineClockCache(identityKey)]).then(async ([stored, storedCache]) => {
       if (cancelled || identityRef.current !== identityKey) return;
-      const supported = stored.map((command) => command.schemaVersion === OFFLINE_CLOCK_SCHEMA_VERSION
+      const obsoleteShiftIds = new Set(stored
+        .filter((command) => command.lastErrorCode === 'required_before_clock_in_forms')
+        .map((command) => command.localShiftId));
+      for (const command of stored) {
+        if (obsoleteShiftIds.has(command.localShiftId)) await completeOfflineCommand(command);
+      }
+      if (cancelled || identityRef.current !== identityKey) return;
+      const supported = stored
+        .filter((command) => !obsoleteShiftIds.has(command.localShiftId))
+        .map((command) => command.schemaVersion === OFFLINE_CLOCK_SCHEMA_VERSION
         ? command
         : { ...command, status: 'needs_attention' as const, lastErrorCategory: 'unsupported_schema' });
       setCommands(supported);
@@ -235,15 +244,13 @@ export function OfflineClockProvider({ children }: { children: React.ReactNode }
               clientOccurredAt: stored.clientOccurredAt,
             } satisfies ClockInRequest, accessToken);
             if (response.status === 'clock_in_pending_required_forms') {
-              const blocked = {
-                ...syncing,
-                status: 'needs_attention' as const,
-                lastErrorCode: 'required_before_clock_in_forms',
-                lastErrorCategory: 'server_rejected' as const,
-              };
-              await updateOfflineCommand(blocked);
-              replaceCommand(blocked);
-              return;
+              const provisionalShiftCommands = queued.filter((command) => command.localShiftId === stored.localShiftId);
+              for (const command of provisionalShiftCommands) {
+                await completeOfflineCommand(command.id === stored.id ? syncing : command);
+              }
+              completedAny = true;
+              setCommands((current) => current.filter((command) => command.localShiftId !== stored.localShiftId));
+              continue;
             }
             await completeOfflineCommand(syncing, {
               identityKey,

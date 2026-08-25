@@ -216,6 +216,22 @@ describe('useClockingActions bootstrap behavior', () => {
     expect(tree.root.findByType('actions-probe').props.currentActiveEntryId).toBe('entry-new');
   });
 
+  it('uses the direct API for online clock-in even when the offline provider is mounted', async () => {
+    const submitClockIn = jest.fn();
+    mockOfflineClock = { cache: { requiredBeforeClockInForms: false }, submitClockIn };
+    await act(async () => {
+      tree = create(React.createElement(ClockingProvider, null, React.createElement(ActionsProbe)));
+    });
+
+    let result: any;
+    await act(async () => { result = await currentActions.clockIn('emp-1', 'job', ['job-1']); });
+
+    expect(result.ok).toBe(true);
+    expect(mockClockIn).toHaveBeenCalledTimes(1);
+    expect(submitClockIn).not.toHaveBeenCalled();
+    expect(tree.root.findByType('actions-probe').props.currentActiveEntryId).toBe('entry-1');
+  });
+
   it('returns a pending required clock-in workflow without requiring a time entry', async () => {
     const pendingWorkflow = {
       ok: true,
@@ -230,6 +246,8 @@ describe('useClockingActions bootstrap behavior', () => {
       reminderForms: [],
       clockInIntent: { employeeId: 'emp-1', workType: 'job' as const, jobIds: ['job-1'] },
     };
+    const submitClockIn = jest.fn();
+    mockOfflineClock = { cache: { requiredBeforeClockInForms: true }, submitClockIn };
     mockClockIn.mockResolvedValue(pendingWorkflow);
     await act(async () => {
       tree = create(React.createElement(ClockingProvider, null, React.createElement(ActionsProbe)));
@@ -241,6 +259,7 @@ describe('useClockingActions bootstrap behavior', () => {
     });
 
     expect(result).toEqual({ ok: true, pendingWorkflow });
+    expect(submitClockIn).not.toHaveBeenCalled();
     expect(tree.root.findByType('actions-probe').props.currentActiveEntryId).toBeNull();
     expect(mockLoadBootstrap).not.toHaveBeenCalled();
   });
@@ -259,6 +278,25 @@ describe('useClockingActions bootstrap behavior', () => {
     expect(result.ok).toBe(false);
     expect(result.error).toContain('Connection required to clock in');
     expect(submitClockIn).not.toHaveBeenCalled();
+  });
+
+  it('preserves actual offline clock-in when authoritative capability disables required forms', async () => {
+    const submitClockIn = jest.fn().mockResolvedValue({ ok: true, pendingSync: true });
+    mockOfflineClock = { cache: { requiredBeforeClockInForms: false }, submitClockIn };
+    mockIsOnline.mockResolvedValue(false);
+    await act(async () => {
+      tree = create(React.createElement(ClockingProvider, null, React.createElement(ActionsProbe)));
+    });
+
+    let result: any;
+    await act(async () => { result = await currentActions.clockIn('emp-1', 'job', ['job-1']); });
+
+    expect(result).toEqual({ ok: true, pendingSync: true });
+    expect(submitClockIn).toHaveBeenCalledWith(
+      { employeeId: 'emp-1', workType: 'job', jobIds: ['job-1'], unbillableCategoryId: undefined },
+      expect.objectContaining({ requestId: expect.any(String), idempotencyKey: expect.any(String) }),
+    );
+    expect(mockClockIn).not.toHaveBeenCalled();
   });
 
   it('recovers a pending mandatory clock-out instead of reporting a generic clock-in error', async () => {

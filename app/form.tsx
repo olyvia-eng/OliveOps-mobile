@@ -125,11 +125,17 @@ export default function FormScreen() {
   const dirty = JSON.stringify(values) !== JSON.stringify(initialValues);
 
   useEffect(() => navigation.addListener('beforeRemove', (event: { preventDefault: () => void; data: { action: unknown } }) => {
-    if (mandatoryClockOutRequirement && !submittedRef.current) {
+    if ((mandatoryClockInRequirement || mandatoryClockOutRequirement) && !submittedRef.current) {
       event.preventDefault();
-      Alert.alert('Clock out pending', 'Complete this required form to finish clocking out.', [
+      Alert.alert(
+        mandatoryClockInRequirement ? 'Clock in pending' : 'Clock out pending',
+        mandatoryClockInRequirement
+          ? 'Complete this required form before clocking in.'
+          : 'Complete this required form to finish clocking out.',
+        [
         { text: 'Continue Form', style: 'cancel' },
-      ]);
+        ],
+      );
       return;
     }
     if (!dirty || submittedRef.current) return;
@@ -138,7 +144,7 @@ export default function FormScreen() {
       { text: 'Keep Editing', style: 'cancel' },
       { text: 'Discard', style: 'destructive', onPress: () => navigation.dispatch(event.data.action as never) },
     ]);
-  }), [dirty, mandatoryClockOutRequirement, navigation]);
+  }), [dirty, mandatoryClockInRequirement, mandatoryClockOutRequirement, navigation]);
 
   if (clockInCompleted) {
     return (
@@ -307,7 +313,7 @@ export default function FormScreen() {
         setError(finalized.error);
         return;
       }
-      await refreshWorkContext();
+      if (mandatoryClockOutRequirement) await refreshWorkContext();
       submittedRef.current = true;
       submissionInProgressRef.current = false;
       if (mandatoryClockInRequirement) setClockInCompleted(true);

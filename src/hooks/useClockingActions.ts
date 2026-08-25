@@ -27,6 +27,7 @@ export function useClockingActions() {
   const submitOfflineClockOut = offlineClock?.submitClockOut;
   const submitOfflineSwitchActivity = offlineClock?.submitSwitchActivity;
   const updateEligibilityCache = offlineClock?.updateEligibilityCache;
+  const requiredBeforeClockInForms = offlineClock?.cache?.requiredBeforeClockInForms;
   const [loading, setLoading] = useState(false);
   const authIdentity = status === 'authenticated' && user
     ? `${user.businessId}:${user.id}:${user.employeeId ?? ''}:${accessToken ?? ''}`
@@ -78,9 +79,9 @@ export function useClockingActions() {
       requestMeta?: { requestId: string; idempotencyKey: string }
     ) {
       const meta = requestMeta ?? createRequestMeta(employeeId);
-      if (submitOfflineClockIn) {
-        const online = await isOnline();
-        if (!online && offlineClock?.cache?.requiredBeforeClockInForms !== false) {
+      const online = await isOnline();
+      if (!online && submitOfflineClockIn) {
+        if (requiredBeforeClockInForms !== false) {
           return {
             ok: false as const,
             error: 'Connection required to clock in. A required pre-shift form may need to be completed. Reconnect to continue.',
@@ -107,7 +108,6 @@ export function useClockingActions() {
 
       setLoading(true);
       try {
-        const online = await isOnline();
         if (!online) {
           return { ok: false, error: 'Offline. Reconnect and retry clock-in.' };
         }
@@ -350,6 +350,7 @@ export function useClockingActions() {
     setJobs,
     setTimeCorrections,
     setTimeEntries,
+    requiredBeforeClockInForms,
     submitOfflineClockIn,
     submitOfflineClockOut,
     submitOfflineSwitchActivity,

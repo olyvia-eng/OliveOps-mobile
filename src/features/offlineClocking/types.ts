@@ -36,6 +36,7 @@ export type OfflineClockCommand = {
   syncedAt?: string;
   status: OfflineClockStatus;
   retryCount: number;
+  lastErrorCode?: string;
   lastErrorCategory?: string;
   resolvedServerEntryId?: string;
   correctionRequestId?: string;

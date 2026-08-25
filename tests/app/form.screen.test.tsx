@@ -280,7 +280,7 @@ describe('FormScreen', () => {
       formId: 'form-1',
     }));
     expect(mockFinalize).toHaveBeenCalledTimes(1);
-    expect(mockRefreshWorkContext).toHaveBeenCalledTimes(1);
+    expect(mockRefreshWorkContext).not.toHaveBeenCalled();
     expect(tree.root.findByType('status-banner').props.message).toBe('Clock-in completed successfully.');
   });
 
@@ -373,6 +373,80 @@ describe('FormScreen', () => {
     await act(async () => beforeRemove({ preventDefault, data: { action: { type: 'GO_BACK' } } }));
     expect(preventDefault).toHaveBeenCalledTimes(1);
     expect(Alert.alert).toHaveBeenCalledWith('Discard changes?', expect.any(String), expect.any(Array));
+  });
+
+  it('blocks Back while a mandatory clock-in form is outstanding', async () => {
+    let beforeRemove: any;
+    mockAddListener.mockImplementation((_event: string, listener: unknown) => {
+      beforeRemove = listener;
+      return jest.fn();
+    });
+    const requiredForm = { ...mockForm, trigger: 'before_clock_in' };
+    const requirement = { requirementId: 'requirement-1', formId: 'form-1', form: requiredForm };
+    mockParams = {
+      formId: 'form-1', trigger: 'before_clock_in', workflowOccurrenceId: 'clock-in-occurrence-1',
+      workflowRequirementId: 'requirement-1',
+    };
+    mockPendingClockIn = {
+      ...mockPendingClockIn,
+      workflow: { workflowOccurrenceId: 'clock-in-occurrence-1', remainingForms: [requirement] },
+      currentRequirement: requirement,
+    };
+    await act(async () => { create(<FormScreen />); });
+
+    const preventDefault = jest.fn();
+    await act(async () => beforeRemove({ preventDefault, data: { action: { type: 'GO_BACK' } } }));
+
+    expect(preventDefault).toHaveBeenCalledTimes(1);
+    expect(Alert.alert).toHaveBeenCalledWith(
+      'Clock in pending',
+      'Complete this required form before clocking in.',
+      expect.any(Array),
+    );
+  });
+
+  it('preserves mandatory clock-out Back protection', async () => {
+    let beforeRemove: any;
+    mockAddListener.mockImplementation((_event: string, listener: unknown) => {
+      beforeRemove = listener;
+      return jest.fn();
+    });
+    const requiredForm = { ...mockForm, trigger: 'after_clock_out' };
+    const requirement = { workflowRequirementId: 'requirement-1', form: requiredForm };
+    mockParams = {
+      formId: 'form-1', trigger: 'after_clock_out', workflowOccurrenceId: 'clock-out-occurrence-1',
+      workflowRequirementId: 'requirement-1',
+    };
+    mockPendingClockOut = {
+      ...mockPendingClockOut,
+      workflow: { workflowOccurrenceId: 'clock-out-occurrence-1', requirements: [requirement] },
+      currentRequirement: requirement,
+    };
+    await act(async () => { create(<FormScreen />); });
+
+    const preventDefault = jest.fn();
+    await act(async () => beforeRemove({ preventDefault, data: { action: { type: 'GO_BACK' } } }));
+
+    expect(preventDefault).toHaveBeenCalledTimes(1);
+    expect(Alert.alert).toHaveBeenCalledWith(
+      'Clock out pending',
+      'Complete this required form to finish clocking out.',
+      expect.any(Array),
+    );
+  });
+
+  it('allows Back from an unchanged ordinary form', async () => {
+    let beforeRemove: any;
+    mockAddListener.mockImplementation((_event: string, listener: unknown) => {
+      beforeRemove = listener;
+      return jest.fn();
+    });
+    await act(async () => { create(<FormScreen />); });
+
+    const preventDefault = jest.fn();
+    await act(async () => beforeRemove({ preventDefault, data: { action: { type: 'GO_BACK' } } }));
+
+    expect(preventDefault).not.toHaveBeenCalled();
   });
 
   it('submits Morning Truck Inspection with hydrated Date, Driver, and Yes answers', async () => {
