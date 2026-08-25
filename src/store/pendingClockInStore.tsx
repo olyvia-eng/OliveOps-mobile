@@ -28,7 +28,8 @@ type PendingClockInState = {
   totalCount: number;
   busy: boolean;
   error: string | null;
-  acceptWorkflow: (workflow: PendingClockInWorkflow) => Promise<void>;
+  acceptWorkflow: (workflow: PendingClockInWorkflow) => Promise<PendingClockInWorkflow>;
+  ensureCurrentForm: () => Promise<EmployeeForm | null>;
   recover: () => Promise<PendingClockInWorkflow | null>;
   submissionIdFor: (requirementId: string) => Promise<string>;
   queueSubmission: (payload: SubmitEmployeeFormRequest) => Promise<void>;
@@ -114,6 +115,7 @@ export function PendingClockInProvider({ children }: { children: React.ReactNode
       queuedSubmissions: sameOccurrence ? current.queuedSubmissions : [],
     });
     setError(null);
+    return enrichedWorkflow;
   }, [accessToken, commit]);
 
   const recover = useCallback(async () => {
@@ -126,13 +128,43 @@ export function PendingClockInProvider({ children }: { children: React.ReactNode
         await commit(null);
         return null;
       }
-      await acceptWorkflow(response);
-      return response;
+      return await acceptWorkflow(response);
     } catch {
       setError('Could not refresh the required pre-shift form. Your progress is still saved.');
       return recordRef.current?.workflow ?? null;
     }
   }, [acceptWorkflow, accessToken, commit, identityKey, status]);
+
+  const ensureCurrentForm = useCallback(async () => {
+    const cachedWorkflow = recordRef.current?.workflow;
+    const cachedRequirement = cachedWorkflow?.remainingForms[0] ?? null;
+    const cachedForm = pendingClockInRequirementForm(cachedRequirement);
+    if (cachedForm) return cachedForm;
+    if (!cachedWorkflow) return null;
+    if (!await isOnline()) {
+      setError('Required form could not be loaded. Check your connection and try again.');
+      return null;
+    }
+
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await clockingApi.loadPendingClockIn(accessToken);
+      if (response.status === 'no_pending_clock_in') {
+        setError('Required form could not be loaded. Check your connection and try again.');
+        return null;
+      }
+      const accepted = await acceptWorkflow(response);
+      const form = pendingClockInRequirementForm(accepted.remainingForms[0] ?? null);
+      if (!form) setError('Required form could not be loaded. Check your connection and try again.');
+      return form;
+    } catch {
+      setError('Required form could not be loaded. Check your connection and try again.');
+      return null;
+    } finally {
+      setBusy(false);
+    }
+  }, [acceptWorkflow, accessToken]);
 
   const recoverStaleWorkflow = useCallback(async () => {
     try {
@@ -284,12 +316,13 @@ export function PendingClockInProvider({ children }: { children: React.ReactNode
     busy,
     error,
     acceptWorkflow,
+    ensureCurrentForm,
     recover,
     submissionIdFor,
     queueSubmission,
     refreshAfterSubmission: recover,
     finalize,
-  }), [acceptWorkflow, busy, currentRequirement, error, finalize, hydrated, queueSubmission, recover, submissionIdFor, workflow]);
+  }), [acceptWorkflow, busy, currentRequirement, ensureCurrentForm, error, finalize, hydrated, queueSubmission, recover, submissionIdFor, workflow]);
 
   return <PendingClockInContext.Provider value={value}>{children}</PendingClockInContext.Provider>;
 }

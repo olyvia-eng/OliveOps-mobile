@@ -110,6 +110,7 @@ jest.mock('@/store/formsWorkflowStore', () => ({
 
 jest.mock('@/store/pendingClockInStore', () => ({
   usePendingClockInStore: () => mockPendingClockIn,
+  pendingClockInRequirementForm: (requirement: any) => requirement?.form ?? requirement?.formPackage ?? null,
 }));
 
 jest.mock('@/store/pendingClockOutStore', () => ({
@@ -180,7 +181,8 @@ describe('ClockInScreen', () => {
       currentForm: null,
       completedCount: 0,
       totalCount: 0,
-      acceptWorkflow: jest.fn().mockResolvedValue(undefined),
+      acceptWorkflow: jest.fn(async (pendingWorkflow: any) => pendingWorkflow),
+      ensureCurrentForm: jest.fn().mockResolvedValue(null),
       recover: jest.fn().mockResolvedValue(null),
     };
     mockPendingClockOut = {
@@ -386,6 +388,49 @@ describe('ClockInScreen', () => {
         workflowRequirementId: 'requirement-1',
       }),
     }));
+  });
+
+  it('opens the canonical enriched Form for an ID-only response exactly once', async () => {
+    const requiredForm = {
+      id: 'form-clock', name: 'Morning Truck Inspection', trigger: 'before_clock_in', required: true,
+      completionRequirement: 'required', context: {}, fields: [], submissionState: { completed: false },
+    };
+    const requirement = { requirementId: 'requirement-1', formId: 'form-clock' };
+    const pendingWorkflow = {
+      ok: true, blocked: true, status: 'clock_in_pending_required_forms', workflowOccurrenceId: 'occurrence-1',
+      requiredFormCount: 1, completedRequiredFormCount: 0, remainingRequiredFormCount: 1,
+      requiredForms: [requirement], remainingForms: [requirement], reminderForms: [],
+      clockInIntent: { employeeId: 'emp-1', workType: 'drive_time', jobIds: [] },
+    };
+    const acceptedWorkflow = {
+      ...pendingWorkflow,
+      requiredForms: [{ ...requirement, form: requiredForm }],
+      remainingForms: [{ ...requirement, form: requiredForm }],
+    };
+    mockClockIn.mockResolvedValueOnce({ ok: true, pendingWorkflow });
+    mockPendingClockIn.acceptWorkflow.mockResolvedValueOnce(acceptedWorkflow);
+    let tree: any;
+    await act(async () => { tree = create(<ClockInScreen />); });
+    await act(async () => tree.root.findByProps({ testID: 'activity-option-drive_time' }).props.onPress());
+    await act(async () => tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Clock In').props.onPress());
+
+    expect(router.push).toHaveBeenCalledWith({
+      pathname: '/form',
+      params: {
+        formId: 'form-clock', trigger: 'before_clock_in', workflowOccurrenceId: 'occurrence-1',
+        workflowRequirementId: 'requirement-1',
+      },
+    });
+
+    mockPendingClockIn = {
+      ...mockPendingClockIn,
+      workflow: acceptedWorkflow,
+      currentRequirement: acceptedWorkflow.remainingForms[0],
+      currentForm: requiredForm,
+    };
+    await act(async () => tree.update(<ClockInScreen />));
+    await act(async () => tree.update(<ClockInScreen />));
+    expect(router.push).toHaveBeenCalledTimes(1);
   });
 
   it('restores a completed Form workflow and clocks into the selected job exactly once', async () => {

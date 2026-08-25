@@ -157,6 +157,8 @@ describe('HomeScreen', () => {
       currentForm: null,
       completedCount: 0,
       totalCount: 0,
+      busy: false,
+      ensureCurrentForm: jest.fn().mockResolvedValue(null),
     };
   });
 
@@ -259,6 +261,8 @@ describe('HomeScreen', () => {
       currentForm: { id: 'form-clock-in' },
       completedCount: 0,
       totalCount: 2,
+      busy: false,
+      ensureCurrentForm: jest.fn().mockResolvedValue({ id: 'form-clock-in' }),
     };
     await act(async () => { tree = create(<HomeScreen />); });
 
@@ -272,5 +276,31 @@ describe('HomeScreen', () => {
       pathname: '/form',
       params: expect.objectContaining({ workflowRequirementId: 'clock-in-requirement-1' }),
     }));
+  });
+
+  it('resolves an ID-only pending clock-in and opens its Form directly', async () => {
+    const ensureCurrentForm = jest.fn().mockResolvedValue({ id: 'form-clock-in' });
+    mockPendingClockIn = {
+      workflow: { workflowOccurrenceId: 'clock-in-occurrence-1' },
+      currentRequirement: { requirementId: 'clock-in-requirement-1', formId: 'form-clock-in' },
+      currentForm: null,
+      completedCount: 0,
+      totalCount: 1,
+      busy: false,
+      ensureCurrentForm,
+    };
+    await act(async () => { tree = create(<HomeScreen />); });
+
+    const resume = tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Resume Required Form');
+    await act(async () => resume.props.onPress());
+
+    expect(ensureCurrentForm).toHaveBeenCalledTimes(1);
+    expect(router.push).toHaveBeenCalledWith({
+      pathname: '/form',
+      params: {
+        formId: 'form-clock-in', trigger: 'before_clock_in', workflowOccurrenceId: 'clock-in-occurrence-1',
+        workflowRequirementId: 'clock-in-requirement-1',
+      },
+    });
   });
 });

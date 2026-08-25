@@ -18,7 +18,7 @@ import { useAuthStore } from '@/store/authStore';
 import { useClockingStore } from '@/store/clockingStore';
 import { useOptionalOfflineClockStore } from '@/store/offlineClockContext';
 import { useFormsWorkflowStore, type FormsWorkflowIntent } from '@/store/formsWorkflowStore';
-import { usePendingClockInStore } from '@/store/pendingClockInStore';
+import { pendingClockInRequirementForm, usePendingClockInStore } from '@/store/pendingClockInStore';
 import { usePendingClockOutStore } from '@/store/pendingClockOutStore';
 import { colors } from '@/theme/colors';
 import type { TimeEntryWorkType } from '@/types/domain';
@@ -59,6 +59,28 @@ export default function ClockInScreen() {
   const advisoryAcceptedRef = useRef(false);
   const checkingFormsRef = useRef(false);
   const continuingWorkflowRef = useRef<string | null>(null);
+  const openedMandatoryRequirementRef = useRef<string | null>(null);
+
+  function openMandatoryForm(
+    workflowOccurrenceId: string,
+    requirement: NonNullable<typeof pendingClockIn.currentRequirement>,
+  ) {
+    const form = pendingClockInRequirementForm(requirement);
+    if (!form) return false;
+    const navigationKey = `${workflowOccurrenceId}:${requirement.requirementId}`;
+    if (openedMandatoryRequirementRef.current === navigationKey) return true;
+    openedMandatoryRequirementRef.current = navigationKey;
+    router.push({
+      pathname: '/form',
+      params: {
+        formId: form.id,
+        trigger: 'before_clock_in',
+        workflowOccurrenceId,
+        workflowRequirementId: requirement.requirementId,
+      },
+    });
+    return true;
+  }
 
   useEffect(() => {
     void refreshWorkContext();
@@ -72,6 +94,11 @@ export default function ClockInScreen() {
     setSelectedJobId(intent.jobIds[0] ?? '');
     setSelectedUnbillableCategoryId(intent.unbillableCategoryId ?? '');
   }, [pendingClockIn.workflow?.workflowOccurrenceId, user?.employeeId]);
+
+  useEffect(() => {
+    if (!pendingClockIn.workflow || !pendingClockIn.currentRequirement) return;
+    openMandatoryForm(pendingClockIn.workflow.workflowOccurrenceId, pendingClockIn.currentRequirement);
+  }, [pendingClockIn.currentForm, pendingClockIn.currentRequirement, pendingClockIn.workflow]);
 
   useEffect(() => {
     if (!pendingClockIn.workflow && effectiveClock.hydrated && (
@@ -234,18 +261,8 @@ export default function ClockInScreen() {
     setError(null);
 
     if (pendingClockIn.workflow) {
-      if (pendingClockIn.currentForm && pendingClockIn.currentRequirement) {
-        router.push({
-          pathname: '/form',
-          params: {
-            formId: pendingClockIn.currentForm.id,
-            trigger: 'before_clock_in',
-            workflowOccurrenceId: pendingClockIn.workflow.workflowOccurrenceId,
-            workflowRequirementId: pendingClockIn.currentRequirement.requirementId,
-          },
-        });
-      } else {
-        await pendingClockIn.recover();
+      const form = await pendingClockIn.ensureCurrentForm();
+      if (!form) {
         setError('The required pre-shift form is not available yet. Reconnect and try again.');
       }
       return;
@@ -318,21 +335,12 @@ export default function ClockInScreen() {
 
     const pendingWorkflow = 'pendingWorkflow' in result ? result.pendingWorkflow : undefined;
     if (pendingWorkflow) {
-      await pendingClockIn.acceptWorkflow(pendingWorkflow);
-      const requirement = pendingWorkflow.remainingForms[0];
-      const form = requirement?.form ?? requirement?.formPackage;
+      const acceptedWorkflow = await pendingClockIn.acceptWorkflow(pendingWorkflow);
       setRetryMeta(null);
       clearWorkflow();
-      if (requirement && form) {
-        router.push({
-          pathname: '/form',
-          params: {
-            formId: form.id,
-            trigger: 'before_clock_in',
-            workflowOccurrenceId: pendingWorkflow.workflowOccurrenceId,
-            workflowRequirementId: requirement.requirementId,
-          },
-        });
+      const requirement = acceptedWorkflow.remainingForms[0] ?? null;
+      if (!requirement || !openMandatoryForm(acceptedWorkflow.workflowOccurrenceId, requirement)) {
+        setError('Required form could not be loaded. Check your connection and try again.');
       }
       return;
     }
@@ -440,7 +448,12 @@ export default function ClockInScreen() {
         <PrimaryActionButton
           label={pendingClockIn.busy ? 'Refreshing Required Form...' : 'Refresh Required Form'}
           disabled={pendingClockIn.busy}
-          onPress={() => { void pendingClockIn.recover(); }}
+          onPress={() => {
+            setError(null);
+            void pendingClockIn.ensureCurrentForm().then((form) => {
+              if (!form) setError('Required form could not be loaded. Check your connection and try again.');
+            });
+          }}
         />
       ) : advisoryForms.length > 0 ? (
         <AdvisoryFormsPrompt

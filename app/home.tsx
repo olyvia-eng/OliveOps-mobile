@@ -38,6 +38,7 @@ export default function HomeScreen() {
   const pendingClockIn = usePendingClockInStore();
   const pendingClockOut = usePendingClockOutStore();
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [pendingFormError, setPendingFormError] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
 
   useEffect(() => {
@@ -109,6 +110,7 @@ export default function HomeScreen() {
       <ScreenHeader title={greeting} subtitle={todayLabel} />
 
       {loadError && !loadError.startsWith('Offline.') ? <StatusBanner tone="error" message={loadError} /> : null}
+      {pendingFormError ? <StatusBanner tone="error" message={pendingFormError} /> : null}
 
       {pendingClockOut.workflow ? (
         <ActionCard>
@@ -184,21 +186,42 @@ export default function HomeScreen() {
             },
           })}
         />
-      ) : pendingClockIn.workflow && pendingClockIn.currentForm && pendingClockIn.currentRequirement ? (
+      ) : pendingClockIn.workflow && pendingClockIn.currentRequirement ? (
         <PrimaryActionButton
-          label="Resume Required Form"
-          onPress={() => router.push({
-            pathname: '/form',
-            params: {
-              formId: pendingClockIn.currentForm?.id,
-              trigger: 'before_clock_in',
-              workflowOccurrenceId: pendingClockIn.workflow?.workflowOccurrenceId,
-              workflowRequirementId: pendingClockIn.currentRequirement?.requirementId,
-            },
-          })}
+          label={pendingClockIn.busy ? 'Loading Required Form...' : 'Resume Required Form'}
+          disabled={pendingClockIn.busy}
+          onPress={() => {
+            const workflowOccurrenceId = pendingClockIn.workflow?.workflowOccurrenceId;
+            const workflowRequirementId = pendingClockIn.currentRequirement?.requirementId;
+            setPendingFormError(null);
+            void pendingClockIn.ensureCurrentForm().then((form) => {
+              if (!form || !workflowOccurrenceId || !workflowRequirementId) {
+                setPendingFormError('Required form could not be loaded. Check your connection and try again.');
+                return;
+              }
+              router.push({
+                pathname: '/form',
+                params: {
+                  formId: form.id,
+                  trigger: 'before_clock_in',
+                  workflowOccurrenceId,
+                  workflowRequirementId,
+                },
+              });
+            });
+          }}
         />
       ) : pendingClockIn.workflow ? (
-        <PrimaryActionButton label="Resume Clock In" onPress={() => router.push('/clock-in')} />
+        <PrimaryActionButton
+          label={pendingClockIn.busy ? 'Loading Required Form...' : 'Resume Required Form'}
+          disabled={pendingClockIn.busy}
+          onPress={() => {
+            setPendingFormError(null);
+            void pendingClockIn.ensureCurrentForm().then((form) => {
+              if (!form) setPendingFormError('Required form could not be loaded. Check your connection and try again.');
+            });
+          }}
+        />
       ) : activeShift ? (
         <View style={styles.actionStack}>
           <SecondaryButton label="Switch Activity" onPress={() => router.push('/switch-activity')} />

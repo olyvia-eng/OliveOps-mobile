@@ -38,6 +38,12 @@ function workflow() {
   };
 }
 
+function idOnlyWorkflow() {
+  const pending = workflow();
+  const requirement = { requirementId: 'requirement-1', formId: 'form-1' };
+  return { ...pending, requiredForms: [requirement], remainingForms: [requirement] };
+}
+
 jest.mock('@/api/clockingApi', () => ({
   loadBootstrap: (...args: unknown[]) => mockLoadBootstrap(...args),
   loadPendingClockIn: (...args: unknown[]) => mockLoadPendingClockIn(...args),
@@ -149,6 +155,70 @@ describe('PendingClockInProvider', () => {
 
     expect(mockLoadPendingClockIn).toHaveBeenCalledWith('token-1');
     expect(pendingStore.currentRequirement?.requirementId).toBe('requirement-1');
+  });
+
+  it('returns and persists the canonically enriched workflow for an ID-only requirement', async () => {
+    await mount();
+    mockLoadRequiredForms.mockResolvedValue({
+      ok: true,
+      forms: [{ ...requiredForm, id: 'form-other', name: 'Other Form' }, requiredForm],
+    });
+
+    let accepted: any;
+    await act(async () => { accepted = await pendingStore.acceptWorkflow(idOnlyWorkflow()); });
+
+    expect(accepted.requiredForms[0].form).toEqual(requiredForm);
+    expect(accepted.remainingForms[0].form).toEqual(requiredForm);
+    expect(pendingStore.currentForm).toEqual(requiredForm);
+    expect(mockSaveRecord).toHaveBeenLastCalledWith(
+      'business-1:user-1:employee-1',
+      expect.objectContaining({
+        workflow: expect.objectContaining({
+          requiredForms: [expect.objectContaining({ formId: 'form-1', form: requiredForm })],
+          remainingForms: [expect.objectContaining({ formId: 'form-1', form: requiredForm })],
+        }),
+      }),
+    );
+  });
+
+  it('keeps an ID-only workflow after failed enrichment and resolves it on retry', async () => {
+    await mount();
+    mockLoadRequiredForms.mockRejectedValueOnce(new Error('temporary failure'));
+    await act(async () => { await pendingStore.acceptWorkflow(idOnlyWorkflow()); });
+
+    expect(pendingStore.workflow?.workflowOccurrenceId).toBe('occurrence-1');
+    expect(pendingStore.currentForm).toBeNull();
+    mockLoadPendingClockIn.mockResolvedValue(idOnlyWorkflow());
+    mockLoadRequiredForms.mockResolvedValue({ ok: true, forms: [requiredForm] });
+
+    let resolved: any;
+    await act(async () => { resolved = await pendingStore.ensureCurrentForm(); });
+
+    expect(resolved).toEqual(requiredForm);
+    expect(pendingStore.currentForm).toEqual(requiredForm);
+    expect(mockClearRecord).not.toHaveBeenCalled();
+  });
+
+  it('enriches a persisted ID-only workflow after restart', async () => {
+    mockLoadRecord.mockResolvedValue({ workflow: idOnlyWorkflow(), submissionIds: {}, queuedSubmissions: [] });
+    mockLoadBootstrap.mockResolvedValue({
+      ok: true,
+      capabilities: { requiredBeforeClockInForms: true },
+      pendingClockInWorkflow: idOnlyWorkflow(),
+    });
+
+    await mount();
+
+    expect(pendingStore.currentForm).toEqual(requiredForm);
+    expect(mockSaveRecord).toHaveBeenCalledWith(
+      'business-1:user-1:employee-1',
+      expect.objectContaining({
+        workflow: expect.objectContaining({
+          requiredForms: [expect.objectContaining({ form: requiredForm })],
+          remainingForms: [expect.objectContaining({ form: requiredForm })],
+        }),
+      }),
+    );
   });
 
   it('keeps one stable clientSubmissionId for retries of the same requirement', async () => {
