@@ -209,6 +209,11 @@ describe('OfflineClockProvider', () => {
   });
 
   it('removes a provisional shift without needs-attention when replay returns required forms', async () => {
+    const requiredForm = {
+      id: 'form-1', name: 'Morning Truck Inspection', trigger: 'before_clock_in', required: true,
+      completionRequirement: 'required', context: { jobId: 'job-1' }, fields: [],
+      submissionState: { completed: false },
+    };
     const clockIn = command();
     const dependentSwitch = command({
       id: 'key-switch',
@@ -220,7 +225,7 @@ describe('OfflineClockProvider', () => {
       queuedAt: '2026-08-20T10:30:00.100Z',
     });
     mockStoredCommands.push(clockIn, dependentSwitch);
-    mockClockIn.mockResolvedValue({
+    const pendingWorkflow = {
       ok: true,
       blocked: true,
       status: 'clock_in_pending_required_forms',
@@ -228,11 +233,12 @@ describe('OfflineClockProvider', () => {
       requiredFormCount: 1,
       completedRequiredFormCount: 0,
       remainingRequiredFormCount: 1,
-      requiredForms: [{ requirementId: 'requirement-1', formId: 'form-1' }],
-      remainingForms: [{ requirementId: 'requirement-1', formId: 'form-1' }],
+      requiredForms: [{ requirementId: 'requirement-1', formId: 'form-1', form: requiredForm }],
+      remainingForms: [{ requirementId: 'requirement-1', formId: 'form-1', form: requiredForm }],
       reminderForms: [],
       clockInIntent: { employeeId: 'employee-1', workType: 'job', jobIds: ['job-1'] },
-    });
+    } as const;
+    mockClockIn.mockResolvedValue(pendingWorkflow);
 
     tree = await renderProvider();
 
@@ -243,8 +249,12 @@ describe('OfflineClockProvider', () => {
     expect(offlineClock.effectiveState.effectiveStatus).toBe('clocked_out_synced');
     expect(offlineClock.effectiveState.pendingCount).toBe(0);
     expect(offlineClock.effectiveState.needsAttentionCount).toBe(0);
+    expect(offlineClock.pendingClockInWorkflow).toBe(pendingWorkflow);
     expect(mockCaptureMessage).not.toHaveBeenCalledWith('required_before_clock_in_forms', expect.anything());
     expect(mockLoadBootstrap).toHaveBeenCalledWith('token-1', { force: true });
+
+    await act(async () => offlineClock.acknowledgePendingClockInWorkflow());
+    expect(offlineClock.pendingClockInWorkflow).toBeNull();
   });
 
   it('retires obsolete required-form needs-attention shifts during restart recovery', async () => {

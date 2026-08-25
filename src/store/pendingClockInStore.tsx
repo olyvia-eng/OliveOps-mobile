@@ -13,6 +13,7 @@ import {
 import { createFormClientSubmissionId } from '@/services/requestGuards';
 import { useClockingActions } from '@/hooks/useClockingActions';
 import { useAuthStore } from '@/store/authStore';
+import { useOptionalOfflineClockStore } from '@/store/offlineClockContext';
 import type { PendingClockInRequirement, PendingClockInWorkflow } from '@/types/api';
 import { ApiError } from '@/types/errors';
 import type { EmployeeForm, SubmitEmployeeFormRequest } from '@/types/forms';
@@ -41,7 +42,7 @@ const PendingClockInContext = createContext<PendingClockInState | undefined>(und
 
 export function pendingClockInRequirementForm(requirement: PendingClockInRequirement | null): EmployeeForm | null {
   if (!requirement) return null;
-  if (requirement.form) return { ...requirement.form, context: requirement.context ?? requirement.form.context };
+  if (requirement.form) return requirement.form;
   if (requirement.formPackage) return { ...requirement.formPackage, context: requirement.context ?? requirement.formPackage.context };
   if (!requirement.fields) return null;
   return {
@@ -69,6 +70,9 @@ function errorCode(error: unknown) {
 export function PendingClockInProvider({ children }: { children: React.ReactNode }) {
   const { accessToken, status, user } = useAuthStore();
   const { refreshWorkContext } = useClockingActions();
+  const offlineClock = useOptionalOfflineClockStore();
+  const outboxWorkflow = offlineClock?.pendingClockInWorkflow;
+  const acknowledgeOutboxWorkflow = offlineClock?.acknowledgePendingClockInWorkflow;
   const identityKey = identityFor(user);
   const identityRef = useRef(identityKey);
   identityRef.current = identityKey;
@@ -90,9 +94,22 @@ export function PendingClockInProvider({ children }: { children: React.ReactNode
   const acceptWorkflow = useCallback(async (nextWorkflow: PendingClockInWorkflow) => {
     const current = recordRef.current;
     const sameOccurrence = current?.workflow.workflowOccurrenceId === nextWorkflow.workflowOccurrenceId;
-    let enrichedWorkflow = nextWorkflow;
-    const requirements = [...nextWorkflow.requiredForms, ...nextWorkflow.remainingForms];
-    if (requirements.some((requirement) => !pendingClockInRequirementForm(requirement))) {
+    const embeddedForms = new Map(
+      [...nextWorkflow.requiredForms, ...nextWorkflow.remainingForms]
+        .filter((requirement) => requirement.form)
+        .map((requirement) => [requirement.requirementId, requirement.form!]),
+    );
+    const normalize = (requirement: PendingClockInRequirement) => ({
+      ...requirement,
+      form: requirement.form ?? embeddedForms.get(requirement.requirementId),
+    });
+    let enrichedWorkflow = {
+      ...nextWorkflow,
+      requiredForms: nextWorkflow.requiredForms.map(normalize),
+      remainingForms: nextWorkflow.remainingForms.map(normalize),
+    };
+    const currentRequirement = enrichedWorkflow.remainingForms[0] ?? null;
+    if (currentRequirement && !pendingClockInRequirementForm(currentRequirement)) {
       try {
         const response = await loadRequiredForms('before_clock_in', accessToken);
         const formsById = new Map(response.forms.map((form) => [form.id, form]));
@@ -101,9 +118,9 @@ export function PendingClockInProvider({ children }: { children: React.ReactNode
           form: requirement.form ?? requirement.formPackage ?? formsById.get(requirement.formId),
         });
         enrichedWorkflow = {
-          ...nextWorkflow,
-          requiredForms: nextWorkflow.requiredForms.map(enrich),
-          remainingForms: nextWorkflow.remainingForms.map(enrich),
+          ...enrichedWorkflow,
+          requiredForms: enrichedWorkflow.requiredForms.map(enrich),
+          remainingForms: enrichedWorkflow.remainingForms.map(enrich),
         };
       } catch {
         // Persist the authoritative workflow even when its render package cannot be refreshed yet.
@@ -117,6 +134,15 @@ export function PendingClockInProvider({ children }: { children: React.ReactNode
     setError(null);
     return enrichedWorkflow;
   }, [accessToken, commit]);
+
+  useEffect(() => {
+    if (!hydrated || !outboxWorkflow || !acknowledgeOutboxWorkflow || status !== 'authenticated' || outboxWorkflow.clockInIntent.employeeId !== user?.employeeId) return;
+    let cancelled = false;
+    void acceptWorkflow(outboxWorkflow).then(() => {
+      if (!cancelled && identityRef.current === identityKey) acknowledgeOutboxWorkflow();
+    }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [acceptWorkflow, acknowledgeOutboxWorkflow, hydrated, identityKey, outboxWorkflow, status, user?.employeeId]);
 
   const recover = useCallback(async () => {
     if (!identityKey || status !== 'authenticated') return null;
@@ -170,8 +196,7 @@ export function PendingClockInProvider({ children }: { children: React.ReactNode
     try {
       const bootstrap = await clockingApi.loadBootstrap(accessToken, { force: true });
       if (bootstrap.pendingClockInWorkflow) {
-        await acceptWorkflow(bootstrap.pendingClockInWorkflow);
-        return bootstrap.pendingClockInWorkflow;
+        return await acceptWorkflow(bootstrap.pendingClockInWorkflow);
       }
     } catch {
       // Continue to the dedicated workflow endpoint.

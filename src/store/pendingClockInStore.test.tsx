@@ -12,6 +12,8 @@ const mockLoadRecord = jest.fn();
 const mockSaveRecord = jest.fn();
 const mockClearRecord = jest.fn();
 const mockRefreshWorkContext = jest.fn();
+const mockAcknowledgePendingClockInWorkflow = jest.fn();
+let mockOutboxWorkflow: ReturnType<typeof workflow> | null = null;
 let mockOnline = true;
 let pendingStore: any;
 
@@ -73,6 +75,12 @@ jest.mock('@/store/authStore', () => ({
 jest.mock('@/hooks/useClockingActions', () => ({
   useClockingActions: () => ({ refreshWorkContext: mockRefreshWorkContext }),
 }));
+jest.mock('@/store/offlineClockContext', () => ({
+  useOptionalOfflineClockStore: () => ({
+    pendingClockInWorkflow: mockOutboxWorkflow,
+    acknowledgePendingClockInWorkflow: mockAcknowledgePendingClockInWorkflow,
+  }),
+}));
 jest.mock('@react-native-community/netinfo', () => ({
   __esModule: true,
   default: { addEventListener: jest.fn(() => jest.fn()) },
@@ -99,6 +107,8 @@ describe('PendingClockInProvider', () => {
 
   beforeEach(() => {
     mockOnline = true;
+    mockOutboxWorkflow = null;
+    mockAcknowledgePendingClockInWorkflow.mockReset();
     mockLoadRecord.mockReset().mockResolvedValue(null);
     mockSaveRecord.mockReset().mockResolvedValue(undefined);
     mockClearRecord.mockReset().mockResolvedValue(undefined);
@@ -130,10 +140,46 @@ describe('PendingClockInProvider', () => {
 
     expect(pendingStore.workflow?.workflowOccurrenceId).toBe('occurrence-1');
     expect(pendingStore.currentRequirement?.requirementId).toBe('requirement-1');
+    expect(pendingStore.currentForm).toBe(requiredForm);
+    expect(mockLoadRequiredForms).not.toHaveBeenCalled();
     expect(mockSaveRecord).toHaveBeenCalledWith(
       'business-1:user-1:employee-1',
       expect.objectContaining({ workflow: expect.objectContaining({ workflowOccurrenceId: 'occurrence-1' }) }),
     );
+  });
+
+  it('normalizes an embedded snapshot across duplicate requirement arrays without discovery', async () => {
+    await mount();
+    mockLoadRequiredForms.mockClear();
+    const pending = workflow();
+    const embeddedOnlyInRemaining = {
+      ...pending,
+      requiredForms: [{ requirementId: 'requirement-1', formId: 'form-1' }],
+    };
+
+    let accepted: any;
+    await act(async () => { accepted = await pendingStore.acceptWorkflow(embeddedOnlyInRemaining); });
+
+    expect(accepted.requiredForms[0].form).toBe(requiredForm);
+    expect(accepted.remainingForms[0].form).toBe(requiredForm);
+    expect(pendingStore.currentForm).toBe(requiredForm);
+    expect(mockLoadRequiredForms).not.toHaveBeenCalled();
+  });
+
+  it('accepts and acknowledges an outbox workflow after persisting its embedded snapshot', async () => {
+    mockLoadBootstrap.mockResolvedValue({ ok: true, capabilities: { requiredBeforeClockInForms: false } });
+    mockOutboxWorkflow = workflow();
+
+    await mount();
+
+    expect(pendingStore.workflow?.workflowOccurrenceId).toBe('occurrence-1');
+    expect(pendingStore.currentForm).toBe(requiredForm);
+    expect(mockLoadRequiredForms).not.toHaveBeenCalled();
+    expect(mockSaveRecord).toHaveBeenCalledWith(
+      'business-1:user-1:employee-1',
+      expect.objectContaining({ workflow: mockOutboxWorkflow }),
+    );
+    expect(mockAcknowledgePendingClockInWorkflow).toHaveBeenCalledTimes(1);
   });
 
   it('restores the persisted workflow while offline without clearing it', async () => {

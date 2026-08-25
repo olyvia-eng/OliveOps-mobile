@@ -194,6 +194,18 @@ export default function HomeScreen() {
             const workflowOccurrenceId = pendingClockIn.workflow?.workflowOccurrenceId;
             const workflowRequirementId = pendingClockIn.currentRequirement?.requirementId;
             setPendingFormError(null);
+            if (pendingClockIn.currentForm && workflowOccurrenceId && workflowRequirementId) {
+              router.push({
+                pathname: '/form',
+                params: {
+                  formId: pendingClockIn.currentForm.id,
+                  trigger: 'before_clock_in',
+                  workflowOccurrenceId,
+                  workflowRequirementId,
+                },
+              });
+              return;
+            }
             void pendingClockIn.ensureCurrentForm().then((form) => {
               if (!form || !workflowOccurrenceId || !workflowRequirementId) {
                 setPendingFormError('Required form could not be loaded. Check your connection and try again.');

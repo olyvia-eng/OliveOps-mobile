@@ -32,7 +32,7 @@ import {
   type OfflineClockRecordedResult as RecordedResult,
   type OfflineClockSubmitMeta as SubmitMeta,
 } from '@/store/offlineClockContext';
-import type { ClockInRequest, ClockOutRequest, SwitchActivityRequest } from '@/types/api';
+import type { ClockInRequest, ClockOutRequest, PendingClockInWorkflow, SwitchActivityRequest } from '@/types/api';
 import type { ApiError } from '@/types/errors';
 
 const NEEDS_ATTENTION_CODES = new Set([
@@ -75,6 +75,7 @@ export function OfflineClockProvider({ children }: { children: React.ReactNode }
   const [cache, setCache] = useState<OfflineClockCache | null>(null);
   const cacheRef = useRef<OfflineClockCache | null>(null);
   const [hydrated, setHydrated] = useState(false);
+  const [pendingClockInWorkflow, setPendingClockInWorkflow] = useState<PendingClockInWorkflow | null>(null);
   const syncPromiseRef = useRef<Promise<void> | null>(null);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const identityRef = useRef(identityKey);
@@ -155,6 +156,7 @@ export function OfflineClockProvider({ children }: { children: React.ReactNode }
     setHydrated(false);
     setCommands([]);
     setCache(null);
+    setPendingClockInWorkflow(null);
     if (!identityKey || status !== 'authenticated') {
       setHydrated(true);
       return () => { cancelled = true; };
@@ -250,6 +252,7 @@ export function OfflineClockProvider({ children }: { children: React.ReactNode }
               }
               completedAny = true;
               setCommands((current) => current.filter((command) => command.localShiftId !== stored.localShiftId));
+              setPendingClockInWorkflow(response);
               continue;
             }
             await completeOfflineCommand(syncing, {
@@ -421,6 +424,8 @@ export function OfflineClockProvider({ children }: { children: React.ReactNode }
     replaceCommand(resolved);
   }, [commands, identityKey, replaceCommand]);
 
+  const acknowledgePendingClockInWorkflow = useCallback(() => setPendingClockInWorkflow(null), []);
+
   const value = useMemo<OfflineClockContextValue>(() => ({
     hydrated,
     commands,
@@ -428,13 +433,15 @@ export function OfflineClockProvider({ children }: { children: React.ReactNode }
     effectiveState,
     effectiveTimeEntries,
     effectiveCurrentActiveEntryId: effectiveState.effectiveActiveEntryId,
+    pendingClockInWorkflow,
+    acknowledgePendingClockInWorkflow,
     submitClockIn,
     submitSwitchActivity,
     submitClockOut,
     updateEligibilityCache,
     resolveCommandWithCorrection,
     syncNow,
-  }), [cache, commands, effectiveState, effectiveTimeEntries, hydrated, resolveCommandWithCorrection, submitClockIn, submitClockOut, submitSwitchActivity, syncNow, updateEligibilityCache]);
+  }), [acknowledgePendingClockInWorkflow, cache, commands, effectiveState, effectiveTimeEntries, hydrated, pendingClockInWorkflow, resolveCommandWithCorrection, submitClockIn, submitClockOut, submitSwitchActivity, syncNow, updateEligibilityCache]);
 
   return <OfflineClockContext.Provider value={value}>{children}</OfflineClockContext.Provider>;
 }

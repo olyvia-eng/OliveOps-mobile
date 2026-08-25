@@ -1,7 +1,7 @@
 import { createContext, useContext } from 'react';
 import type { OfflineClockCache, OfflineClockCommand, OfflineClockInPayload, OfflineClockOutPayload, OfflineSwitchPayload } from '@/features/offlineClocking/types';
 import type { buildEffectiveClockState } from '@/features/offlineClocking/model';
-import type { ActivityConfig } from '@/types/api';
+import type { ActivityConfig, PendingClockInWorkflow } from '@/types/api';
 import type { Job, TimeEntry, UnbillableCategory } from '@/types/domain';
 
 export type OfflineClockSubmitMeta = { requestId: string; idempotencyKey: string; clientOccurredAt: string };
@@ -14,6 +14,8 @@ export type OfflineClockContextValue = {
   effectiveState: ReturnType<typeof buildEffectiveClockState>;
   effectiveTimeEntries: TimeEntry[];
   effectiveCurrentActiveEntryId: string | null;
+  pendingClockInWorkflow: PendingClockInWorkflow | null;
+  acknowledgePendingClockInWorkflow: () => void;
   submitClockIn: (payload: OfflineClockInPayload, meta: OfflineClockSubmitMeta) => Promise<OfflineClockRecordedResult>;
   submitSwitchActivity: (payload: OfflineSwitchPayload, meta: OfflineClockSubmitMeta) => Promise<OfflineClockRecordedResult>;
   submitClockOut: (payload: OfflineClockOutPayload, meta: OfflineClockSubmitMeta) => Promise<OfflineClockRecordedResult>;

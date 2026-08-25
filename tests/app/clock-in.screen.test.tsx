@@ -380,6 +380,7 @@ describe('ClockInScreen', () => {
     expect(mockClockIn).toHaveBeenCalledTimes(1);
     expect(mockPendingClockIn.acceptWorkflow).toHaveBeenCalledWith(pendingWorkflow);
     expect(tree.root.findAllByType('secondary-button').some((node: any) => node.props.label === 'Skip for Now')).toBe(false);
+    expect(tree.root.findAllByType('primary-button').some((node: any) => node.props.label === 'Refresh Required Form')).toBe(false);
     await act(async () => tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Complete Form').props.onPress());
     expect(router.push).toHaveBeenCalledWith(expect.objectContaining({
       pathname: '/form',

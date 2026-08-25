@@ -255,6 +255,7 @@ describe('HomeScreen', () => {
   });
 
   it('restores pending clock-in as a resume action without showing an active shift', async () => {
+    const ensureCurrentForm = jest.fn();
     mockPendingClockIn = {
       workflow: { workflowOccurrenceId: 'clock-in-occurrence-1' },
       currentRequirement: { requirementId: 'clock-in-requirement-1' },
@@ -262,7 +263,7 @@ describe('HomeScreen', () => {
       completedCount: 0,
       totalCount: 2,
       busy: false,
-      ensureCurrentForm: jest.fn().mockResolvedValue({ id: 'form-clock-in' }),
+      ensureCurrentForm,
     };
     await act(async () => { tree = create(<HomeScreen />); });
 
@@ -276,6 +277,7 @@ describe('HomeScreen', () => {
       pathname: '/form',
       params: expect.objectContaining({ workflowRequirementId: 'clock-in-requirement-1' }),
     }));
+    expect(ensureCurrentForm).not.toHaveBeenCalled();
   });
 
   it('resolves an ID-only pending clock-in and opens its Form directly', async () => {
