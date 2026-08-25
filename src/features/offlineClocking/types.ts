@@ -57,6 +57,7 @@ export type OfflineClockCache = {
   driveTimeAvailable: boolean;
   jobWorkAvailable: boolean;
   unbillableAvailable: boolean;
+  requiredBeforeClockInForms?: boolean;
   requiredAfterClockOutForms?: boolean;
 };
 

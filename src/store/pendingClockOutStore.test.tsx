@@ -10,7 +10,7 @@ const mockSubmitEmployeeForm = jest.fn();
 const mockLoadRecord = jest.fn();
 const mockSaveRecord = jest.fn();
 const mockClearRecord = jest.fn();
-let online = true;
+let mockOnline = true;
 let pendingStore: any;
 
 const requiredForm = {
@@ -42,7 +42,7 @@ jest.mock('@/api/formsApi', () => ({
   submitEmployeeForm: (...args: unknown[]) => mockSubmitEmployeeForm(...args),
 }));
 jest.mock('@/services/connectivity', () => ({
-  isOnline: jest.fn(async () => online),
+  isOnline: jest.fn(async () => mockOnline),
 }));
 jest.mock('@/services/pendingClockOutStorage', () => ({
   loadPendingClockOutRecord: (...args: unknown[]) => mockLoadRecord(...args),
@@ -64,6 +64,9 @@ jest.mock('@react-native-community/netinfo', () => ({
 }));
 jest.mock('react-native', () => ({
   AppState: { addEventListener: jest.fn(() => ({ remove: jest.fn() })) },
+  NativeModules: {},
+  Platform: { select: (values: any) => values.ios ?? values.default },
+  TurboModuleRegistry: { get: () => null },
 }));
 
 import { PendingClockOutProvider, usePendingClockOutStore } from './pendingClockOutStore';
@@ -81,7 +84,7 @@ describe('PendingClockOutProvider', () => {
   let tree: ReactTestRenderer | undefined;
 
   beforeEach(() => {
-    online = true;
+    mockOnline = true;
     mockLoadRecord.mockReset().mockResolvedValue(null);
     mockSaveRecord.mockReset().mockResolvedValue(undefined);
     mockClearRecord.mockReset().mockResolvedValue(undefined);
@@ -118,7 +121,7 @@ describe('PendingClockOutProvider', () => {
   });
 
   it('restores the cached workflow while offline without clearing it', async () => {
-    online = false;
+    mockOnline = false;
     const stored: PendingClockOutRecord = { workflow: workflow(), submissionIds: {}, queuedSubmissions: [] };
     mockLoadRecord.mockResolvedValue(stored);
     await mount();
@@ -148,7 +151,7 @@ describe('PendingClockOutProvider', () => {
 
   it('queues a cached form submission offline with both workflow IDs', async () => {
     await mount();
-    online = false;
+    mockOnline = false;
     const payload = {
       clientSubmissionId: 'form-submission:stable-1', formId: 'form-1', trigger: 'after_clock_out' as const,
       workflowOccurrenceId: 'occurrence-1', workflowRequirementId: 'requirement-1', responses: [],

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
-import { clockIn, clockOut, loadActiveUnbillableCategories, loadBootstrap } from '@/api/clockingApi';
+import { clockIn, clockOut, finalizeClockIn, loadActiveUnbillableCategories, loadBootstrap, loadPendingClockIn } from '@/api/clockingApi';
 import { ApiError } from '@/types/errors';
 
 jest.mock('@/config/env', () => ({
@@ -113,6 +113,43 @@ describe('clockingApi', () => {
 
     expect(payload.ok).toBe(true);
     expect(payload.timeEntry.status).toBe('clocked_in');
+  });
+
+  it('preserves HTTP 202 pending required-form clock-in responses without a time entry', async () => {
+    (global as any).fetch = jest.fn().mockResolvedValue(mockResponse(202, {
+      ok: true,
+      blocked: true,
+      status: 'clock_in_pending_required_forms',
+      workflowOccurrenceId: 'occurrence-1',
+      requiredFormCount: 1,
+      completedRequiredFormCount: 0,
+      remainingRequiredFormCount: 1,
+      requiredForms: [{ requirementId: 'requirement-1', formId: 'form-1' }],
+      remainingForms: [{ requirementId: 'requirement-1', formId: 'form-1' }],
+      reminderForms: [],
+      clockInIntent: { employeeId: 'emp-1', workType: 'job', jobIds: ['j1'] },
+    }));
+
+    const payload = await clockIn({
+      employeeId: 'emp-1', workType: 'job', jobIds: ['j1'], requestId: 'req-202', idempotencyKey: 'key-202',
+    }, 'token-1');
+
+    expect(payload.status).toBe('clock_in_pending_required_forms');
+    expect('timeEntry' in payload).toBe(false);
+  });
+
+  it('uses dedicated pending and finalize clock-in actions without inventing a timestamp', async () => {
+    const fetchMock = jest.fn()
+      .mockResolvedValueOnce(mockResponse(200, { ok: true, blocked: false, status: 'no_pending_clock_in', workflow: null }))
+      .mockResolvedValueOnce(mockResponse(200, { ok: true, status: 'clock_in_already_finalized' }));
+    (global as any).fetch = fetchMock;
+
+    await loadPendingClockIn('token-1');
+    await finalizeClockIn({ workflowOccurrenceId: 'occurrence-1' }, 'token-1');
+
+    expect(fetchMock.mock.calls[0][0]).toContain('action=pending-clock-in');
+    expect(fetchMock.mock.calls[1][0]).toContain('action=clock-in-finalize');
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ workflowOccurrenceId: 'occurrence-1' });
   });
 
   it('submits non-billable clock-in with unbillable category ID', async () => {

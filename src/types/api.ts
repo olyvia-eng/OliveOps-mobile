@@ -47,9 +47,11 @@ export interface BootstrapResponse {
   };
   activityConfigs?: ActivityConfig[];
   capabilities?: {
+    requiredBeforeClockInForms?: boolean;
     requiredAfterClockOutForms?: boolean;
     [key: string]: unknown;
   };
+  pendingClockInWorkflow?: PendingClockInWorkflow | null;
   pendingClockOutWorkflow?: PendingClockOutWorkflow | null;
   error?: string;
 }
@@ -93,6 +95,57 @@ export interface ClockInRequest {
   idempotencyKey: string;
   clientOccurredAt?: string;
 }
+
+export interface PendingClockInRequirement {
+  requirementId: string;
+  formId: string;
+  completed?: boolean;
+  form?: EmployeeForm;
+  formPackage?: EmployeeForm;
+  context?: EmployeeFormContext;
+  name?: string;
+  description?: string;
+  category?: string;
+  fields?: EmployeeForm['fields'];
+  submissionState?: EmployeeForm['submissionState'];
+}
+
+export interface ClockInIntent {
+  employeeId: string;
+  workType: TimeEntryWorkType;
+  jobIds: string[];
+  unbillableCategoryId?: string;
+}
+
+export interface PendingClockInWorkflow {
+  status: 'clock_in_pending_required_forms';
+  blocked: true;
+  workflowOccurrenceId: string;
+  requiredFormCount: number;
+  completedRequiredFormCount: number;
+  remainingRequiredFormCount: number;
+  requiredForms: PendingClockInRequirement[];
+  remainingForms: PendingClockInRequirement[];
+  reminderForms: EmployeeForm[];
+  clockInIntent: ClockInIntent;
+}
+
+export type ClockInResponse =
+  | { ok: boolean; status?: 'clock_in_completed'; timeEntry: TimeEntry; reminderForms?: EmployeeForm[] }
+  | ({ ok: boolean } & PendingClockInWorkflow);
+
+export type PendingClockInResponse =
+  | { ok: boolean; blocked: false; status: 'no_pending_clock_in'; workflow: null }
+  | ({ ok: boolean } & PendingClockInWorkflow);
+
+export interface FinalizeClockInRequest {
+  workflowOccurrenceId: string;
+}
+
+export type FinalizeClockInResponse =
+  | { ok: boolean; status: 'clock_in_completed' | 'clock_in_already_finalized'; timeEntry?: TimeEntry }
+  | { ok: boolean; status: 'required_forms_outstanding' | 'clock_in_workflow_not_found' | 'clock_in_workflow_forbidden' }
+  | ({ ok: boolean } & PendingClockInWorkflow);
 
 export interface ClockOutRequest {
   entryId: string;

@@ -22,6 +22,7 @@ import { useAuthStore } from '@/store/authStore';
 import { useClockingStore } from '@/store/clockingStore';
 import { useOptionalOfflineClockStore } from '@/store/offlineClockContext';
 import { useFormsStore } from '@/store/formsStore';
+import { usePendingClockInStore } from '@/store/pendingClockInStore';
 import { usePendingClockOutStore } from '@/store/pendingClockOutStore';
 import { colors } from '@/theme/colors';
 import { formatBusinessDate, formatBusinessTime } from '@/utils/businessTime';
@@ -34,6 +35,7 @@ export default function HomeScreen() {
   const { refreshWorkContext } = useClockingActions();
   const { refreshForms } = useFormsActions();
   const { toDo } = useFormsStore();
+  const pendingClockIn = usePendingClockInStore();
   const pendingClockOut = usePendingClockOutStore();
   const [loadError, setLoadError] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
@@ -116,6 +118,14 @@ export default function HomeScreen() {
             {`Required form ${pendingClockOut.completedCount + 1} of ${pendingClockOut.totalCount}`}
           </Text>
         </ActionCard>
+      ) : pendingClockIn.workflow ? (
+        <ActionCard>
+          <StatusBadge label="Clock in pending" tone="active" />
+          <Text style={styles.idleTitle}>Complete required pre-shift form</Text>
+          <Text style={styles.idleText}>
+            {`Required form ${pendingClockIn.completedCount + 1} of ${pendingClockIn.totalCount}`}
+          </Text>
+        </ActionCard>
       ) : activeShift ? (
         <View style={styles.activeCard}>
           <StatusBadge
@@ -174,6 +184,21 @@ export default function HomeScreen() {
             },
           })}
         />
+      ) : pendingClockIn.workflow && pendingClockIn.currentForm && pendingClockIn.currentRequirement ? (
+        <PrimaryActionButton
+          label="Resume Required Form"
+          onPress={() => router.push({
+            pathname: '/form',
+            params: {
+              formId: pendingClockIn.currentForm?.id,
+              trigger: 'before_clock_in',
+              workflowOccurrenceId: pendingClockIn.workflow?.workflowOccurrenceId,
+              workflowRequirementId: pendingClockIn.currentRequirement?.requirementId,
+            },
+          })}
+        />
+      ) : pendingClockIn.workflow ? (
+        <PrimaryActionButton label="Resume Clock In" onPress={() => router.push('/clock-in')} />
       ) : activeShift ? (
         <View style={styles.actionStack}>
           <SecondaryButton label="Switch Activity" onPress={() => router.push('/switch-activity')} />

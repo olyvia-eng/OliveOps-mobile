@@ -4,6 +4,8 @@ export const ENDPOINTS = {
   authLogout: '/api/auth?action=logout',
   bootstrap: '/api/bootstrap',
   clockIn: '/api/clocking?action=clock-in',
+  pendingClockIn: '/api/clocking?action=pending-clock-in',
+  finalizeClockIn: '/api/clocking?action=clock-in-finalize',
   clockOut: '/api/clocking?action=clock-out',
   pendingClockOut: '/api/clocking?action=pending-clock-out',
   finalizeClockOut: '/api/clocking?action=clock-out-finalize',

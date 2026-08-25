@@ -18,6 +18,8 @@ import { useAuthStore } from '@/store/authStore';
 import { useClockingStore } from '@/store/clockingStore';
 import { useOptionalOfflineClockStore } from '@/store/offlineClockContext';
 import { useFormsWorkflowStore, type FormsWorkflowIntent } from '@/store/formsWorkflowStore';
+import { usePendingClockInStore } from '@/store/pendingClockInStore';
+import { usePendingClockOutStore } from '@/store/pendingClockOutStore';
 import { colors } from '@/theme/colors';
 import type { TimeEntryWorkType } from '@/types/domain';
 
@@ -36,6 +38,8 @@ export default function ClockInScreen() {
   const { clockIn, loading, refreshWorkContext } = useClockingActions();
   const { getRequiredForms, refreshForms } = useFormsActions();
   const { workflow, startWorkflow, clearWorkflow } = useFormsWorkflowStore();
+  const pendingClockIn = usePendingClockInStore();
+  const pendingClockOut = usePendingClockOutStore();
   const {
     categories: unbillableCategories,
     loading: unbillableCategoriesLoading,
@@ -61,14 +65,23 @@ export default function ClockInScreen() {
   }, [refreshWorkContext]);
 
   useEffect(() => {
-    if (effectiveClock.hydrated && (
+    const intent = pendingClockIn.workflow?.clockInIntent;
+    if (!intent || intent.employeeId !== user?.employeeId) return;
+    setSelectedWorkType(intent.workType);
+    setActivityChosen(true);
+    setSelectedJobId(intent.jobIds[0] ?? '');
+    setSelectedUnbillableCategoryId(intent.unbillableCategoryId ?? '');
+  }, [pendingClockIn.workflow?.workflowOccurrenceId, user?.employeeId]);
+
+  useEffect(() => {
+    if (!pendingClockIn.workflow && effectiveClock.hydrated && (
       effectiveClock.effectiveStatus === 'clocked_in_pending'
       || effectiveClock.effectiveStatus === 'clocked_in_synced'
       || (effectiveClock.effectiveStatus === 'needs_attention' && effectiveClock.activeEntry)
     )) {
       router.replace('/active-shift');
     }
-  }, [effectiveClock.activeEntry, effectiveClock.effectiveStatus, effectiveClock.hydrated]);
+  }, [effectiveClock.activeEntry, effectiveClock.effectiveStatus, effectiveClock.hydrated, pendingClockIn.workflow]);
 
   const assignedJobs = useMemo(() => {
     const employeeId = user?.employeeId;
@@ -220,6 +233,24 @@ export default function ClockInScreen() {
     setStatus(null);
     setError(null);
 
+    if (pendingClockIn.workflow) {
+      if (pendingClockIn.currentForm && pendingClockIn.currentRequirement) {
+        router.push({
+          pathname: '/form',
+          params: {
+            formId: pendingClockIn.currentForm.id,
+            trigger: 'before_clock_in',
+            workflowOccurrenceId: pendingClockIn.workflow.workflowOccurrenceId,
+            workflowRequirementId: pendingClockIn.currentRequirement.requirementId,
+          },
+        });
+      } else {
+        await pendingClockIn.recover();
+        setError('The required pre-shift form is not available yet. Reconnect and try again.');
+      }
+      return;
+    }
+
     if (!continuePastAdvisory && !advisoryAcceptedRef.current && !metaOverride) {
       if (checkingFormsRef.current) return;
       checkingFormsRef.current = true;
@@ -231,7 +262,10 @@ export default function ClockInScreen() {
       const results = await Promise.all(checks);
       checkingFormsRef.current = false;
       setCheckingForms(false);
-      const forms = results.flatMap((result) => result.ok ? result.forms : []);
+      const forms = results.flatMap((result, index) => result.ok
+        ? result.forms.filter((form) => index !== 0
+          || (form.completionRequirement !== 'required' && form.required !== true))
+        : []);
       if (forms.length > 0) {
         startWorkflow({
           originRoute: '/clock-in',
@@ -271,6 +305,35 @@ export default function ClockInScreen() {
 
     if (!result.ok) {
       setError(result.error || 'Clock-in failed.');
+      return;
+    }
+
+    const pendingClockOutWorkflow = 'pendingClockOutWorkflow' in result ? result.pendingClockOutWorkflow : undefined;
+    if (pendingClockOutWorkflow) {
+      await pendingClockOut.acceptWorkflow(pendingClockOutWorkflow);
+      setError('Complete the pending clock-out form before starting a new shift.');
+      router.replace('/home');
+      return;
+    }
+
+    const pendingWorkflow = 'pendingWorkflow' in result ? result.pendingWorkflow : undefined;
+    if (pendingWorkflow) {
+      await pendingClockIn.acceptWorkflow(pendingWorkflow);
+      const requirement = pendingWorkflow.remainingForms[0];
+      const form = requirement?.form ?? requirement?.formPackage;
+      setRetryMeta(null);
+      clearWorkflow();
+      if (requirement && form) {
+        router.push({
+          pathname: '/form',
+          params: {
+            formId: form.id,
+            trigger: 'before_clock_in',
+            workflowOccurrenceId: pendingWorkflow.workflowOccurrenceId,
+            workflowRequirementId: requirement.requirementId,
+          },
+        });
+      }
       return;
     }
 
@@ -352,7 +415,34 @@ export default function ClockInScreen() {
       {status ? <StatusBanner tone="success" message={status} /> : null}
       {error ? <StatusBanner tone="error" message={error} /> : null}
 
-      {advisoryForms.length > 0 ? (
+      {pendingClockIn.workflow && pendingClockIn.currentForm ? (
+        <AdvisoryFormsPrompt
+          forms={[pendingClockIn.currentForm]}
+          heading="Clock in pending"
+          message={`Required form ${pendingClockIn.completedCount + 1} of ${pendingClockIn.totalCount}`}
+          completeLabel="Complete Form"
+          completedCount={pendingClockIn.completedCount}
+          totalCount={pendingClockIn.totalCount}
+          onComplete={() => {
+            if (!pendingClockIn.currentForm || !pendingClockIn.currentRequirement || !pendingClockIn.workflow) return;
+            router.push({
+              pathname: '/form',
+              params: {
+                formId: pendingClockIn.currentForm.id,
+                trigger: 'before_clock_in',
+                workflowOccurrenceId: pendingClockIn.workflow.workflowOccurrenceId,
+                workflowRequirementId: pendingClockIn.currentRequirement.requirementId,
+              },
+            });
+          }}
+        />
+      ) : pendingClockIn.workflow ? (
+        <PrimaryActionButton
+          label={pendingClockIn.busy ? 'Refreshing Required Form...' : 'Refresh Required Form'}
+          disabled={pendingClockIn.busy}
+          onPress={() => { void pendingClockIn.recover(); }}
+        />
+      ) : advisoryForms.length > 0 ? (
         <AdvisoryFormsPrompt
           forms={advisoryForms}
           heading="Pre-shift"

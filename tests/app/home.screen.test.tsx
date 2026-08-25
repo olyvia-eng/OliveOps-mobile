@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals
 const mockRefresh = jest.fn().mockResolvedValue({ ok: true });
 const mockRefreshForms = jest.fn().mockResolvedValue({ ok: true });
 let mockPendingClockOut: any;
+let mockPendingClockIn: any;
 
 const mockUseClockingActions = jest.fn(() => ({
   refreshWorkContext: mockRefresh,
@@ -94,6 +95,10 @@ jest.mock('@/store/pendingClockOutStore', () => ({
   usePendingClockOutStore: () => mockPendingClockOut,
 }));
 
+jest.mock('@/store/pendingClockInStore', () => ({
+  usePendingClockInStore: () => mockPendingClockIn,
+}));
+
 jest.mock('@/components/Screen', () => ({
   Screen: ({ children }: any) => require('react').createElement('screen', {}, children),
 }));
@@ -140,6 +145,13 @@ describe('HomeScreen', () => {
     mockFormsState.toDo = [{ id: 'required-1' }, { id: 'required-2' }];
     mockClockingState.activeShiftWarnings.possibleForgottenClockOut = false;
     mockPendingClockOut = {
+      workflow: null,
+      currentRequirement: null,
+      currentForm: null,
+      completedCount: 0,
+      totalCount: 0,
+    };
+    mockPendingClockIn = {
       workflow: null,
       currentRequirement: null,
       currentForm: null,
@@ -238,5 +250,27 @@ describe('HomeScreen', () => {
     const renderedText = textOf(tree.root);
     expect(renderedText).toContain('Clock out pending');
     expect(renderedText).toContain('Required form 2 of 3');
+  });
+
+  it('restores pending clock-in as a resume action without showing an active shift', async () => {
+    mockPendingClockIn = {
+      workflow: { workflowOccurrenceId: 'clock-in-occurrence-1' },
+      currentRequirement: { requirementId: 'clock-in-requirement-1' },
+      currentForm: { id: 'form-clock-in' },
+      completedCount: 0,
+      totalCount: 2,
+    };
+    await act(async () => { tree = create(<HomeScreen />); });
+
+    const renderedText = textOf(tree.root);
+    expect(renderedText).toContain('Clock in pending');
+    expect(renderedText).toContain('Required form 1 of 2');
+    expect(renderedText).not.toContain("You're clocked in");
+    const resume = tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Resume Required Form');
+    await act(async () => resume.props.onPress());
+    expect(router.push).toHaveBeenCalledWith(expect.objectContaining({
+      pathname: '/form',
+      params: expect.objectContaining({ workflowRequirementId: 'clock-in-requirement-1' }),
+    }));
   });
 });

@@ -81,7 +81,11 @@ Valid triggers include `before_clock_in`, `after_clock_out`, `before_starting_jo
 }
 ```
 
-Responses may identify `completionRequirement` as `reminder` or `required`. Current enforcement remains advisory because clocking and job transitions do not atomically enforce Form completion on the server. The mobile app should encourage required completion while preserving safe continuation.
+Responses may identify `completionRequirement` as `reminder` or `required`. `before_starting_job` remains advisory. Required `before_clock_in` enforcement is server-authoritative: clock-in initiation can return `clock_in_pending_required_forms`, and mobile must complete the identified workflow requirements before calling `clock-in-finalize`. Reminder Only `before_clock_in` forms remain skippable.
+
+Mobile does not infer mandatory workflow state from this metadata alone. It persists the server workflow occurrence and requirement IDs, restores them from bootstrap or `pending-clock-in`, and does not show an active shift until finalization succeeds.
+
+Offline limitation: initial clock-in fails closed unless the latest authoritative bootstrap cache explicitly reports that Required Before Clock In forms are unsupported. When support is enabled or unknown, the employee must reconnect so the server can determine whether a required pre-shift form applies. A previously created pending workflow remains stored locally; queued form submissions retain their workflow IDs and do not make the employee appear clocked in before server finalization.
 
 ## Submit a Form
 

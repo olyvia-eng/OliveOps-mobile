@@ -62,7 +62,10 @@ export function useClockingActions() {
       activityConfigs: payload.activityConfigs ?? [],
       requiredAfterClockOutForms: payload.capabilities
         ? payload.capabilities.requiredAfterClockOutForms === true
-        : false,
+        : undefined,
+      requiredBeforeClockInForms: payload.capabilities
+        ? payload.capabilities.requiredBeforeClockInForms === true
+        : undefined,
     });
   }
 
@@ -76,6 +79,13 @@ export function useClockingActions() {
     ) {
       const meta = requestMeta ?? createRequestMeta(employeeId);
       if (submitOfflineClockIn) {
+        const online = await isOnline();
+        if (!online && offlineClock?.cache?.requiredBeforeClockInForms !== false) {
+          return {
+            ok: false as const,
+            error: 'Connection required to clock in. A required pre-shift form may need to be completed. Reconnect to continue.',
+          };
+        }
         setLoading(true);
         try {
           return await submitOfflineClockIn({
@@ -112,6 +122,10 @@ export function useClockingActions() {
           ...meta,
         }, accessToken);
 
+        if (result.status === 'clock_in_pending_required_forms') {
+          return { ok: true as const, pendingWorkflow: result };
+        }
+
         upsertTimeEntry(result.timeEntry);
         setCurrentActiveEntryId(result.timeEntry.id);
         try {
@@ -119,8 +133,32 @@ export function useClockingActions() {
         } catch {
           // Preserve successful clock-in even if reconciliation fails.
         }
-        return { ok: true };
+        return { ok: true as const, reminderForms: result.reminderForms };
       } catch (error) {
+        if (error instanceof ApiError && error.code?.toLowerCase() === 'pending_clock_in_exists') {
+          try {
+            const pendingWorkflow = await clockingApi.loadPendingClockIn(accessToken);
+            if (pendingWorkflow.status === 'clock_in_pending_required_forms') {
+              return { ok: true as const, pendingWorkflow };
+            }
+          } catch {
+            // Fall through to the controlled clock-in error.
+          }
+        }
+        if (error instanceof ApiError && [
+          'pending_clock_out_exists',
+          'clock_out_pending_required_forms',
+          'pending_required_clock_out',
+        ].includes(error.code?.toLowerCase() ?? '')) {
+          try {
+            const pendingClockOutWorkflow = await clockingApi.loadPendingClockOut(accessToken);
+            if (pendingClockOutWorkflow.status === 'clock_out_pending_required_forms') {
+              return { ok: true as const, pendingClockOutWorkflow };
+            }
+          } catch {
+            // Fall through to the controlled clock-in error.
+          }
+        }
         return {
           ok: false,
           error: toUserFacingError(error, 'Clock-in failed. Please try again.'),

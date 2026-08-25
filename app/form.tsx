@@ -24,6 +24,7 @@ import { useAuthStore } from '@/store/authStore';
 import { useClockingStore } from '@/store/clockingStore';
 import { useFormsStore } from '@/store/formsStore';
 import { useFormsWorkflowStore } from '@/store/formsWorkflowStore';
+import { pendingClockInRequirementForm, usePendingClockInStore } from '@/store/pendingClockInStore';
 import {
   requirementForm,
   usePendingClockOutStore,
@@ -49,12 +50,21 @@ export default function FormScreen() {
   const { workflow, completeCurrentForm } = useFormsWorkflowStore();
   const { refreshForms, submitForm, submitting } = useFormsActions();
   const { refreshWorkContext } = useClockingActions();
+  const pendingClockIn = usePendingClockInStore();
   const pendingClockOut = usePendingClockOutStore();
-  const mandatoryRequirement = params.workflowOccurrenceId === pendingClockOut.workflow?.workflowOccurrenceId
+  const mandatoryClockInRequirement = params.workflowOccurrenceId === pendingClockIn.workflow?.workflowOccurrenceId
+    && params.workflowRequirementId === pendingClockIn.currentRequirement?.requirementId
+    ? pendingClockIn.currentRequirement
+    : null;
+  const mandatoryClockOutRequirement = params.workflowOccurrenceId === pendingClockOut.workflow?.workflowOccurrenceId
     && params.workflowRequirementId === pendingClockOut.currentRequirement?.workflowRequirementId
     ? pendingClockOut.currentRequirement
     : null;
-  const mandatoryForm = requirementForm(mandatoryRequirement);
+  const mandatoryRequirementId = mandatoryClockInRequirement?.requirementId
+    ?? mandatoryClockOutRequirement?.workflowRequirementId;
+  const mandatoryForm = mandatoryClockInRequirement
+    ? pendingClockInRequirementForm(mandatoryClockInRequirement)
+    : requirementForm(mandatoryClockOutRequirement);
   const candidates = params.list === 'available' ? available : toDo;
   const workflowForm = params.workflowId && workflow?.id === params.workflowId
     ? workflow.forms[workflow.completedCount] ?? null
@@ -80,6 +90,7 @@ export default function FormScreen() {
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [submittedFormName, setSubmittedFormName] = useState<string | null>(null);
+  const [clockInCompleted, setClockInCompleted] = useState(false);
   const [clockOutCompleted, setClockOutCompleted] = useState(false);
   const [queuedOffline, setQueuedOffline] = useState(false);
   const submittedRef = useRef(false);
@@ -114,7 +125,7 @@ export default function FormScreen() {
   const dirty = JSON.stringify(values) !== JSON.stringify(initialValues);
 
   useEffect(() => navigation.addListener('beforeRemove', (event: { preventDefault: () => void; data: { action: unknown } }) => {
-    if (mandatoryRequirement && !submittedRef.current) {
+    if (mandatoryClockOutRequirement && !submittedRef.current) {
       event.preventDefault();
       Alert.alert('Clock out pending', 'Complete this required form to finish clocking out.', [
         { text: 'Continue Form', style: 'cancel' },
@@ -127,7 +138,17 @@ export default function FormScreen() {
       { text: 'Keep Editing', style: 'cancel' },
       { text: 'Discard', style: 'destructive', onPress: () => navigation.dispatch(event.data.action as never) },
     ]);
-  }), [dirty, mandatoryRequirement, navigation]);
+  }), [dirty, mandatoryClockOutRequirement, navigation]);
+
+  if (clockInCompleted) {
+    return (
+      <Screen>
+        <ScreenHeader title="Clocked in" subtitle="Your required pre-shift forms were submitted and your shift is active." />
+        <StatusBanner tone="success" message="Clock-in completed successfully." />
+        <PrimaryActionButton label="View Active Shift" onPress={() => router.replace('/active-shift')} />
+      </Screen>
+    );
+  }
 
   if (clockOutCompleted) {
     return (
@@ -140,10 +161,13 @@ export default function FormScreen() {
   }
 
   if (queuedOffline) {
+    const clockInPending = Boolean(mandatoryClockInRequirement);
     return (
       <Screen>
-        <ScreenHeader title="Required form saved" subtitle="Clock out is still pending." />
-        <StatusBanner tone="offline" message="Reconnect to submit this form and finish clocking out." />
+        <ScreenHeader title="Required form saved" subtitle={clockInPending ? 'Clock in is still pending.' : 'Clock out is still pending.'} />
+        <StatusBanner tone="offline" message={clockInPending
+          ? 'Reconnect to submit this form and finish clocking in.'
+          : 'Reconnect to submit this form and finish clocking out.'} />
         <PrimaryActionButton label="Return Home" onPress={() => router.replace('/home')} />
       </Screen>
     );
@@ -200,8 +224,9 @@ export default function FormScreen() {
     }
 
     submissionInProgressRef.current = true;
-    const clientSubmissionId = mandatoryRequirement
-      ? await pendingClockOut.submissionIdFor(mandatoryRequirement.workflowRequirementId)
+    const mandatoryStore = mandatoryClockInRequirement ? pendingClockIn : pendingClockOut;
+    const clientSubmissionId = mandatoryRequirementId
+      ? await mandatoryStore.submissionIdFor(mandatoryRequirementId)
       : clientSubmissionRef.current?.value ?? createFormClientSubmissionId();
     const payload = {
       clientSubmissionId,
@@ -210,14 +235,16 @@ export default function FormScreen() {
       jobId: form.context?.jobId,
       equipmentId: form.context?.equipmentId,
       divisionId: form.context?.divisionId,
-      ...(mandatoryRequirement ? {
-        workflowOccurrenceId: pendingClockOut.workflow?.workflowOccurrenceId,
-        workflowRequirementId: mandatoryRequirement.workflowRequirementId,
+      ...(mandatoryRequirementId ? {
+        workflowOccurrenceId: mandatoryClockInRequirement
+          ? pendingClockIn.workflow?.workflowOccurrenceId
+          : pendingClockOut.workflow?.workflowOccurrenceId,
+        workflowRequirementId: mandatoryRequirementId,
       } : {}),
       responses: buildFormResponses(orderedFields, values),
     };
-    if (mandatoryRequirement && !await isOnline()) {
-      await pendingClockOut.queueSubmission(payload);
+    if (mandatoryRequirementId && !await isOnline()) {
+      await mandatoryStore.queueSubmission(payload);
       submittedRef.current = true;
       setQueuedOffline(true);
       return;
@@ -225,11 +252,11 @@ export default function FormScreen() {
     const result = await submitForm(payload);
     if (!result.ok) {
       const resultCode = 'code' in result ? result.code : undefined;
-      if (mandatoryRequirement && resultCode === 'workflow_requirement_already_completed') {
+      if (mandatoryRequirementId && resultCode === 'workflow_requirement_already_completed') {
         // Continue through authoritative workflow recovery below.
       } else {
-        if (mandatoryRequirement && resultCode === 'workflow_context_mismatch') {
-          await pendingClockOut.recover();
+        if (mandatoryRequirementId && resultCode === 'workflow_context_mismatch') {
+          await mandatoryStore.recover();
         }
         submissionInProgressRef.current = false;
         setError(result.error ?? 'Could not submit this form. Your answers are still here.');
@@ -238,11 +265,22 @@ export default function FormScreen() {
       }
     }
 
-    if (mandatoryRequirement) {
-      const refreshed = await pendingClockOut.refreshAfterSubmission();
-      const nextRequirement = workflowRequirements(refreshed).find((item) => !item.completed);
+    if (mandatoryRequirementId) {
+      const refreshedClockIn = mandatoryClockInRequirement
+        ? await pendingClockIn.refreshAfterSubmission()
+        : null;
+      const refreshedClockOut = mandatoryClockOutRequirement
+        ? await pendingClockOut.refreshAfterSubmission()
+        : null;
+      const nextClockInRequirement = refreshedClockIn?.remainingForms[0] ?? null;
+      const nextClockOutRequirement = mandatoryClockOutRequirement
+        ? workflowRequirements(refreshedClockOut).find((item) => !item.completed) ?? null
+        : null;
+      const nextRequirement = nextClockInRequirement ?? nextClockOutRequirement;
       if (nextRequirement) {
-        const nextForm = requirementForm(nextRequirement);
+        const nextForm = mandatoryClockInRequirement
+          ? pendingClockInRequirementForm(nextClockInRequirement)
+          : requirementForm(nextClockOutRequirement);
         if (!nextForm) {
           submissionInProgressRef.current = false;
           setError('The next required form is unavailable. Reconnect and try again.');
@@ -254,14 +292,16 @@ export default function FormScreen() {
           pathname: '/form',
           params: {
             formId: nextForm.id,
-            trigger: 'after_clock_out',
-            workflowOccurrenceId: refreshed?.workflowOccurrenceId,
-            workflowRequirementId: nextRequirement.workflowRequirementId,
+            trigger: mandatoryClockInRequirement ? 'before_clock_in' : 'after_clock_out',
+            workflowOccurrenceId: refreshedClockIn?.workflowOccurrenceId ?? refreshedClockOut?.workflowOccurrenceId,
+            workflowRequirementId: mandatoryClockInRequirement
+              ? nextClockInRequirement?.requirementId
+              : nextClockOutRequirement?.workflowRequirementId,
           },
         });
         return;
       }
-      const finalized = await pendingClockOut.finalize();
+      const finalized = await mandatoryStore.finalize();
       if (!finalized.ok) {
         submissionInProgressRef.current = false;
         setError(finalized.error);
@@ -270,7 +310,8 @@ export default function FormScreen() {
       await refreshWorkContext();
       submittedRef.current = true;
       submissionInProgressRef.current = false;
-      setClockOutCompleted(true);
+      if (mandatoryClockInRequirement) setClockInCompleted(true);
+      else setClockOutCompleted(true);
       return;
     }
 

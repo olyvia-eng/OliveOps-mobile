@@ -116,6 +116,7 @@ export function OfflineClockProvider({ children }: { children: React.ReactNode }
     jobs?: typeof clocking.jobs;
     unbillableCategories?: typeof clocking.unbillableCategories;
     activityConfigs?: NonNullable<typeof clocking.activityConfigs>;
+    requiredBeforeClockInForms?: boolean;
     requiredAfterClockOutForms?: boolean;
   }) => {
     if (!identityKey || status !== 'authenticated') return;
@@ -139,6 +140,8 @@ export function OfflineClockProvider({ children }: { children: React.ReactNode }
       unbillableAvailable: update.activityConfigs?.some((item) => item.type === 'non_billable')
         ?? previous?.unbillableAvailable
         ?? false,
+      requiredBeforeClockInForms: update.requiredBeforeClockInForms
+        ?? previous?.requiredBeforeClockInForms,
       requiredAfterClockOutForms: update.requiredAfterClockOutForms
         ?? previous?.requiredAfterClockOutForms,
     };
@@ -196,6 +199,9 @@ export function OfflineClockProvider({ children }: { children: React.ReactNode }
               await updateEligibilityCache({
                 jobs: scopeJobsForSession(payload.jobs ?? [], user),
                 activityConfigs: payload.activityConfigs ?? [],
+                requiredBeforeClockInForms: payload.capabilities
+                  ? payload.capabilities.requiredBeforeClockInForms === true
+                  : undefined,
                 requiredAfterClockOutForms: payload.capabilities
                   ? payload.capabilities.requiredAfterClockOutForms === true
                   : false,
@@ -228,6 +234,17 @@ export function OfflineClockProvider({ children }: { children: React.ReactNode }
               idempotencyKey: stored.idempotencyKey,
               clientOccurredAt: stored.clientOccurredAt,
             } satisfies ClockInRequest, accessToken);
+            if (response.status === 'clock_in_pending_required_forms') {
+              const blocked = {
+                ...syncing,
+                status: 'needs_attention' as const,
+                lastErrorCode: 'required_before_clock_in_forms',
+                lastErrorCategory: 'server_rejected' as const,
+              };
+              await updateOfflineCommand(blocked);
+              replaceCommand(blocked);
+              return;
+            }
             await completeOfflineCommand(syncing, {
               identityKey,
               localShiftId: stored.localShiftId,

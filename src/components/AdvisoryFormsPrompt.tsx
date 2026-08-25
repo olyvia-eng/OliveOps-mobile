@@ -22,9 +22,9 @@ export function AdvisoryFormsPrompt({
   heading: string;
   message?: string;
   completeLabel?: string;
-  skipLabel: string;
+  skipLabel?: string;
   onComplete: (form: EmployeeForm) => void;
-  onSkip: () => void;
+  onSkip?: () => void;
   completedCount?: number;
   totalCount?: number;
   cancelLabel?: string;
@@ -53,7 +53,7 @@ export function AdvisoryFormsPrompt({
         ))}
       </View>
       <PrimaryActionButton label={completeLabel} onPress={() => onComplete(first)} />
-      <SecondaryButton label={skipLabel} onPress={onSkip} />
+      {skipLabel && onSkip ? <SecondaryButton label={skipLabel} onPress={onSkip} /> : null}
       {cancelLabel && onCancel ? <SecondaryButton label={cancelLabel} onPress={onCancel} /> : null}
     </View>
   );

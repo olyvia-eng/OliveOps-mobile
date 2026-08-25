@@ -4,9 +4,13 @@ import type {
   ActiveUnbillableCategoriesResponse,
   BootstrapResponse,
   ClockInRequest,
+  ClockInResponse,
   ClockOutRequest,
   ClockOutResponse,
+  FinalizeClockInRequest,
+  FinalizeClockInResponse,
   FinalizeClockOutRequest,
+  PendingClockInResponse,
   PendingClockOutResponse,
   SwitchActivityRequest,
 } from '@/types/api';
@@ -46,8 +50,26 @@ export function loadBootstrap(
   return request;
 }
 
-export async function clockIn(payload: ClockInRequest, accessToken?: string): Promise<{ ok: boolean; timeEntry: TimeEntry }> {
-  return apiRequest<{ ok: boolean; timeEntry: TimeEntry }>(ENDPOINTS.clockIn, {
+export async function clockIn(payload: ClockInRequest, accessToken?: string): Promise<ClockInResponse> {
+  return apiRequest<ClockInResponse>(ENDPOINTS.clockIn, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+    accessToken,
+  });
+}
+
+export async function loadPendingClockIn(accessToken?: string): Promise<PendingClockInResponse> {
+  return apiRequest<PendingClockInResponse>(ENDPOINTS.pendingClockIn, {
+    method: 'GET',
+    accessToken,
+  });
+}
+
+export async function finalizeClockIn(
+  payload: FinalizeClockInRequest,
+  accessToken?: string,
+): Promise<FinalizeClockInResponse> {
+  return apiRequest<FinalizeClockInResponse>(ENDPOINTS.finalizeClockIn, {
     method: 'POST',
     body: JSON.stringify(payload),
     accessToken,

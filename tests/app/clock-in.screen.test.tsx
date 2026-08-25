@@ -9,6 +9,8 @@ const mockRefreshForms = jest.fn().mockResolvedValue({ ok: true });
 const mockStartWorkflow = jest.fn(() => 'workflow-1');
 const mockClearWorkflow = jest.fn();
 let mockWorkflow: any = null;
+let mockPendingClockIn: any;
+let mockPendingClockOut: any;
 const mockLoadUnbillableCategoriesIfNeeded = jest.fn().mockResolvedValue(undefined);
 const mockRetryUnbillableCategories = jest.fn().mockResolvedValue(undefined);
 let mockOfflineClock: any;
@@ -106,6 +108,14 @@ jest.mock('@/store/formsWorkflowStore', () => ({
   }),
 }));
 
+jest.mock('@/store/pendingClockInStore', () => ({
+  usePendingClockInStore: () => mockPendingClockIn,
+}));
+
+jest.mock('@/store/pendingClockOutStore', () => ({
+  usePendingClockOutStore: () => mockPendingClockOut,
+}));
+
 jest.mock('@/services/requestGuards', () => ({
   createRequestMeta: () => ({ requestId: 'req-1', idempotencyKey: 'key-1' }),
 }));
@@ -156,6 +166,7 @@ import { router } from 'expo-router';
 describe('ClockInScreen', () => {
   beforeEach(() => {
     (router.replace as jest.Mock).mockReset();
+    (router.push as jest.Mock).mockReset();
     mockClockIn.mockReset();
     mockRefresh.mockClear();
     mockGetRequiredForms.mockReset().mockResolvedValue({ ok: true, forms: [] });
@@ -163,6 +174,19 @@ describe('ClockInScreen', () => {
     mockStartWorkflow.mockClear();
     mockClearWorkflow.mockClear();
     mockWorkflow = null;
+    mockPendingClockIn = {
+      workflow: null,
+      currentRequirement: null,
+      currentForm: null,
+      completedCount: 0,
+      totalCount: 0,
+      acceptWorkflow: jest.fn().mockResolvedValue(undefined),
+      recover: jest.fn().mockResolvedValue(null),
+    };
+    mockPendingClockOut = {
+      workflow: null,
+      acceptWorkflow: jest.fn().mockResolvedValue(undefined),
+    };
     mockOfflineClock = undefined;
     mockLoadUnbillableCategoriesIfNeeded.mockClear();
     mockRetryUnbillableCategories.mockClear();
@@ -267,10 +291,19 @@ describe('ClockInScreen', () => {
     expect(router.replace).toHaveBeenCalledWith('/active-shift');
   });
 
-  it('surfaces advisory Forms before clock in without blocking Continue', async () => {
+  it('keeps before_starting_job Forms advisory without locally presenting before_clock_in Forms', async () => {
     mockGetRequiredForms
-      .mockResolvedValueOnce({ ok: true, forms: [{ id: 'form-clock', name: 'Morning Truck Inspection', category: 'Vehicle', trigger: 'before_clock_in', context: {}, fields: [] }] })
-      .mockResolvedValueOnce({ ok: true, forms: [{ id: 'form-job', name: 'Job Start Check', trigger: 'before_starting_job', context: { jobId: 'job-1' }, fields: [] }] });
+      .mockResolvedValueOnce({
+        ok: true,
+        forms: [{
+          id: 'form-clock', name: 'Morning Truck Inspection', trigger: 'before_clock_in', required: true,
+          completionRequirement: 'required', context: {}, fields: [],
+        }],
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        forms: [{ id: 'form-job', name: 'Job Start Check', trigger: 'before_starting_job', context: { jobId: 'job-1' }, fields: [] }],
+      });
     let tree: any;
     await act(async () => { tree = create(<ClockInScreen />); });
     await act(async () => tree.root.findByProps({ testID: 'activity-option-job' }).props.onPress());
@@ -284,40 +317,74 @@ describe('ClockInScreen', () => {
     expect(mockStartWorkflow).toHaveBeenCalledWith(expect.objectContaining({
       originRoute: '/clock-in',
       phase: 'pre_action',
-      forms: expect.arrayContaining([expect.objectContaining({ id: 'form-clock' }), expect.objectContaining({ id: 'form-job' })]),
+      forms: [expect.objectContaining({ id: 'form-job' })],
       intent: expect.objectContaining({ kind: 'clock_in', workType: 'job', jobIds: ['job-1'] }),
     }));
     const text = tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ');
     expect(text).toContain('Pre-shift');
-    expect(text).toContain('Morning Truck Inspection');
     expect(text).toContain('Job Start Check');
+    expect(text).not.toContain('Morning Truck Inspection');
 
     await act(async () => tree.root.findAllByType('secondary-button').find((node: any) => node.props.label === 'Skip for Now').props.onPress());
     expect(mockClockIn).toHaveBeenCalledTimes(1);
     expect(router.replace).toHaveBeenCalledWith('/active-shift');
   });
 
-  it('opens the exact advisory Form without clocking in', async () => {
+  it('keeps Reminder Only before_clock_in Forms skippable', async () => {
     mockGetRequiredForms.mockResolvedValueOnce({
       ok: true,
-      forms: [{ id: 'form-clock', name: 'Morning Truck Inspection', trigger: 'before_clock_in', context: {}, fields: [] }],
+      forms: [{
+        id: 'form-reminder', name: 'Optional Vehicle Note', trigger: 'before_clock_in', required: false,
+        completionRequirement: 'reminder', context: {}, fields: [],
+      }],
     });
     let tree: any;
     await act(async () => { tree = create(<ClockInScreen />); });
     await act(async () => tree.root.findByProps({ testID: 'activity-option-drive_time' }).props.onPress());
     await act(async () => tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Clock In').props.onPress());
-    mockWorkflow = {
-      id: 'workflow-1', originRoute: '/clock-in', destination: '/active-shift', phase: 'pre_action', completedCount: 0,
-      intent: { kind: 'clock_in', employeeId: 'emp-1', workType: 'drive_time', jobIds: [] },
-      forms: [{ id: 'form-clock', name: 'Morning Truck Inspection', trigger: 'before_clock_in', context: {}, fields: [] }],
-    };
-    await act(async () => tree.update(<ClockInScreen />));
-    await act(async () => tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Complete Form').props.onPress());
 
     expect(mockClockIn).not.toHaveBeenCalled();
+    expect(tree.root.findAllByType('secondary-button').some((node: any) => node.props.label === 'Skip for Now')).toBe(true);
+    await act(async () => tree.root.findAllByType('secondary-button').find((node: any) => node.props.label === 'Skip for Now').props.onPress());
+    expect(mockClockIn).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens a server-required before_clock_in Form and removes Skip for Now', async () => {
+    const requiredForm = {
+      id: 'form-clock', name: 'Morning Truck Inspection', trigger: 'before_clock_in', required: true,
+      completionRequirement: 'required', context: {}, fields: [], submissionState: { completed: false },
+    };
+    const pendingWorkflow = {
+      ok: true, blocked: true, status: 'clock_in_pending_required_forms', workflowOccurrenceId: 'occurrence-1',
+      requiredFormCount: 1, completedRequiredFormCount: 0, remainingRequiredFormCount: 1,
+      requiredForms: [{ requirementId: 'requirement-1', formId: 'form-clock', form: requiredForm }],
+      remainingForms: [{ requirementId: 'requirement-1', formId: 'form-clock', form: requiredForm }],
+      reminderForms: [], clockInIntent: { employeeId: 'emp-1', workType: 'drive_time', jobIds: [] },
+    };
+    mockClockIn.mockResolvedValueOnce({ ok: true, pendingWorkflow });
+    let tree: any;
+    await act(async () => { tree = create(<ClockInScreen />); });
+    await act(async () => tree.root.findByProps({ testID: 'activity-option-drive_time' }).props.onPress());
+    await act(async () => tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Clock In').props.onPress());
+    mockPendingClockIn = {
+      ...mockPendingClockIn,
+      workflow: pendingWorkflow,
+      currentRequirement: pendingWorkflow.remainingForms[0],
+      currentForm: requiredForm,
+      totalCount: 1,
+    };
+    await act(async () => tree.update(<ClockInScreen />));
+
+    expect(mockClockIn).toHaveBeenCalledTimes(1);
+    expect(mockPendingClockIn.acceptWorkflow).toHaveBeenCalledWith(pendingWorkflow);
+    expect(tree.root.findAllByType('secondary-button').some((node: any) => node.props.label === 'Skip for Now')).toBe(false);
+    await act(async () => tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Complete Form').props.onPress());
     expect(router.push).toHaveBeenCalledWith(expect.objectContaining({
       pathname: '/form',
-      params: expect.objectContaining({ formId: 'form-clock', trigger: 'before_clock_in', workflowId: 'workflow-1' }),
+      params: expect.objectContaining({
+        formId: 'form-clock', trigger: 'before_clock_in', workflowOccurrenceId: 'occurrence-1',
+        workflowRequirementId: 'requirement-1',
+      }),
     }));
   });
 
