@@ -14,6 +14,13 @@ const mockBack = jest.fn();
 const mockDispatch = jest.fn();
 const mockAddListener = jest.fn(() => jest.fn());
 const mockCompleteCurrentForm = jest.fn();
+const mockRefreshWorkContext = jest.fn().mockResolvedValue({ ok: true });
+const mockSubmissionIdFor = jest.fn().mockResolvedValue('form-submission:required-1');
+const mockQueueSubmission = jest.fn().mockResolvedValue(undefined);
+const mockRecoverPending = jest.fn().mockResolvedValue(null);
+const mockRefreshAfterSubmission = jest.fn().mockResolvedValue(null);
+const mockFinalize = jest.fn().mockResolvedValue({ ok: true });
+let mockPendingClockOut: any;
 let mockWorkflow: any = null;
 let mockParams: any = { list: 'todo', formId: 'form-1', trigger: 'daily', equipmentId: 'eq-1' };
 
@@ -57,6 +64,17 @@ jest.mock('@/store/formsWorkflowStore', () => ({
 jest.mock('@/hooks/useFormsActions', () => ({
   useFormsActions: () => ({ refreshForms: mockRefreshForms, submitForm: mockSubmitForm, submitting: false }),
 }));
+jest.mock('@/hooks/useClockingActions', () => ({
+  useClockingActions: () => ({ refreshWorkContext: mockRefreshWorkContext }),
+}));
+jest.mock('@/services/connectivity', () => ({
+  isOnline: jest.fn().mockResolvedValue(true),
+}));
+jest.mock('@/store/pendingClockOutStore', () => ({
+  usePendingClockOutStore: () => mockPendingClockOut,
+  requirementForm: (requirement: any) => requirement?.form ?? null,
+  workflowRequirements: (workflow: any) => workflow?.requirements ?? [],
+}));
 jest.mock('@/services/requestGuards', () => ({
   createFormClientSubmissionId: () => 'form-submission:request-1',
 }));
@@ -95,6 +113,21 @@ describe('FormScreen', () => {
     mockBack.mockClear();
     mockCompleteCurrentForm.mockClear();
     mockWorkflow = null;
+    mockPendingClockOut = {
+      workflow: null,
+      currentRequirement: null,
+      submissionIdFor: mockSubmissionIdFor,
+      queueSubmission: mockQueueSubmission,
+      recover: mockRecoverPending,
+      refreshAfterSubmission: mockRefreshAfterSubmission,
+      finalize: mockFinalize,
+    };
+    mockSubmissionIdFor.mockClear();
+    mockQueueSubmission.mockClear();
+    mockRecoverPending.mockClear();
+    mockRefreshAfterSubmission.mockReset().mockResolvedValue(null);
+    mockFinalize.mockReset().mockResolvedValue({ ok: true });
+    mockRefreshWorkContext.mockClear();
     mockParams = { list: 'todo', formId: 'form-1', trigger: 'daily', equipmentId: 'eq-1' };
     mockAddListener.mockClear();
     mockForm.name = 'Daily Equipment Inspection';
@@ -179,6 +212,67 @@ describe('FormScreen', () => {
     expect(mockSubmitForm).toHaveBeenCalledTimes(2);
     expect(mockSubmitForm.mock.calls[0][0].clientSubmissionId).toBe('form-submission:request-1');
     expect(mockSubmitForm.mock.calls[1][0].clientSubmissionId).toBe('form-submission:request-1');
+  });
+
+  it('submits mandatory clock-out workflow IDs and finalizes after the last requirement', async () => {
+    const requiredForm = { ...mockForm, trigger: 'after_clock_out', context: { jobId: 'job-1' } };
+    const requirement = { workflowRequirementId: 'requirement-1', completed: false, form: requiredForm };
+    mockParams = {
+      formId: 'form-1', trigger: 'after_clock_out', workflowOccurrenceId: 'occurrence-1',
+      workflowRequirementId: 'requirement-1',
+    };
+    mockPendingClockOut = {
+      ...mockPendingClockOut,
+      workflow: { workflowOccurrenceId: 'occurrence-1', requirements: [requirement] },
+      currentRequirement: requirement,
+    };
+    let tree: any;
+    await act(async () => { tree = create(<FormScreen />); });
+    await act(async () => tree.root.findByProps({ testID: 'form-field-condition' }).props.onChangeText('Good'));
+    await act(async () => tree.root.findByType('primary-button').props.onPress());
+
+    expect(mockSubmitForm).toHaveBeenCalledWith(expect.objectContaining({
+      clientSubmissionId: 'form-submission:required-1',
+      workflowOccurrenceId: 'occurrence-1',
+      workflowRequirementId: 'requirement-1',
+      jobId: 'job-1',
+    }));
+    expect(mockFinalize).toHaveBeenCalledTimes(1);
+    expect(mockRefreshWorkContext).toHaveBeenCalledTimes(1);
+    expect(tree.root.findByType('status-banner').props.message).toBe('Clock-out submitted successfully.');
+  });
+
+  it('routes to the next server requirement instead of finalizing early', async () => {
+    const firstForm = { ...mockForm, trigger: 'after_clock_out' };
+    const secondForm = { ...mockForm, id: 'form-2', name: 'Equipment Check', trigger: 'after_clock_out' };
+    const first = { workflowRequirementId: 'requirement-1', completed: false, form: firstForm };
+    const second = { workflowRequirementId: 'requirement-2', completed: false, form: secondForm };
+    mockParams = {
+      formId: 'form-1', trigger: 'after_clock_out', workflowOccurrenceId: 'occurrence-1',
+      workflowRequirementId: 'requirement-1',
+    };
+    mockPendingClockOut = {
+      ...mockPendingClockOut,
+      workflow: { workflowOccurrenceId: 'occurrence-1', requirements: [first] },
+      currentRequirement: first,
+    };
+    mockRefreshAfterSubmission.mockResolvedValue({
+      workflowOccurrenceId: 'occurrence-1',
+      requirements: [{ ...first, completed: true }, second],
+    });
+    let tree: any;
+    await act(async () => { tree = create(<FormScreen />); });
+    await act(async () => tree.root.findByProps({ testID: 'form-field-condition' }).props.onChangeText('Good'));
+    await act(async () => tree.root.findByType('primary-button').props.onPress());
+
+    expect(mockReplace).toHaveBeenCalledWith({
+      pathname: '/form',
+      params: {
+        formId: 'form-2', trigger: 'after_clock_out', workflowOccurrenceId: 'occurrence-1',
+        workflowRequirementId: 'requirement-2',
+      },
+    });
+    expect(mockFinalize).not.toHaveBeenCalled();
   });
 
   it('disables submission when a required unsupported field exists', async () => {

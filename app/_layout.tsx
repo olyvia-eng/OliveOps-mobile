@@ -10,6 +10,7 @@ import { ClockingProvider } from '@/store/clockingStore';
 import { OfflineClockProvider } from '@/store/offlineClockStore';
 import { FormsProvider } from '@/store/formsStore';
 import { FormsWorkflowProvider } from '@/store/formsWorkflowStore';
+import { PendingClockOutProvider } from '@/store/pendingClockOutStore';
 import { TimeOffProvider } from '@/store/timeOffStore';
 import { colors } from '@/theme/colors';
 
@@ -68,8 +69,9 @@ function RootLayout() {
             <FormsWorkflowProvider>
               <ClockingProvider>
                 <OfflineClockProvider>
-                <AppLifecycleSync />
-                <Stack
+                  <PendingClockOutProvider>
+                    <AppLifecycleSync />
+                    <Stack
             screenOptions={{
               headerStyle: { backgroundColor: colors.background },
               headerTintColor: colors.textPrimary,
@@ -97,7 +99,8 @@ function RootLayout() {
             <Stack.Screen name="request-time-off" options={secondaryScreenOptions('Request Time Off')} />
             <Stack.Screen name="time-off-detail" options={secondaryScreenOptions('Time Off Details')} />
             <Stack.Screen name="settings" options={secondaryScreenOptions('Settings')} />
-                  </Stack>
+                    </Stack>
+                  </PendingClockOutProvider>
                 </OfflineClockProvider>
               </ClockingProvider>
             </FormsWorkflowProvider>

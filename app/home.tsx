@@ -22,6 +22,7 @@ import { useAuthStore } from '@/store/authStore';
 import { useClockingStore } from '@/store/clockingStore';
 import { useOptionalOfflineClockStore } from '@/store/offlineClockContext';
 import { useFormsStore } from '@/store/formsStore';
+import { usePendingClockOutStore } from '@/store/pendingClockOutStore';
 import { colors } from '@/theme/colors';
 import { formatBusinessDate, formatBusinessTime } from '@/utils/businessTime';
 
@@ -33,6 +34,7 @@ export default function HomeScreen() {
   const { refreshWorkContext } = useClockingActions();
   const { refreshForms } = useFormsActions();
   const { toDo } = useFormsStore();
+  const pendingClockOut = usePendingClockOutStore();
   const [loadError, setLoadError] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
 
@@ -106,7 +108,15 @@ export default function HomeScreen() {
 
       {loadError && !loadError.startsWith('Offline.') ? <StatusBanner tone="error" message={loadError} /> : null}
 
-      {activeShift ? (
+      {pendingClockOut.workflow ? (
+        <ActionCard>
+          <StatusBadge label="Clock out pending" tone="active" />
+          <Text style={styles.idleTitle}>Complete required form</Text>
+          <Text style={styles.idleText}>
+            {`Required form ${pendingClockOut.completedCount + 1} of ${pendingClockOut.totalCount}`}
+          </Text>
+        </ActionCard>
+      ) : activeShift ? (
         <View style={styles.activeCard}>
           <StatusBadge
             label={effectiveClock.effectiveStatus === 'clocked_in_pending' ? 'Clocked in — Pending sync' : 'Active Shift'}
@@ -151,7 +161,20 @@ export default function HomeScreen() {
         </View>
       ) : null}
 
-      {activeShift ? (
+      {pendingClockOut.workflow && pendingClockOut.currentForm && pendingClockOut.currentRequirement ? (
+        <PrimaryActionButton
+          label="Resume Required Form"
+          onPress={() => router.push({
+            pathname: '/form',
+            params: {
+              formId: pendingClockOut.currentForm?.id,
+              trigger: 'after_clock_out',
+              workflowOccurrenceId: pendingClockOut.workflow?.workflowOccurrenceId,
+              workflowRequirementId: pendingClockOut.currentRequirement?.workflowRequirementId,
+            },
+          })}
+        />
+      ) : activeShift ? (
         <View style={styles.actionStack}>
           <SecondaryButton label="Switch Activity" onPress={() => router.push('/switch-activity')} />
           <PrimaryActionButton label={showLongShiftWarning ? 'Clock Out Now' : 'Clock Out'} onPress={() => router.push('/clock-out')} />

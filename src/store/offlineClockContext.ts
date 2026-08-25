@@ -21,6 +21,7 @@ export type OfflineClockContextValue = {
     jobs?: Job[];
     unbillableCategories?: UnbillableCategory[];
     activityConfigs?: ActivityConfig[];
+    requiredAfterClockOutForms?: boolean;
   }) => Promise<void>;
   resolveCommandWithCorrection: (commandId: string, correctionRequestId: string) => Promise<void>;
   syncNow: () => Promise<void>;

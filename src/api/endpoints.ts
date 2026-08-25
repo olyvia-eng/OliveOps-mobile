@@ -5,6 +5,8 @@ export const ENDPOINTS = {
   bootstrap: '/api/bootstrap',
   clockIn: '/api/clocking?action=clock-in',
   clockOut: '/api/clocking?action=clock-out',
+  pendingClockOut: '/api/clocking?action=pending-clock-out',
+  finalizeClockOut: '/api/clocking?action=clock-out-finalize',
   switchActivity: '/api/clocking?action=switch-activity',
   activeUnbillableCategories: '/api/clocking?action=active-unbillable-categories',
   timeCorrectionsCreate: '/api/time-corrections?action=create',

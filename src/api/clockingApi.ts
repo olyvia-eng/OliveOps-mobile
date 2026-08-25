@@ -5,6 +5,9 @@ import type {
   BootstrapResponse,
   ClockInRequest,
   ClockOutRequest,
+  ClockOutResponse,
+  FinalizeClockOutRequest,
+  PendingClockOutResponse,
   SwitchActivityRequest,
 } from '@/types/api';
 import type { TimeEntry } from '@/types/domain';
@@ -51,8 +54,26 @@ export async function clockIn(payload: ClockInRequest, accessToken?: string): Pr
   });
 }
 
-export async function clockOut(payload: ClockOutRequest, accessToken?: string): Promise<{ ok: boolean; timeEntry?: TimeEntry }> {
-  return apiRequest<{ ok: boolean; timeEntry?: TimeEntry }>(ENDPOINTS.clockOut, {
+export async function clockOut(payload: ClockOutRequest, accessToken?: string): Promise<ClockOutResponse> {
+  return apiRequest<ClockOutResponse>(ENDPOINTS.clockOut, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+    accessToken,
+  });
+}
+
+export async function loadPendingClockOut(accessToken?: string): Promise<PendingClockOutResponse> {
+  return apiRequest<PendingClockOutResponse>(ENDPOINTS.pendingClockOut, {
+    method: 'GET',
+    accessToken,
+  });
+}
+
+export async function finalizeClockOut(
+  payload: FinalizeClockOutRequest,
+  accessToken?: string,
+): Promise<ClockOutResponse> {
+  return apiRequest<ClockOutResponse>(ENDPOINTS.finalizeClockOut, {
     method: 'POST',
     body: JSON.stringify(payload),
     accessToken,

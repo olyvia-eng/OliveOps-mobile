@@ -116,6 +116,7 @@ export function OfflineClockProvider({ children }: { children: React.ReactNode }
     jobs?: typeof clocking.jobs;
     unbillableCategories?: typeof clocking.unbillableCategories;
     activityConfigs?: NonNullable<typeof clocking.activityConfigs>;
+    requiredAfterClockOutForms?: boolean;
   }) => {
     if (!identityKey || status !== 'authenticated') return;
     const previous = cacheRef.current?.identityKey === identityKey ? cacheRef.current : null;
@@ -138,6 +139,8 @@ export function OfflineClockProvider({ children }: { children: React.ReactNode }
       unbillableAvailable: update.activityConfigs?.some((item) => item.type === 'non_billable')
         ?? previous?.unbillableAvailable
         ?? false,
+      requiredAfterClockOutForms: update.requiredAfterClockOutForms
+        ?? previous?.requiredAfterClockOutForms,
     };
     cacheRef.current = next;
     setCache(next);
@@ -193,6 +196,9 @@ export function OfflineClockProvider({ children }: { children: React.ReactNode }
               await updateEligibilityCache({
                 jobs: scopeJobsForSession(payload.jobs ?? [], user),
                 activityConfigs: payload.activityConfigs ?? [],
+                requiredAfterClockOutForms: payload.capabilities
+                  ? payload.capabilities.requiredAfterClockOutForms === true
+                  : false,
               });
             } catch {
               Sentry.captureMessage('offline_clock_bootstrap_reconcile_failed', 'warning');
@@ -258,8 +264,10 @@ export function OfflineClockProvider({ children }: { children: React.ReactNode }
               clientOccurredAt: stored.clientOccurredAt,
             } satisfies ClockOutRequest, accessToken);
             await completeOfflineCommand(attempted);
-            if (response.timeEntry) clocking.upsertTimeEntry(response.timeEntry);
-            clocking.setCurrentActiveEntryId(null);
+            if (response.status !== 'clock_out_pending_required_forms') {
+              if ('timeEntry' in response && response.timeEntry) clocking.upsertTimeEntry(response.timeEntry);
+              clocking.setCurrentActiveEntryId(null);
+            }
           }
           completedAny = true;
           setCommands((current) => current.filter((command) => command.id !== stored.id));

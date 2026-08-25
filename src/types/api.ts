@@ -7,6 +7,7 @@ import type {
   TimeEntryWorkType,
   UnbillableCategory,
 } from '@/types/domain';
+import type { EmployeeForm, EmployeeFormContext } from '@/types/forms';
 
 export interface ActivityConfig {
   type: TimeEntryWorkType;
@@ -45,6 +46,11 @@ export interface BootstrapResponse {
     thresholdHours: number;
   };
   activityConfigs?: ActivityConfig[];
+  capabilities?: {
+    requiredAfterClockOutForms?: boolean;
+    [key: string]: unknown;
+  };
+  pendingClockOutWorkflow?: PendingClockOutWorkflow | null;
   error?: string;
 }
 
@@ -97,6 +103,54 @@ export interface ClockOutRequest {
   clientOccurredAt?: string;
   photoAttachmentFileIds?: string[];
   photoAttachmentFileId?: string;
+}
+
+export interface PendingClockOutRequirement {
+  workflowRequirementId: string;
+  id?: string;
+  formId?: string;
+  completed?: boolean;
+  form?: EmployeeForm;
+  formPackage?: EmployeeForm;
+  context?: EmployeeFormContext;
+  name?: string;
+  description?: string;
+  category?: string;
+  trigger?: 'after_clock_out';
+  required?: boolean;
+  completionRequirement?: 'required';
+  fields?: EmployeeForm['fields'];
+  submissionState?: EmployeeForm['submissionState'];
+}
+
+export interface PendingClockOutWorkflow {
+  status: 'clock_out_pending_required_forms';
+  blocked: true;
+  workflowOccurrenceId: string;
+  intendedClockOutAt: string;
+  requiredFormCount?: number;
+  completedFormCount?: number;
+  remainingFormCount?: number;
+  requiredCount?: number;
+  completedCount?: number;
+  remainingCount?: number;
+  requirements?: PendingClockOutRequirement[];
+  requiredForms?: PendingClockOutRequirement[];
+  formPackages?: EmployeeForm[];
+  requiredFormPackages?: PendingClockOutRequirement[];
+  reminderForms?: EmployeeForm[];
+}
+
+export type ClockOutResponse =
+  | { ok: boolean; status?: 'clock_out_completed' | 'clock_out_already_finalized'; timeEntry?: TimeEntry; reminderForms?: EmployeeForm[] }
+  | ({ ok: boolean } & PendingClockOutWorkflow);
+
+export type PendingClockOutResponse =
+  | { ok: boolean; status: 'no_pending_clock_out' }
+  | ({ ok: boolean } & PendingClockOutWorkflow);
+
+export interface FinalizeClockOutRequest {
+  workflowOccurrenceId: string;
 }
 
 export interface SwitchActivityRequest {

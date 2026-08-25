@@ -27,6 +27,7 @@ import { createRequestMeta } from '@/services/requestGuards';
 import { useAuthStore } from '@/store/authStore';
 import { useClockingStore } from '@/store/clockingStore';
 import { useFormsWorkflowStore } from '@/store/formsWorkflowStore';
+import { usePendingClockOutStore } from '@/store/pendingClockOutStore';
 import { colors } from '@/theme/colors';
 import { toUserFacingError } from '@/utils/userFacingError';
 import type { EmployeeForm } from '@/types/forms';
@@ -71,6 +72,7 @@ export default function ClockOutScreen() {
   const { clockOut, loading, refreshWorkContext } = useClockingActions();
   const { getRequiredForms, refreshForms } = useFormsActions();
   const { workflow, startWorkflow, clearWorkflow } = useFormsWorkflowStore();
+  const pendingClockOut = usePendingClockOutStore();
 
   const [notes, setNotes] = useState('');
   const [attachments, setAttachments] = useState<PhotoAttachment[]>([]);
@@ -414,6 +416,29 @@ export default function ClockOutScreen() {
       return;
     }
 
+    if ('pendingWorkflow' in result && result.pendingWorkflow) {
+      setRetryMeta(null);
+      submittedRef.current = true;
+      setNavigatingAfterSuccess(false);
+      await pendingClockOut.acceptWorkflow(result.pendingWorkflow);
+      const requirement = pendingClockOut.currentRequirement
+        ?? result.pendingWorkflow.requirements?.find((item) => !item.completed)
+        ?? result.pendingWorkflow.requiredForms?.find((item) => !item.completed);
+      const form = requirement?.form ?? requirement?.formPackage ?? requirement;
+      if (requirement && form?.id) {
+        router.push({
+          pathname: '/form',
+          params: {
+            formId: form.id,
+            trigger: 'after_clock_out',
+            workflowOccurrenceId: result.pendingWorkflow.workflowOccurrenceId,
+            workflowRequirementId: requirement.workflowRequirementId,
+          },
+        });
+      }
+      return;
+    }
+
     setRetryMeta(null);
     const pendingSync = 'pendingSync' in result && result.pendingSync;
     if (pendingSync) {
@@ -454,6 +479,35 @@ export default function ClockOutScreen() {
       { text: 'Cancel', style: 'cancel' },
       { text: 'Confirm', style: 'destructive', onPress: () => { void submitClockOut(); } },
     ]);
+  }
+
+  if (pendingClockOut.workflow && pendingClockOut.currentRequirement && pendingClockOut.currentForm) {
+    const form = pendingClockOut.currentForm;
+    const requirement = pendingClockOut.currentRequirement;
+    return (
+      <Screen>
+        <OfflineNotice />
+        <ScreenHeader
+          title="Clock out pending"
+          subtitle={`Required form ${pendingClockOut.completedCount + 1} of ${pendingClockOut.totalCount}`}
+        />
+        <StatusBanner tone="info" message="Complete the required form to finish clocking out." />
+        {pendingClockOut.error ? <StatusBanner tone="error" message={pendingClockOut.error} /> : null}
+        <PrimaryActionButton
+          label="Complete Required Form"
+          disabled={pendingClockOut.busy}
+          onPress={() => router.push({
+            pathname: '/form',
+            params: {
+              formId: form.id,
+              trigger: 'after_clock_out',
+              workflowOccurrenceId: pendingClockOut.workflow?.workflowOccurrenceId,
+              workflowRequirementId: requirement.workflowRequirementId,
+            },
+          })}
+        />
+      </Screen>
+    );
   }
 
   if (clockOutWorkflow) {

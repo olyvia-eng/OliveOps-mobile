@@ -17,11 +17,18 @@ import {
   validateFormValues,
 } from '@/features/forms/formValidation';
 import { useFormsActions } from '@/hooks/useFormsActions';
+import { useClockingActions } from '@/hooks/useClockingActions';
 import { createFormClientSubmissionId } from '@/services/requestGuards';
+import { isOnline } from '@/services/connectivity';
 import { useAuthStore } from '@/store/authStore';
 import { useClockingStore } from '@/store/clockingStore';
 import { useFormsStore } from '@/store/formsStore';
 import { useFormsWorkflowStore } from '@/store/formsWorkflowStore';
+import {
+  requirementForm,
+  usePendingClockOutStore,
+  workflowRequirements,
+} from '@/store/pendingClockOutStore';
 import { colors, spacing, typography } from '@/theme/colors';
 import type { EmployeeForm } from '@/types/forms';
 
@@ -34,22 +41,31 @@ function matchesParams(form: EmployeeForm, params: Record<string, string | strin
 }
 
 export default function FormScreen() {
-  const params = useLocalSearchParams<{ list?: string; formId?: string; trigger?: string; jobId?: string; equipmentId?: string; divisionId?: string; returnTo?: string; workflowId?: string }>();
+  const params = useLocalSearchParams<{ list?: string; formId?: string; trigger?: string; jobId?: string; equipmentId?: string; divisionId?: string; returnTo?: string; workflowId?: string; workflowOccurrenceId?: string; workflowRequirementId?: string }>();
   const navigation = useNavigation();
   const { user } = useAuthStore();
   const { businessTimeZone } = useClockingStore();
   const { toDo, available } = useFormsStore();
   const { workflow, completeCurrentForm } = useFormsWorkflowStore();
   const { refreshForms, submitForm, submitting } = useFormsActions();
+  const { refreshWorkContext } = useClockingActions();
+  const pendingClockOut = usePendingClockOutStore();
+  const mandatoryRequirement = params.workflowOccurrenceId === pendingClockOut.workflow?.workflowOccurrenceId
+    && params.workflowRequirementId === pendingClockOut.currentRequirement?.workflowRequirementId
+    ? pendingClockOut.currentRequirement
+    : null;
+  const mandatoryForm = requirementForm(mandatoryRequirement);
   const candidates = params.list === 'available' ? available : toDo;
   const workflowForm = params.workflowId && workflow?.id === params.workflowId
     ? workflow.forms[workflow.completedCount] ?? null
     : null;
   const matchedForm = useMemo(
-    () => workflowForm && matchesParams(workflowForm, params)
+    () => mandatoryForm && mandatoryForm.id === params.formId
+      ? mandatoryForm
+      : workflowForm && matchesParams(workflowForm, params)
       ? workflowForm
       : candidates.find((item) => matchesParams(item, params)) ?? null,
-    [candidates, params, workflowForm],
+    [candidates, mandatoryForm, params, workflowForm],
   );
   const formSnapshotRef = useRef<EmployeeForm | null>(null);
   const submissionInProgressRef = useRef(false);
@@ -64,6 +80,8 @@ export default function FormScreen() {
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [submittedFormName, setSubmittedFormName] = useState<string | null>(null);
+  const [clockOutCompleted, setClockOutCompleted] = useState(false);
+  const [queuedOffline, setQueuedOffline] = useState(false);
   const submittedRef = useRef(false);
   const initializedAttemptRef = useRef('');
   const clientSubmissionRef = useRef<{ identity: string; value: string } | null>(null);
@@ -96,13 +114,40 @@ export default function FormScreen() {
   const dirty = JSON.stringify(values) !== JSON.stringify(initialValues);
 
   useEffect(() => navigation.addListener('beforeRemove', (event: { preventDefault: () => void; data: { action: unknown } }) => {
+    if (mandatoryRequirement && !submittedRef.current) {
+      event.preventDefault();
+      Alert.alert('Clock out pending', 'Complete this required form to finish clocking out.', [
+        { text: 'Continue Form', style: 'cancel' },
+      ]);
+      return;
+    }
     if (!dirty || submittedRef.current) return;
     event.preventDefault();
     Alert.alert('Discard changes?', 'Your answers have not been submitted.', [
       { text: 'Keep Editing', style: 'cancel' },
       { text: 'Discard', style: 'destructive', onPress: () => navigation.dispatch(event.data.action as never) },
     ]);
-  }), [dirty, navigation]);
+  }), [dirty, mandatoryRequirement, navigation]);
+
+  if (clockOutCompleted) {
+    return (
+      <Screen>
+        <ScreenHeader title="Clocked out" subtitle="Your required forms were submitted and your shift is complete." />
+        <StatusBanner tone="success" message="Clock-out submitted successfully." />
+        <PrimaryActionButton label="Done" onPress={() => router.replace('/home')} />
+      </Screen>
+    );
+  }
+
+  if (queuedOffline) {
+    return (
+      <Screen>
+        <ScreenHeader title="Required form saved" subtitle="Clock out is still pending." />
+        <StatusBanner tone="offline" message="Reconnect to submit this form and finish clocking out." />
+        <PrimaryActionButton label="Return Home" onPress={() => router.replace('/home')} />
+      </Screen>
+    );
+  }
 
   if (submittedFormName) {
     const returnLabel = params.returnTo === '/clock-in'
@@ -155,15 +200,80 @@ export default function FormScreen() {
     }
 
     submissionInProgressRef.current = true;
-    const result = await submitForm({
-      clientSubmissionId: clientSubmissionRef.current?.value ?? createFormClientSubmissionId(),
+    const clientSubmissionId = mandatoryRequirement
+      ? await pendingClockOut.submissionIdFor(mandatoryRequirement.workflowRequirementId)
+      : clientSubmissionRef.current?.value ?? createFormClientSubmissionId();
+    const payload = {
+      clientSubmissionId,
       formId: form.id,
       trigger: form.trigger,
       jobId: form.context?.jobId,
       equipmentId: form.context?.equipmentId,
       divisionId: form.context?.divisionId,
+      ...(mandatoryRequirement ? {
+        workflowOccurrenceId: pendingClockOut.workflow?.workflowOccurrenceId,
+        workflowRequirementId: mandatoryRequirement.workflowRequirementId,
+      } : {}),
       responses: buildFormResponses(orderedFields, values),
-    });
+    };
+    if (mandatoryRequirement && !await isOnline()) {
+      await pendingClockOut.queueSubmission(payload);
+      submittedRef.current = true;
+      setQueuedOffline(true);
+      return;
+    }
+    const result = await submitForm(payload);
+    if (!result.ok) {
+      const resultCode = 'code' in result ? result.code : undefined;
+      if (mandatoryRequirement && resultCode === 'workflow_requirement_already_completed') {
+        // Continue through authoritative workflow recovery below.
+      } else {
+        if (mandatoryRequirement && resultCode === 'workflow_context_mismatch') {
+          await pendingClockOut.recover();
+        }
+        submissionInProgressRef.current = false;
+        setError(result.error ?? 'Could not submit this form. Your answers are still here.');
+        if ('fieldErrors' in result && result.fieldErrors) setFieldErrors(result.fieldErrors);
+        return;
+      }
+    }
+
+    if (mandatoryRequirement) {
+      const refreshed = await pendingClockOut.refreshAfterSubmission();
+      const nextRequirement = workflowRequirements(refreshed).find((item) => !item.completed);
+      if (nextRequirement) {
+        const nextForm = requirementForm(nextRequirement);
+        if (!nextForm) {
+          submissionInProgressRef.current = false;
+          setError('The next required form is unavailable. Reconnect and try again.');
+          return;
+        }
+        submittedRef.current = true;
+        submissionInProgressRef.current = false;
+        router.replace({
+          pathname: '/form',
+          params: {
+            formId: nextForm.id,
+            trigger: 'after_clock_out',
+            workflowOccurrenceId: refreshed?.workflowOccurrenceId,
+            workflowRequirementId: nextRequirement.workflowRequirementId,
+          },
+        });
+        return;
+      }
+      const finalized = await pendingClockOut.finalize();
+      if (!finalized.ok) {
+        submissionInProgressRef.current = false;
+        setError(finalized.error);
+        return;
+      }
+      await refreshWorkContext();
+      submittedRef.current = true;
+      submissionInProgressRef.current = false;
+      setClockOutCompleted(true);
+      return;
+    }
+
     if (!result.ok) {
       submissionInProgressRef.current = false;
       setError(result.error ?? 'Could not submit this form. Your answers are still here.');

@@ -57,7 +57,11 @@ export async function apiRequest<T>(path: string, init: RequestInitWithAuth = {}
     throw new ApiError(
       message,
       response.status,
-      typeof payload?.code === 'string' ? payload.code : undefined,
+      typeof payload?.code === 'string'
+        ? payload.code
+        : typeof payload?.status === 'string'
+          ? payload.status
+          : undefined,
       typeof payload?.fieldId === 'string' ? payload.fieldId : undefined,
       payload,
     );

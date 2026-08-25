@@ -122,6 +122,8 @@ export interface SubmitEmployeeFormRequest {
   jobId?: string;
   equipmentId?: string;
   divisionId?: string;
+  workflowOccurrenceId?: string;
+  workflowRequirementId?: string;
   responses: EmployeeFormResponse[];
 }
 

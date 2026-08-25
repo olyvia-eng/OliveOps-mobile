@@ -7,6 +7,7 @@ import { useAuthStore } from '@/store/authStore';
 import { useClockingStore } from '@/store/clockingStore';
 import { useOptionalOfflineClockStore } from '@/store/offlineClockContext';
 import type { TimeEntryWorkType } from '@/types/domain';
+import { ApiError } from '@/types/errors';
 import { toUserFacingError } from '@/utils/userFacingError';
 
 export function useClockingActions() {
@@ -59,6 +60,9 @@ export function useClockingActions() {
     await updateEligibilityCache?.({
       jobs: scopedJobs,
       activityConfigs: payload.activityConfigs ?? [],
+      requiredAfterClockOutForms: payload.capabilities
+        ? payload.capabilities.requiredAfterClockOutForms === true
+        : false,
     });
   }
 
@@ -138,15 +142,24 @@ export function useClockingActions() {
         ? [...new Set(photoAttachmentFileIds.filter((value) => typeof value === 'string').map((value) => value.trim()).filter(Boolean))]
         : [];
       if (submitOfflineClockOut && normalizedPhotoAttachmentFileIds.length === 0) {
-        setLoading(true);
-        try {
-          return await submitOfflineClockOut({
-            entryId: entryId.startsWith('local-clock:') ? undefined : entryId,
-            breakMinutes: 0,
-            notes,
-          }, { ...meta, clientOccurredAt: new Date().toISOString() });
-        } finally {
-          setLoading(false);
+        const online = await isOnline();
+        if (!online) {
+          if (offlineClock?.cache?.requiredAfterClockOutForms !== false) {
+            return {
+              ok: false as const,
+              error: 'Clock out requires a connection. Required forms for this clock-out are not available offline.',
+            };
+          }
+          setLoading(true);
+          try {
+            return await submitOfflineClockOut({
+              entryId: entryId.startsWith('local-clock:') ? undefined : entryId,
+              breakMinutes: 0,
+              notes,
+            }, { ...meta, clientOccurredAt: new Date().toISOString() });
+          } finally {
+            setLoading(false);
+          }
         }
       }
       const key = `clocking:${user?.employeeId ?? entryId}`;
@@ -170,6 +183,10 @@ export function useClockingActions() {
           ...meta,
         }, accessToken);
 
+        if (result.status === 'clock_out_pending_required_forms') {
+          return { ok: true as const, pendingWorkflow: result };
+        }
+
         if (result.timeEntry) {
           upsertTimeEntry(result.timeEntry);
           setCurrentActiveEntryId(null);
@@ -180,8 +197,18 @@ export function useClockingActions() {
           }
         }
 
-        return { ok: true };
+        return { ok: true as const, reminderForms: result.reminderForms };
       } catch (error) {
+        if (error instanceof ApiError && error.code?.toLowerCase() === 'pending_clock_out_exists') {
+          try {
+            const pending = await clockingApi.loadPendingClockOut(accessToken);
+            if (pending.status === 'clock_out_pending_required_forms') {
+              return { ok: true as const, pendingWorkflow: pending };
+            }
+          } catch {
+            // Fall through to the normal safe clock-out error.
+          }
+        }
         return {
           ok: false,
           error: toUserFacingError(error, 'Clock-out failed. Please try again.'),

@@ -192,6 +192,7 @@ export function useFormsActions() {
       }
       return {
         ok: false as const,
+        code: error instanceof ApiError ? error.code?.toLowerCase() : undefined,
         error: shouldReconcile
           ? 'Submission could not be confirmed. Your answers are still here. Retry when ready.'
           : toFormsError(error, 'Could not submit this form. Your answers are still here.'),

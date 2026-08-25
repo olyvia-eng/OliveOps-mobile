@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals
 const mockLoadBootstrap = jest.fn();
 const mockClockIn = jest.fn();
 const mockClockOut = jest.fn();
+const mockLoadPendingClockOut = jest.fn();
 const mockSwitchActivity = jest.fn();
 const mockUpdateEligibilityCache = jest.fn().mockResolvedValue(undefined);
 let mockOfflineClock: any;
@@ -22,6 +23,7 @@ jest.mock('@/api/clockingApi', () => ({
   loadBootstrap: (...args: unknown[]) => mockLoadBootstrap(...args),
   clockIn: (...args: unknown[]) => mockClockIn(...args),
   clockOut: (...args: unknown[]) => mockClockOut(...args),
+  loadPendingClockOut: (...args: unknown[]) => mockLoadPendingClockOut(...args),
   switchActivity: (...args: unknown[]) => mockSwitchActivity(...args),
 }));
 
@@ -90,6 +92,7 @@ describe('useClockingActions bootstrap behavior', () => {
     mockLoadBootstrap.mockReset();
     mockClockIn.mockReset();
     mockClockOut.mockReset();
+    mockLoadPendingClockOut.mockReset();
     mockSwitchActivity.mockReset();
     mockUpdateEligibilityCache.mockClear();
     mockOfflineClock = undefined;
@@ -143,6 +146,7 @@ describe('useClockingActions bootstrap behavior', () => {
     expect(mockUpdateEligibilityCache).toHaveBeenCalledWith({
       jobs: bootstrapPayload().jobs,
       activityConfigs: [],
+      requiredAfterClockOutForms: false,
     });
 
     mockUpdateEligibilityCache.mockClear();
@@ -246,5 +250,54 @@ describe('useClockingActions bootstrap behavior', () => {
     await act(async () => {
       await pendingClockOut;
     });
+  });
+
+  it('returns a pending required-form workflow without clearing the active shift', async () => {
+    const pendingWorkflow = {
+      ok: true,
+      status: 'clock_out_pending_required_forms' as const,
+      blocked: true as const,
+      workflowOccurrenceId: 'occurrence-1',
+      intendedClockOutAt: '2026-08-17T14:00:00.000Z',
+      requirements: [],
+    };
+    mockClockOut.mockResolvedValue(pendingWorkflow);
+    await act(async () => {
+      tree = create(React.createElement(ClockingProvider, null, React.createElement(ActionsProbe)));
+    });
+    await act(async () => {
+      await currentActions.refreshWorkContext();
+    });
+
+    let result: any;
+    await act(async () => {
+      result = await currentActions.clockOut('entry-1', '', []);
+    });
+
+    expect(result).toEqual({ ok: true, pendingWorkflow });
+    expect(tree.root.findByType('actions-probe').props.currentActiveEntryId).toBe('entry-1');
+  });
+
+  it('recovers the existing occurrence when a duplicate clock-out reports pending_clock_out_exists', async () => {
+    const { ApiError } = require('@/types/errors');
+    const pendingWorkflow = {
+      ok: true,
+      status: 'clock_out_pending_required_forms',
+      blocked: true,
+      workflowOccurrenceId: 'occurrence-existing',
+      intendedClockOutAt: '2026-08-17T14:00:00.000Z',
+      requirements: [],
+    };
+    mockClockOut.mockRejectedValue(new ApiError('Existing workflow', 409, 'pending_clock_out_exists'));
+    mockLoadPendingClockOut.mockResolvedValue(pendingWorkflow);
+    await act(async () => {
+      tree = create(React.createElement(ClockingProvider, null, React.createElement(ActionsProbe)));
+    });
+
+    let result: any;
+    await act(async () => { result = await currentActions.clockOut('entry-1', '', []); });
+
+    expect(result).toEqual({ ok: true, pendingWorkflow });
+    expect(mockLoadPendingClockOut).toHaveBeenCalledWith('token-1');
   });
 });

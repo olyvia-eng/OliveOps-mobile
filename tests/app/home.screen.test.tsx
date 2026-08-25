@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals
 
 const mockRefresh = jest.fn().mockResolvedValue({ ok: true });
 const mockRefreshForms = jest.fn().mockResolvedValue({ ok: true });
+let mockPendingClockOut: any;
 
 const mockUseClockingActions = jest.fn(() => ({
   refreshWorkContext: mockRefresh,
@@ -89,6 +90,10 @@ jest.mock('@/store/formsStore', () => ({
   useFormsStore: () => mockFormsState,
 }));
 
+jest.mock('@/store/pendingClockOutStore', () => ({
+  usePendingClockOutStore: () => mockPendingClockOut,
+}));
+
 jest.mock('@/components/Screen', () => ({
   Screen: ({ children }: any) => require('react').createElement('screen', {}, children),
 }));
@@ -134,6 +139,13 @@ describe('HomeScreen', () => {
     mockRefreshForms.mockClear();
     mockFormsState.toDo = [{ id: 'required-1' }, { id: 'required-2' }];
     mockClockingState.activeShiftWarnings.possibleForgottenClockOut = false;
+    mockPendingClockOut = {
+      workflow: null,
+      currentRequirement: null,
+      currentForm: null,
+      completedCount: 0,
+      totalCount: 0,
+    };
   });
 
   afterEach(async () => {
@@ -208,5 +220,23 @@ describe('HomeScreen', () => {
 
     const renderedText = tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ');
     expect(renderedText).toContain('Clock Out & Request Correction');
+  });
+
+  it('shows a distinct resume action and suppresses a second clock-out while forms are pending', async () => {
+    mockPendingClockOut = {
+      workflow: { workflowOccurrenceId: 'occurrence-1' },
+      currentRequirement: { workflowRequirementId: 'requirement-1' },
+      currentForm: { id: 'form-1' },
+      completedCount: 1,
+      totalCount: 3,
+    };
+    await act(async () => { tree = create(<HomeScreen />); });
+
+    const labels = tree.root.findAllByType('primary-button').map((node: any) => node.props.label);
+    expect(labels).toContain('Resume Required Form');
+    expect(labels).not.toContain('Clock Out');
+    const renderedText = textOf(tree.root);
+    expect(renderedText).toContain('Clock out pending');
+    expect(renderedText).toContain('Required form 2 of 3');
   });
 });
