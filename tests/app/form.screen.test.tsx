@@ -20,6 +20,7 @@ const mockQueueSubmission = jest.fn().mockResolvedValue(undefined);
 const mockRecoverPending = jest.fn().mockResolvedValue(null);
 const mockRefreshAfterSubmission = jest.fn().mockResolvedValue(null);
 const mockFinalize = jest.fn().mockResolvedValue({ ok: true });
+const mockInitialFormValues = jest.fn();
 let mockPendingClockOut: any;
 let mockPendingClockIn: any;
 let mockWorkflow: any = null;
@@ -83,6 +84,16 @@ jest.mock('@/store/pendingClockInStore', () => ({
 jest.mock('@/services/requestGuards', () => ({
   createFormClientSubmissionId: () => 'form-submission:request-1',
 }));
+jest.mock('@/features/forms/formValidation', () => {
+  const actual = jest.requireActual('@/features/forms/formValidation') as any;
+  return {
+    ...actual,
+    initialFormValues: (...args: any[]) => {
+      mockInitialFormValues(...args);
+      return actual.initialFormValues(...args);
+    },
+  };
+});
 jest.mock('@/components/Screen', () => ({ Screen: ({ children }: any) => require('react').createElement('screen', {}, children) }));
 jest.mock('@/components/StatusBanner', () => ({ StatusBanner: ({ message }: any) => require('react').createElement('status-banner', { message }) }));
 jest.mock('@/components/PrimaryActionButton', () => ({
@@ -144,6 +155,7 @@ describe('FormScreen', () => {
     mockRefreshAfterSubmission.mockReset().mockResolvedValue(null);
     mockFinalize.mockReset().mockResolvedValue({ ok: true });
     mockRefreshWorkContext.mockClear();
+    mockInitialFormValues.mockClear();
     mockParams = { list: 'todo', formId: 'form-1', trigger: 'daily', equipmentId: 'eq-1' };
     mockAddListener.mockClear();
     mockForm.name = 'Daily Equipment Inspection';
@@ -284,6 +296,168 @@ describe('FormScreen', () => {
     expect(mockFinalize).toHaveBeenCalledTimes(1);
     expect(mockRefreshWorkContext).toHaveBeenCalledTimes(1);
     expect(tree.root.findByType('status-banner').props.message).toBe('Clock-in completed successfully.');
+  });
+
+  it('keeps the first mandatory clock-in occurrence snapshot and values through store reconciliation', async () => {
+    let beforeRemove: any;
+    mockAddListener.mockImplementation((_event: string, listener: unknown) => {
+      beforeRemove = listener;
+      return jest.fn();
+    });
+    const capturedForm = {
+      ...mockForm,
+      name: 'Captured Inspection',
+      trigger: 'before_clock_in',
+      fields: [{ ...mockForm.fields[0], label: 'Captured condition', defaultValue: 'Initial' }],
+    };
+    const requirement = { requirementId: 'requirement-1', formId: 'form-1', form: capturedForm };
+    mockParams = {
+      formId: 'form-1', trigger: 'before_clock_in', workflowOccurrenceId: 'occurrence-1',
+      workflowRequirementId: 'requirement-1',
+    };
+    mockPendingClockIn = {
+      ...mockPendingClockIn,
+      workflow: { workflowOccurrenceId: 'occurrence-1', remainingForms: [requirement] },
+      currentRequirement: requirement,
+    };
+
+    let tree: any;
+    await act(async () => { tree = create(<FormScreen />); });
+    expect(mockInitialFormValues).toHaveBeenCalledTimes(1);
+    expect(mockRefreshForms).not.toHaveBeenCalled();
+    await act(async () => tree.root.findByProps({ testID: 'form-field-condition' }).props.onChangeText('Employee entry'));
+
+    const replacementForm = {
+      ...capturedForm,
+      name: 'Replacement Inspection',
+      fields: [{ ...capturedForm.fields[0], label: 'Replacement condition', defaultValue: 'Replacement' }],
+    };
+    const replacementRequirement = { ...requirement, form: replacementForm };
+    mockPendingClockIn = {
+      ...mockPendingClockIn,
+      workflow: { workflowOccurrenceId: 'occurrence-1', remainingForms: [replacementRequirement] },
+      currentRequirement: replacementRequirement,
+    };
+    await act(async () => tree.update(<FormScreen />));
+
+    let text = tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ');
+    expect(text).toContain('Captured Inspection');
+    expect(text).toContain('Captured condition');
+    expect(text).not.toContain('Replacement Inspection');
+    expect(tree.root.findByProps({ testID: 'form-field-condition' }).props.value).toBe('Employee entry');
+    expect(mockInitialFormValues).toHaveBeenCalledTimes(1);
+    expect(mockRefreshForms).not.toHaveBeenCalled();
+
+    mockPendingClockIn = { ...mockPendingClockIn, workflow: null, currentRequirement: null };
+    await act(async () => tree.update(<FormScreen />));
+    text = tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ');
+    expect(text).toContain('Captured Inspection');
+    expect(text).not.toContain('Form unavailable');
+    expect(tree.root.findByProps({ testID: 'form-field-condition' }).props.value).toBe('Employee entry');
+    expect(mockRefreshForms).not.toHaveBeenCalled();
+
+    const preventDefault = jest.fn();
+    await act(async () => beforeRemove({ preventDefault, data: { action: { type: 'GO_BACK' } } }));
+    expect(preventDefault).toHaveBeenCalledTimes(1);
+    expect(Alert.alert).toHaveBeenCalledWith(
+      'Clock in pending',
+      'Complete this required form before clocking in.',
+      expect.any(Array),
+    );
+  });
+
+  it('captures a new mandatory snapshot and initial values when the route advances', async () => {
+    const firstForm = {
+      ...mockForm,
+      name: 'First Inspection',
+      trigger: 'before_clock_in',
+      fields: [{ ...mockForm.fields[0], defaultValue: 'First default' }],
+    };
+    const first = { requirementId: 'requirement-1', formId: 'form-1', form: firstForm };
+    mockParams = {
+      formId: 'form-1', trigger: 'before_clock_in', workflowOccurrenceId: 'occurrence-1',
+      workflowRequirementId: 'requirement-1',
+    };
+    mockPendingClockIn = {
+      ...mockPendingClockIn,
+      workflow: { workflowOccurrenceId: 'occurrence-1', remainingForms: [first] },
+      currentRequirement: first,
+    };
+
+    let tree: any;
+    await act(async () => { tree = create(<FormScreen />); });
+    expect(tree.root.findByProps({ testID: 'form-field-condition' }).props.value).toBe('First default');
+
+    const secondForm = {
+      ...mockForm,
+      id: 'form-2',
+      name: 'Second Safety Check',
+      trigger: 'before_clock_in',
+      fields: [{ ...mockForm.fields[0], defaultValue: 'Second default' }],
+    };
+    const second = { requirementId: 'requirement-2', formId: 'form-2', form: secondForm };
+    mockParams = {
+      formId: 'form-2', trigger: 'before_clock_in', workflowOccurrenceId: 'occurrence-1',
+      workflowRequirementId: 'requirement-2',
+    };
+    mockPendingClockIn = {
+      ...mockPendingClockIn,
+      workflow: { workflowOccurrenceId: 'occurrence-1', remainingForms: [second] },
+      currentRequirement: second,
+    };
+    await act(async () => tree.update(<FormScreen />));
+
+    const text = tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ');
+    expect(text).toContain('Second Safety Check');
+    expect(text).not.toContain('First Inspection');
+    expect(tree.root.findByProps({ testID: 'form-field-condition' }).props.value).toBe('Second default');
+    expect(mockInitialFormValues).toHaveBeenCalledTimes(2);
+    expect(mockRefreshForms).not.toHaveBeenCalled();
+  });
+
+  it('keeps the first mandatory clock-out snapshot through equivalent store updates', async () => {
+    const capturedForm = { ...mockForm, name: 'Captured Clock Out Form', trigger: 'after_clock_out' };
+    const requirement = { workflowRequirementId: 'requirement-1', completed: false, form: capturedForm };
+    mockParams = {
+      formId: 'form-1', trigger: 'after_clock_out', workflowOccurrenceId: 'occurrence-1',
+      workflowRequirementId: 'requirement-1',
+    };
+    mockPendingClockOut = {
+      ...mockPendingClockOut,
+      workflow: { workflowOccurrenceId: 'occurrence-1', requirements: [requirement] },
+      currentRequirement: requirement,
+    };
+
+    let tree: any;
+    await act(async () => { tree = create(<FormScreen />); });
+    await act(async () => tree.root.findByProps({ testID: 'form-field-condition' }).props.onChangeText('Clock out entry'));
+    const replacementForm = { ...capturedForm, name: 'Replacement Clock Out Form', fields: [...capturedForm.fields] };
+    const replacementRequirement = { ...requirement, form: replacementForm };
+    mockPendingClockOut = {
+      ...mockPendingClockOut,
+      workflow: { workflowOccurrenceId: 'occurrence-1', requirements: [replacementRequirement] },
+      currentRequirement: replacementRequirement,
+    };
+    await act(async () => tree.update(<FormScreen />));
+
+    const text = tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ');
+    expect(text).toContain('Captured Clock Out Form');
+    expect(text).not.toContain('Replacement Clock Out Form');
+    expect(tree.root.findByProps({ testID: 'form-field-condition' }).props.value).toBe('Clock out entry');
+    expect(mockInitialFormValues).toHaveBeenCalledTimes(1);
+    expect(mockRefreshForms).not.toHaveBeenCalled();
+  });
+
+  it('keeps ordinary Forms live outside mandatory workflow routes', async () => {
+    let tree: any;
+    await act(async () => { tree = create(<FormScreen />); });
+
+    mockForm.name = 'Updated Daily Inspection';
+    await act(async () => tree.update(<FormScreen />));
+
+    const text = tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ');
+    expect(text).toContain('Updated Daily Inspection');
+    expect(text).not.toContain('Form unavailable');
   });
 
   it('stays on Finishing while successful clock-in finalization resolves with store busy false', async () => {
