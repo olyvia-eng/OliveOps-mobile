@@ -78,6 +78,7 @@ export function PendingClockInProvider({ children }: { children: React.ReactNode
   identityRef.current = identityKey;
   const recordRef = useRef<PendingClockInRecord | null>(null);
   const syncPromiseRef = useRef<Promise<void> | null>(null);
+  const finalizePromiseRef = useRef<Promise<FinalizeResult> | null>(null);
   const [hydrated, setHydrated] = useState(false);
   const [workflow, setWorkflow] = useState<PendingClockInWorkflow | null>(null);
   const [busy, setBusy] = useState(false);
@@ -204,56 +205,66 @@ export function PendingClockInProvider({ children }: { children: React.ReactNode
     return recover();
   }, [acceptWorkflow, accessToken, recover]);
 
-  const finalize = useCallback(async (): Promise<FinalizeResult> => {
-    const current = recordRef.current?.workflow;
-    if (!current) return { ok: false, error: 'No pending clock-in was found.' };
-    if (!await isOnline()) return { ok: false, error: 'Reconnect to finish clocking in.' };
-    setBusy(true);
-    setError(null);
-    try {
-      const response = await clockingApi.finalizeClockIn({ workflowOccurrenceId: current.workflowOccurrenceId }, accessToken);
-      if (response.status === 'clock_in_pending_required_forms') {
-        await acceptWorkflow(response);
-        return { ok: false, error: 'Complete the remaining required form.' };
-      }
-      if (response.status === 'required_forms_outstanding') {
-        await recover();
-        return { ok: false, error: 'Complete the remaining required form.' };
-      }
-      if (response.status === 'clock_in_workflow_not_found') {
-        await recoverStaleWorkflow();
-        return { ok: false, error: 'This pending clock-in changed. Refresh and continue the restored workflow.' };
-      }
-      if (response.status === 'clock_in_workflow_forbidden') {
-        await recoverStaleWorkflow();
-        return { ok: false, error: 'This pending clock-in is no longer available for this account.' };
-      }
-      await commit(null);
-      return { ok: true };
-    } catch (finalizeError) {
-      const code = errorCode(finalizeError);
-      if (code === 'required_forms_outstanding') {
-        await recover();
-        return { ok: false, error: 'Complete the remaining required form.' };
-      }
-      if (code === 'clock_in_already_finalized') {
+  const finalize = useCallback((): Promise<FinalizeResult> => {
+    if (finalizePromiseRef.current) return finalizePromiseRef.current;
+    const run = async (): Promise<FinalizeResult> => {
+      const current = recordRef.current?.workflow;
+      if (!current) return { ok: false, error: 'No pending clock-in was found.' };
+      if (!await isOnline()) return { ok: false, error: 'Reconnect to finish clocking in.' };
+      setBusy(true);
+      setError(null);
+      try {
+        const response = await clockingApi.finalizeClockIn({ workflowOccurrenceId: current.workflowOccurrenceId }, accessToken);
+        if (response.status === 'clock_in_pending_required_forms') {
+          await acceptWorkflow(response);
+          return { ok: false, error: 'Complete the remaining required form.' };
+        }
+        if (response.status === 'required_forms_outstanding') {
+          await recover();
+          return { ok: false, error: 'Complete the remaining required form.' };
+        }
+        if (response.status === 'clock_in_workflow_not_found') {
+          await recoverStaleWorkflow();
+          return { ok: false, error: 'This pending clock-in changed. Refresh and continue the restored workflow.' };
+        }
+        if (response.status === 'clock_in_workflow_forbidden') {
+          await recoverStaleWorkflow();
+          return { ok: false, error: 'This pending clock-in is no longer available for this account.' };
+        }
         await commit(null);
         return { ok: true };
+      } catch (finalizeError) {
+        const code = errorCode(finalizeError);
+        if (code === 'required_forms_outstanding') {
+          await recover();
+          return { ok: false, error: 'Complete the remaining required form.' };
+        }
+        if (code === 'clock_in_already_finalized') {
+          await commit(null);
+          return { ok: true };
+        }
+        if (code === 'clock_in_workflow_not_found' || code === 'clock_in_workflow_forbidden') await recoverStaleWorkflow();
+        const message = code === 'clock_in_workflow_forbidden'
+          ? 'This pending clock-in is no longer available for this account.'
+          : 'Clock-in could not be finalized. Your required form progress is still saved.';
+        setError(message);
+        return { ok: false, error: message };
+      } finally {
+        setBusy(false);
       }
-      if (code === 'clock_in_workflow_not_found' || code === 'clock_in_workflow_forbidden') await recoverStaleWorkflow();
-      const message = code === 'clock_in_workflow_forbidden'
-        ? 'This pending clock-in is no longer available for this account.'
-        : 'Clock-in could not be finalized. Your required form progress is still saved.';
-      setError(message);
-      return { ok: false, error: message };
-    } finally {
-      setBusy(false);
-    }
+    };
+    const promise = run().finally(() => {
+      if (finalizePromiseRef.current === promise) finalizePromiseRef.current = null;
+    });
+    finalizePromiseRef.current = promise;
+    return promise;
   }, [acceptWorkflow, accessToken, commit, recover, recoverStaleWorkflow]);
 
-  const syncQueued = useCallback(async () => {
-    if (syncPromiseRef.current || !identityKey || !accessToken || !await isOnline()) return syncPromiseRef.current;
+  const syncQueued = useCallback(() => {
+    if (syncPromiseRef.current || !identityKey || !accessToken) return syncPromiseRef.current;
     const run = async () => {
+      if (!await isOnline()) return;
+      let processedQueuedSubmission = false;
       while (recordRef.current?.queuedSubmissions.length) {
         const payload = recordRef.current.queuedSubmissions[0];
         try {
@@ -264,15 +275,20 @@ export function PendingClockInProvider({ children }: { children: React.ReactNode
         const current = recordRef.current;
         if (!current) return;
         await commit({ ...current, queuedSubmissions: current.queuedSubmissions.slice(1) });
+        processedQueuedSubmission = true;
       }
+      if (!processedQueuedSubmission) return;
       const refreshed = await recover();
       if (refreshed && refreshed.remainingRequiredFormCount === 0) {
         const finalized = await finalize();
         if (finalized.ok) await refreshWorkContext();
       }
     };
-    syncPromiseRef.current = run().finally(() => { syncPromiseRef.current = null; });
-    return syncPromiseRef.current;
+    const promise = run().finally(() => {
+      if (syncPromiseRef.current === promise) syncPromiseRef.current = null;
+    });
+    syncPromiseRef.current = promise;
+    return promise;
   }, [accessToken, commit, finalize, identityKey, recover, refreshWorkContext]);
 
   useEffect(() => {

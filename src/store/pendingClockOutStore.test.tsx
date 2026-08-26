@@ -13,6 +13,8 @@ const mockClearRecord = jest.fn();
 const mockRefreshWorkContext = jest.fn();
 let mockOnline = true;
 let pendingStore: any;
+let mockNetworkListener: ((state: { isConnected: boolean; isInternetReachable: boolean }) => void) | null = null;
+let mockAppStateListener: ((state: string) => void) | null = null;
 
 const requiredForm = {
   id: 'form-1', name: 'End of Shift', trigger: 'after_clock_out' as const, required: true,
@@ -64,10 +66,16 @@ jest.mock('@/hooks/useClockingActions', () => ({
 }));
 jest.mock('@react-native-community/netinfo', () => ({
   __esModule: true,
-  default: { addEventListener: jest.fn(() => jest.fn()) },
+  default: { addEventListener: jest.fn((listener) => {
+    mockNetworkListener = listener;
+    return jest.fn();
+  }) },
 }));
 jest.mock('react-native', () => ({
-  AppState: { addEventListener: jest.fn(() => ({ remove: jest.fn() })) },
+  AppState: { addEventListener: jest.fn((_event, listener) => {
+    mockAppStateListener = listener;
+    return { remove: jest.fn() };
+  }) },
   NativeModules: {},
   Platform: { select: (values: any) => values.ios ?? values.default },
   TurboModuleRegistry: { get: () => null },
@@ -89,6 +97,8 @@ describe('PendingClockOutProvider', () => {
 
   beforeEach(() => {
     mockOnline = true;
+    mockNetworkListener = null;
+    mockAppStateListener = null;
     mockLoadRecord.mockReset().mockResolvedValue(null);
     mockSaveRecord.mockReset().mockResolvedValue(undefined);
     mockClearRecord.mockReset().mockResolvedValue(undefined);
@@ -185,5 +195,76 @@ describe('PendingClockOutProvider', () => {
     expect(mockClearRecord).toHaveBeenCalledWith('business-1:user-1:employee-1');
     expect(pendingStore.workflow).toBeNull();
     expect(mockRefreshWorkContext).not.toHaveBeenCalled();
+  });
+
+  it('does not auto-finalize a completed bootstrap workflow without queued submissions', async () => {
+    mockLoadBootstrap.mockResolvedValue({
+      ok: true,
+      capabilities: { requiredAfterClockOutForms: true },
+      pendingClockOutWorkflow: workflow(true),
+    });
+    mockLoadPendingClockOut.mockResolvedValue(workflow(true));
+
+    await mount();
+
+    expect(mockFinalizeClockOut).not.toHaveBeenCalled();
+    expect(mockRefreshWorkContext).not.toHaveBeenCalled();
+  });
+
+  it('does not auto-finalize from lifecycle events without queued submissions', async () => {
+    await mount();
+    mockFinalizeClockOut.mockClear();
+
+    await act(async () => mockNetworkListener?.({ isConnected: true, isInternetReachable: true }));
+    await act(async () => mockAppStateListener?.('active'));
+
+    expect(mockFinalizeClockOut).not.toHaveBeenCalled();
+  });
+
+  it('auto-finalizes after replaying a genuinely queued clock-out form submission', async () => {
+    const payload = {
+      clientSubmissionId: 'form-submission:queued-1', formId: 'form-1', trigger: 'after_clock_out' as const,
+      workflowOccurrenceId: 'occurrence-1', workflowRequirementId: 'requirement-1', responses: [],
+    };
+    mockLoadRecord.mockResolvedValue({
+      workflow: workflow(), submissionIds: {},
+      queuedSubmissions: [{
+        workflowOccurrenceId: 'occurrence-1', workflowRequirementId: 'requirement-1', payload,
+        queuedAt: '2026-08-25T20:31:00.000Z',
+      }],
+    });
+    mockLoadPendingClockOut.mockResolvedValue(workflow(true));
+
+    await mount();
+
+    expect(mockSubmitEmployeeForm).toHaveBeenCalledWith(payload, 'token-1');
+    expect(mockFinalizeClockOut).toHaveBeenCalledTimes(1);
+    expect(mockRefreshWorkContext).toHaveBeenCalledTimes(1);
+    expect(pendingStore.workflow).toBeNull();
+  });
+
+  it('shares one successful clock-out finalization across simultaneous callers', async () => {
+    await mount();
+    let resolveFinalize!: (result: { ok: true; status: 'clock_out_completed' }) => void;
+    mockFinalizeClockOut.mockClear().mockImplementationOnce(() => new Promise((resolve) => { resolveFinalize = resolve; }));
+
+    let first!: Promise<unknown>;
+    let second!: Promise<unknown>;
+    await act(async () => {
+      first = pendingStore.finalize();
+      second = pendingStore.finalize();
+      await Promise.resolve();
+    });
+
+    expect(first).toBe(second);
+    expect(mockFinalizeClockOut).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      resolveFinalize({ ok: true, status: 'clock_out_completed' });
+      await Promise.all([first, second]);
+    });
+    await expect(first).resolves.toEqual({ ok: true });
+    await expect(second).resolves.toEqual({ ok: true });
+    expect(mockFinalizeClockOut).toHaveBeenCalledTimes(1);
+    expect(pendingStore.error).toBeNull();
   });
 });

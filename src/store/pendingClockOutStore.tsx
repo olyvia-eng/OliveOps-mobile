@@ -93,6 +93,7 @@ export function PendingClockOutProvider({ children }: { children: React.ReactNod
   identityRef.current = identityKey;
   const recordRef = useRef<PendingClockOutRecord | null>(null);
   const syncPromiseRef = useRef<Promise<void> | null>(null);
+  const finalizePromiseRef = useRef<Promise<FinalizeResult> | null>(null);
   const [hydrated, setHydrated] = useState(false);
   const [workflow, setWorkflow] = useState<PendingClockOutWorkflow | null>(null);
   const [busy, setBusy] = useState(false);
@@ -138,48 +139,58 @@ export function PendingClockOutProvider({ children }: { children: React.ReactNod
     }
   }, [acceptWorkflow, accessToken, commit, identityKey, status]);
 
-  const finalize = useCallback(async (): Promise<FinalizeResult> => {
-    const current = recordRef.current?.workflow;
-    if (!current) return { ok: false, error: 'No pending clock-out was found.' };
-    if (!await isOnline()) return { ok: false, error: 'Reconnect to finish clocking out.' };
-    setBusy(true);
-    setError(null);
-    try {
-      const response = await clockingApi.finalizeClockOut({
-        workflowOccurrenceId: current.workflowOccurrenceId,
-      }, accessToken);
-      if (response.status === 'clock_out_pending_required_forms') {
-        await acceptWorkflow(response);
-        return { ok: false, error: 'Complete the remaining required form.' };
-      }
-      await commit(null);
-      return { ok: true };
-    } catch (finalizeError) {
-      const code = errorCode(finalizeError);
-      if (code === 'required_forms_outstanding') {
-        await recover();
-        return { ok: false, error: 'Complete the remaining required form.' };
-      }
-      if (code === 'clock_out_workflow_already_finalized') {
+  const finalize = useCallback((): Promise<FinalizeResult> => {
+    if (finalizePromiseRef.current) return finalizePromiseRef.current;
+    const run = async (): Promise<FinalizeResult> => {
+      const current = recordRef.current?.workflow;
+      if (!current) return { ok: false, error: 'No pending clock-out was found.' };
+      if (!await isOnline()) return { ok: false, error: 'Reconnect to finish clocking out.' };
+      setBusy(true);
+      setError(null);
+      try {
+        const response = await clockingApi.finalizeClockOut({
+          workflowOccurrenceId: current.workflowOccurrenceId,
+        }, accessToken);
+        if (response.status === 'clock_out_pending_required_forms') {
+          await acceptWorkflow(response);
+          return { ok: false, error: 'Complete the remaining required form.' };
+        }
         await commit(null);
         return { ok: true };
+      } catch (finalizeError) {
+        const code = errorCode(finalizeError);
+        if (code === 'required_forms_outstanding') {
+          await recover();
+          return { ok: false, error: 'Complete the remaining required form.' };
+        }
+        if (code === 'clock_out_workflow_already_finalized') {
+          await commit(null);
+          return { ok: true };
+        }
+        if (code === 'clock_out_workflow_not_found' || code === 'clock_out_workflow_forbidden') {
+          await recover();
+        }
+        const message = code === 'employee_form_context_unavailable'
+          ? 'This form context is no longer available. Reconnect and contact your supervisor if this continues.'
+          : 'Clock-out could not be finalized. Your required form progress is still saved.';
+        setError(message);
+        return { ok: false, error: message };
+      } finally {
+        setBusy(false);
       }
-      if (code === 'clock_out_workflow_not_found' || code === 'clock_out_workflow_forbidden') {
-        await recover();
-      }
-      const message = code === 'employee_form_context_unavailable'
-        ? 'This form context is no longer available. Reconnect and contact your supervisor if this continues.'
-        : 'Clock-out could not be finalized. Your required form progress is still saved.';
-      setError(message);
-      return { ok: false, error: message };
-    } finally {
-      setBusy(false);
-    }
+    };
+    const promise = run().finally(() => {
+      if (finalizePromiseRef.current === promise) finalizePromiseRef.current = null;
+    });
+    finalizePromiseRef.current = promise;
+    return promise;
   }, [acceptWorkflow, accessToken, commit, recover]);
 
-  const syncQueued = useCallback(async () => {
-    if (syncPromiseRef.current || !identityKey || !accessToken || !await isOnline()) return syncPromiseRef.current;
+  const syncQueued = useCallback(() => {
+    if (syncPromiseRef.current || !identityKey || !accessToken) return syncPromiseRef.current;
     const run = async () => {
+      if (!await isOnline()) return;
+      let processedQueuedSubmission = false;
       while (recordRef.current?.queuedSubmissions.length) {
         const queued = recordRef.current.queuedSubmissions[0];
         try {
@@ -191,15 +202,20 @@ export function PendingClockOutProvider({ children }: { children: React.ReactNod
         const current = recordRef.current;
         if (!current) return;
         await commit({ ...current, queuedSubmissions: current.queuedSubmissions.slice(1) });
+        processedQueuedSubmission = true;
       }
+      if (!processedQueuedSubmission) return;
       const refreshed = await recover();
       if (refreshed && workflowRequirements(refreshed).every((item) => item.completed)) {
         const finalized = await finalize();
         if (finalized.ok) await refreshWorkContext();
       }
     };
-    syncPromiseRef.current = run().finally(() => { syncPromiseRef.current = null; });
-    return syncPromiseRef.current;
+    const promise = run().finally(() => {
+      if (syncPromiseRef.current === promise) syncPromiseRef.current = null;
+    });
+    syncPromiseRef.current = promise;
+    return promise;
   }, [accessToken, commit, finalize, identityKey, recover, refreshWorkContext]);
 
   useEffect(() => {

@@ -16,6 +16,8 @@ const mockAcknowledgePendingClockInWorkflow = jest.fn();
 let mockOutboxWorkflow: ReturnType<typeof workflow> | null = null;
 let mockOnline = true;
 let pendingStore: any;
+let mockNetworkListener: ((state: { isConnected: boolean; isInternetReachable: boolean }) => void) | null = null;
+let mockAppStateListener: ((state: string) => void) | null = null;
 
 const requiredForm = {
   id: 'form-1', name: 'Morning Truck Inspection', trigger: 'before_clock_in' as const, required: true,
@@ -23,7 +25,7 @@ const requiredForm = {
   submissionState: { completed: false },
 };
 
-function workflow() {
+function workflow(completed = false) {
   const requirement = { requirementId: 'requirement-1', formId: 'form-1', form: requiredForm };
   return {
     ok: true,
@@ -31,10 +33,10 @@ function workflow() {
     blocked: true as const,
     workflowOccurrenceId: 'occurrence-1',
     requiredFormCount: 1,
-    completedRequiredFormCount: 0,
-    remainingRequiredFormCount: 1,
+    completedRequiredFormCount: completed ? 1 : 0,
+    remainingRequiredFormCount: completed ? 0 : 1,
     requiredForms: [requirement],
-    remainingForms: [requirement],
+    remainingForms: completed ? [] : [requirement],
     reminderForms: [],
     clockInIntent: { employeeId: 'employee-1', workType: 'job' as const, jobIds: ['job-1'] },
   };
@@ -83,10 +85,16 @@ jest.mock('@/store/offlineClockContext', () => ({
 }));
 jest.mock('@react-native-community/netinfo', () => ({
   __esModule: true,
-  default: { addEventListener: jest.fn(() => jest.fn()) },
+  default: { addEventListener: jest.fn((listener) => {
+    mockNetworkListener = listener;
+    return jest.fn();
+  }) },
 }));
 jest.mock('react-native', () => ({
-  AppState: { addEventListener: jest.fn(() => ({ remove: jest.fn() })) },
+  AppState: { addEventListener: jest.fn((_event, listener) => {
+    mockAppStateListener = listener;
+    return { remove: jest.fn() };
+  }) },
   NativeModules: {},
   Platform: { select: (values: any) => values.ios ?? values.default },
   TurboModuleRegistry: { get: () => null },
@@ -107,6 +115,8 @@ describe('PendingClockInProvider', () => {
 
   beforeEach(() => {
     mockOnline = true;
+    mockNetworkListener = null;
+    mockAppStateListener = null;
     mockOutboxWorkflow = null;
     mockAcknowledgePendingClockInWorkflow.mockReset();
     mockLoadRecord.mockReset().mockResolvedValue(null);
@@ -294,6 +304,79 @@ describe('PendingClockInProvider', () => {
     expect(mockFinalizeClockIn).toHaveBeenCalledWith({ workflowOccurrenceId: 'occurrence-1' }, 'token-1');
     expect(pendingStore.workflow).toBeNull();
     expect(mockRefreshWorkContext).not.toHaveBeenCalled();
+  });
+
+  it('does not auto-finalize a completed bootstrap workflow without queued submissions', async () => {
+    mockLoadBootstrap.mockResolvedValue({
+      ok: true,
+      capabilities: { requiredBeforeClockInForms: true },
+      pendingClockInWorkflow: workflow(true),
+    });
+    mockLoadPendingClockIn.mockResolvedValue(workflow(true));
+
+    await mount();
+
+    expect(mockFinalizeClockIn).not.toHaveBeenCalled();
+    expect(mockRefreshWorkContext).not.toHaveBeenCalled();
+  });
+
+  it('does not auto-finalize from NetInfo when no queued submission was processed', async () => {
+    await mount();
+    mockFinalizeClockIn.mockClear();
+
+    await act(async () => mockNetworkListener?.({ isConnected: true, isInternetReachable: true }));
+
+    expect(mockFinalizeClockIn).not.toHaveBeenCalled();
+  });
+
+  it('does not auto-finalize from AppState when no queued submission was processed', async () => {
+    await mount();
+    mockFinalizeClockIn.mockClear();
+
+    await act(async () => mockAppStateListener?.('active'));
+
+    expect(mockFinalizeClockIn).not.toHaveBeenCalled();
+  });
+
+  it('auto-finalizes after replaying a genuinely queued clock-in form submission', async () => {
+    const payload = {
+      clientSubmissionId: 'form-submission:queued-1', formId: 'form-1', trigger: 'before_clock_in' as const,
+      workflowOccurrenceId: 'occurrence-1', workflowRequirementId: 'requirement-1', responses: [],
+    };
+    mockLoadRecord.mockResolvedValue({ workflow: workflow(), submissionIds: {}, queuedSubmissions: [payload] });
+    mockLoadPendingClockIn.mockResolvedValue(workflow(true));
+
+    await mount();
+
+    expect(mockSubmitEmployeeForm).toHaveBeenCalledWith(payload, 'token-1');
+    expect(mockFinalizeClockIn).toHaveBeenCalledTimes(1);
+    expect(mockRefreshWorkContext).toHaveBeenCalledTimes(1);
+    expect(pendingStore.workflow).toBeNull();
+  });
+
+  it('shares one successful clock-in finalization across simultaneous callers', async () => {
+    await mount();
+    let resolveFinalize!: (result: { ok: true; status: 'clock_in_completed' }) => void;
+    mockFinalizeClockIn.mockClear().mockImplementationOnce(() => new Promise((resolve) => { resolveFinalize = resolve; }));
+
+    let first!: Promise<unknown>;
+    let second!: Promise<unknown>;
+    await act(async () => {
+      first = pendingStore.finalize();
+      second = pendingStore.finalize();
+      await Promise.resolve();
+    });
+
+    expect(first).toBe(second);
+    expect(mockFinalizeClockIn).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      resolveFinalize({ ok: true, status: 'clock_in_completed' });
+      await Promise.all([first, second]);
+    });
+    await expect(first).resolves.toEqual({ ok: true });
+    await expect(second).resolves.toEqual({ ok: true });
+    expect(mockFinalizeClockIn).toHaveBeenCalledTimes(1);
+    expect(pendingStore.error).toBeNull();
   });
 
   it('refreshes the authoritative workflow for required_forms_outstanding', async () => {
