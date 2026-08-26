@@ -34,6 +34,7 @@ import { colors, spacing, typography } from '@/theme/colors';
 import type { EmployeeForm } from '@/types/forms';
 
 type MandatoryFinalizationKind = 'clock_in' | 'clock_out';
+type FinalizationState = 'idle' | 'finalizing' | 'failed';
 
 function matchesParams(form: EmployeeForm, params: Record<string, string | string[] | undefined>) {
   return form.id === params.formId
@@ -84,6 +85,7 @@ export default function FormScreen() {
   if (matchedForm) formSnapshotRef.current = matchedForm;
   const [mandatorySubmissionAccepted, setMandatorySubmissionAccepted] = useState(false);
   const [finalizationKind, setFinalizationKind] = useState<MandatoryFinalizationKind | null>(null);
+  const [finalizationState, setFinalizationState] = useState<FinalizationState>('idle');
   const form = matchedForm ?? (submissionInProgressRef.current || mandatorySubmissionAccepted ? formSnapshotRef.current : null);
   const initialValues = useMemo(
     () => initialFormValues(form?.fields ?? [], {}, new Date(), businessTimeZone),
@@ -119,6 +121,7 @@ export default function FormScreen() {
     submissionInProgressRef.current = false;
     setMandatorySubmissionAccepted(false);
     setFinalizationKind(null);
+    setFinalizationState('idle');
     setValues(initialValues);
     setFieldErrors({});
   }, [initialValues, submissionIdentity]);
@@ -226,9 +229,11 @@ export default function FormScreen() {
   async function finishMandatoryWorkflow(kind: MandatoryFinalizationKind) {
     const mandatoryStore = kind === 'clock_in' ? pendingClockIn : pendingClockOut;
     setError(null);
+    setFinalizationState('finalizing');
     const finalized = await mandatoryStore.finalize();
     if (!finalized.ok) {
       submissionInProgressRef.current = false;
+      setFinalizationState('failed');
       setError(finalized.error);
       return;
     }
@@ -237,6 +242,7 @@ export default function FormScreen() {
     if (kind === 'clock_in') setClockInCompleted(true);
     else setClockOutCompleted(true);
     setFinalizationKind(null);
+    setFinalizationState('idle');
     try {
       await refreshWorkContext();
     } catch {
@@ -393,7 +399,7 @@ export default function FormScreen() {
       {error ? <StatusBanner tone="error" message={error} /> : null}
       <PrimaryActionButton
         label={mandatorySubmissionAccepted
-          ? (finalizationKind && !pendingClockIn.busy && !pendingClockOut.busy
+          ? (finalizationState === 'failed' && finalizationKind
               ? `Retry Finish Clock ${finalizationKind === 'clock_in' ? 'In' : 'Out'}`
               : 'Finishing...')
           : submitting
@@ -401,9 +407,9 @@ export default function FormScreen() {
             : error
               ? 'Retry Submit'
               : 'Submit Form'}
-        disabled={submitting || Boolean(mandatorySubmissionAccepted && (!finalizationKind || pendingClockIn.busy || pendingClockOut.busy)) || unsupportedRequired}
+        disabled={submitting || Boolean(mandatorySubmissionAccepted && finalizationState !== 'failed') || unsupportedRequired}
         onPress={() => {
-          if (finalizationKind) void finishMandatoryWorkflow(finalizationKind);
+          if (finalizationState === 'failed' && finalizationKind) void finishMandatoryWorkflow(finalizationKind);
           else void onSubmit();
         }}
       />

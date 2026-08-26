@@ -121,6 +121,7 @@ describe('FormScreen', () => {
     mockPendingClockOut = {
       workflow: null,
       currentRequirement: null,
+      busy: false,
       submissionIdFor: mockSubmissionIdFor,
       queueSubmission: mockQueueSubmission,
       recover: mockRecoverPending,
@@ -130,6 +131,7 @@ describe('FormScreen', () => {
     mockPendingClockIn = {
       workflow: null,
       currentRequirement: null,
+      busy: false,
       submissionIdFor: mockSubmissionIdFor,
       queueSubmission: mockQueueSubmission,
       recover: mockRecoverPending,
@@ -284,6 +286,41 @@ describe('FormScreen', () => {
     expect(tree.root.findByType('status-banner').props.message).toBe('Clock-in completed successfully.');
   });
 
+  it('stays on Finishing while successful clock-in finalization resolves with store busy false', async () => {
+    const requiredForm = { ...mockForm, trigger: 'before_clock_in' };
+    const requirement = { requirementId: 'requirement-1', formId: 'form-1', form: requiredForm };
+    mockParams = {
+      formId: 'form-1', trigger: 'before_clock_in', workflowOccurrenceId: 'occurrence-1',
+      workflowRequirementId: 'requirement-1',
+    };
+    mockPendingClockIn = {
+      ...mockPendingClockIn,
+      workflow: { workflowOccurrenceId: 'occurrence-1', remainingForms: [requirement] },
+      currentRequirement: requirement,
+      busy: false,
+    };
+    let resolveFinalize!: (result: { ok: true }) => void;
+    mockFinalize.mockImplementationOnce(() => new Promise((resolve) => { resolveFinalize = resolve; }));
+    let tree: any;
+    await act(async () => { tree = create(<FormScreen />); });
+    await act(async () => tree.root.findByProps({ testID: 'form-field-condition' }).props.onChangeText('Good'));
+    await act(async () => {
+      tree.root.findByType('primary-button').props.onPress();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mockFinalize).toHaveBeenCalledTimes(1);
+    expect(tree.root.findByType('primary-button').props.label).toBe('Finishing...');
+    expect(tree.root.findAllByType('primary-button').some((node: any) => node.props.label === 'Retry Finish Clock In')).toBe(false);
+
+    await act(async () => resolveFinalize({ ok: true }));
+
+    expect(mockFinalize).toHaveBeenCalledTimes(1);
+    expect(tree.root.findByType('status-banner').props.message).toBe('Clock-in completed successfully.');
+    expect(tree.root.findAllByType('primary-button').some((node: any) => node.props.label === 'Retry Finish Clock In')).toBe(false);
+  });
+
   it('keeps the accepted clock-in form stable while its workflow clears during finalization', async () => {
     let beforeRemove: any;
     mockAddListener.mockImplementation((_event: string, listener: unknown) => {
@@ -399,6 +436,41 @@ describe('FormScreen', () => {
     expect(mockSubmitForm).toHaveBeenCalledTimes(1);
     expect(mockRefreshWorkContext).toHaveBeenCalledTimes(1);
     expect(tree.root.findByType('status-banner').props.message).toBe('Clock-out submitted successfully.');
+  });
+
+  it('stays on Finishing while successful clock-out finalization resolves with store busy false', async () => {
+    const requiredForm = { ...mockForm, trigger: 'after_clock_out' };
+    const requirement = { workflowRequirementId: 'requirement-1', completed: false, form: requiredForm };
+    mockParams = {
+      formId: 'form-1', trigger: 'after_clock_out', workflowOccurrenceId: 'occurrence-1',
+      workflowRequirementId: 'requirement-1',
+    };
+    mockPendingClockOut = {
+      ...mockPendingClockOut,
+      workflow: { workflowOccurrenceId: 'occurrence-1', requirements: [requirement] },
+      currentRequirement: requirement,
+      busy: false,
+    };
+    let resolveFinalize!: (result: { ok: true }) => void;
+    mockFinalize.mockImplementationOnce(() => new Promise((resolve) => { resolveFinalize = resolve; }));
+    let tree: any;
+    await act(async () => { tree = create(<FormScreen />); });
+    await act(async () => tree.root.findByProps({ testID: 'form-field-condition' }).props.onChangeText('Good'));
+    await act(async () => {
+      tree.root.findByType('primary-button').props.onPress();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mockFinalize).toHaveBeenCalledTimes(1);
+    expect(tree.root.findByType('primary-button').props.label).toBe('Finishing...');
+    expect(tree.root.findAllByType('primary-button').some((node: any) => node.props.label === 'Retry Finish Clock Out')).toBe(false);
+
+    await act(async () => resolveFinalize({ ok: true }));
+
+    expect(mockFinalize).toHaveBeenCalledTimes(1);
+    expect(tree.root.findByType('status-banner').props.message).toBe('Clock-out submitted successfully.');
+    expect(tree.root.findAllByType('primary-button').some((node: any) => node.props.label === 'Retry Finish Clock Out')).toBe(false);
   });
 
   it('sequences multiple mandatory clock-in requirements before finalization', async () => {
