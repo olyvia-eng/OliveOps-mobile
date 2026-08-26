@@ -229,7 +229,6 @@ export function PendingClockInProvider({ children }: { children: React.ReactNode
         return { ok: false, error: 'This pending clock-in is no longer available for this account.' };
       }
       await commit(null);
-      await refreshWorkContext();
       return { ok: true };
     } catch (finalizeError) {
       const code = errorCode(finalizeError);
@@ -239,7 +238,6 @@ export function PendingClockInProvider({ children }: { children: React.ReactNode
       }
       if (code === 'clock_in_already_finalized') {
         await commit(null);
-        await refreshWorkContext();
         return { ok: true };
       }
       if (code === 'clock_in_workflow_not_found' || code === 'clock_in_workflow_forbidden') await recoverStaleWorkflow();
@@ -251,7 +249,7 @@ export function PendingClockInProvider({ children }: { children: React.ReactNode
     } finally {
       setBusy(false);
     }
-  }, [acceptWorkflow, accessToken, commit, recover, recoverStaleWorkflow, refreshWorkContext]);
+  }, [acceptWorkflow, accessToken, commit, recover, recoverStaleWorkflow]);
 
   const syncQueued = useCallback(async () => {
     if (syncPromiseRef.current || !identityKey || !accessToken || !await isOnline()) return syncPromiseRef.current;
@@ -268,11 +266,14 @@ export function PendingClockInProvider({ children }: { children: React.ReactNode
         await commit({ ...current, queuedSubmissions: current.queuedSubmissions.slice(1) });
       }
       const refreshed = await recover();
-      if (refreshed && refreshed.remainingRequiredFormCount === 0) await finalize();
+      if (refreshed && refreshed.remainingRequiredFormCount === 0) {
+        const finalized = await finalize();
+        if (finalized.ok) await refreshWorkContext();
+      }
     };
     syncPromiseRef.current = run().finally(() => { syncPromiseRef.current = null; });
     return syncPromiseRef.current;
-  }, [accessToken, commit, finalize, identityKey, recover]);
+  }, [accessToken, commit, finalize, identityKey, recover, refreshWorkContext]);
 
   useEffect(() => {
     let cancelled = false;

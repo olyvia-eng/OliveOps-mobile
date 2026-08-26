@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Image, Linking, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { OfflineNotice } from '@/components/OfflineNotice';
 import { AdvisoryFormsPrompt } from '@/components/AdvisoryFormsPrompt';
@@ -96,11 +96,11 @@ export default function ClockOutScreen() {
     void refreshWorkContext();
   }, [refreshWorkContext]);
 
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     if (effectiveClock.hydrated && effectiveClock.effectiveStatus === 'clocked_out_pending') {
       router.replace('/home');
     }
-  }, [effectiveClock.effectiveStatus, effectiveClock.hydrated]);
+  }, [effectiveClock.effectiveStatus, effectiveClock.hydrated]));
 
   useEffect(() => {
     attachmentsRef.current = attachments;

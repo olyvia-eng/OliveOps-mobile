@@ -293,7 +293,7 @@ describe('PendingClockInProvider', () => {
     expect(result).toEqual({ ok: true });
     expect(mockFinalizeClockIn).toHaveBeenCalledWith({ workflowOccurrenceId: 'occurrence-1' }, 'token-1');
     expect(pendingStore.workflow).toBeNull();
-    expect(mockRefreshWorkContext).toHaveBeenCalledTimes(1);
+    expect(mockRefreshWorkContext).not.toHaveBeenCalled();
   });
 
   it('refreshes the authoritative workflow for required_forms_outstanding', async () => {

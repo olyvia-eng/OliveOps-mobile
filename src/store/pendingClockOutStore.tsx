@@ -11,6 +11,7 @@ import {
   type PendingClockOutRecord,
 } from '@/services/pendingClockOutStorage';
 import { createFormClientSubmissionId } from '@/services/requestGuards';
+import { useClockingActions } from '@/hooks/useClockingActions';
 import { useAuthStore } from '@/store/authStore';
 import type { PendingClockOutRequirement, PendingClockOutWorkflow } from '@/types/api';
 import { ApiError } from '@/types/errors';
@@ -86,6 +87,7 @@ function errorCode(error: unknown) {
 
 export function PendingClockOutProvider({ children }: { children: React.ReactNode }) {
   const { accessToken, status, user } = useAuthStore();
+  const { refreshWorkContext } = useClockingActions();
   const identityKey = identityFor(user);
   const identityRef = useRef(identityKey);
   identityRef.current = identityKey;
@@ -192,12 +194,13 @@ export function PendingClockOutProvider({ children }: { children: React.ReactNod
       }
       const refreshed = await recover();
       if (refreshed && workflowRequirements(refreshed).every((item) => item.completed)) {
-        await finalize();
+        const finalized = await finalize();
+        if (finalized.ok) await refreshWorkContext();
       }
     };
     syncPromiseRef.current = run().finally(() => { syncPromiseRef.current = null; });
     return syncPromiseRef.current;
-  }, [accessToken, commit, finalize, identityKey, recover]);
+  }, [accessToken, commit, finalize, identityKey, recover, refreshWorkContext]);
 
   useEffect(() => {
     let cancelled = false;

@@ -15,6 +15,7 @@ let mockPendingClockOut: any;
 const mockOpenSettings = jest.fn().mockResolvedValue(undefined);
 let activeShiftClosed = false;
 let mockEffectiveClockOverride: any = null;
+let mockRouteFocused = true;
 
 const mockUseClockingActions = jest.fn(() => ({
   clockOut: mockClockOut,
@@ -70,6 +71,10 @@ jest.mock('expo-router', () => ({
     replace: jest.fn(),
     push: jest.fn(),
   },
+  useFocusEffect: (callback: () => void) => require('react').useEffect(() => {
+    if (mockRouteFocused) return callback();
+    return undefined;
+  }, [callback]),
 }));
 
 jest.mock('expo-image-picker', () => ({
@@ -185,6 +190,7 @@ import { completeUpload, deleteUploadedFile, prepareUpload, uploadUriToS3 } from
 
 describe('ClockOutScreen', () => {
   beforeEach(() => {
+    mockRouteFocused = true;
     activeShiftClosed = false;
     mockEffectiveClockOverride = null;
     (Alert.alert as jest.Mock).mockReset();

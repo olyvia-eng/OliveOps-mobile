@@ -280,8 +280,125 @@ describe('FormScreen', () => {
       formId: 'form-1',
     }));
     expect(mockFinalize).toHaveBeenCalledTimes(1);
-    expect(mockRefreshWorkContext).not.toHaveBeenCalled();
+    expect(mockRefreshWorkContext).toHaveBeenCalledTimes(1);
     expect(tree.root.findByType('status-banner').props.message).toBe('Clock-in completed successfully.');
+  });
+
+  it('keeps the accepted clock-in form stable while its workflow clears during finalization', async () => {
+    let beforeRemove: any;
+    mockAddListener.mockImplementation((_event: string, listener: unknown) => {
+      beforeRemove = listener;
+      return jest.fn();
+    });
+    const requiredForm = { ...mockForm, trigger: 'before_clock_in' };
+    const requirement = { requirementId: 'requirement-1', formId: 'form-1', form: requiredForm };
+    mockParams = {
+      formId: 'form-1', trigger: 'before_clock_in', workflowOccurrenceId: 'occurrence-1',
+      workflowRequirementId: 'requirement-1',
+    };
+    mockPendingClockIn = {
+      ...mockPendingClockIn,
+      workflow: { workflowOccurrenceId: 'occurrence-1', remainingForms: [requirement] },
+      currentRequirement: requirement,
+      busy: false,
+    };
+    let tree: any;
+    let renderedDuringClear = '';
+    mockFinalize.mockImplementationOnce(async () => {
+      mockPendingClockIn = { ...mockPendingClockIn, workflow: null, currentRequirement: null };
+      tree.update(<FormScreen />);
+      renderedDuringClear = tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ');
+      const preventDefault = jest.fn();
+      beforeRemove({ preventDefault, data: { action: { type: 'REPLACE' } } });
+      expect(preventDefault).not.toHaveBeenCalled();
+      return { ok: true };
+    });
+
+    await act(async () => { tree = create(<FormScreen />); });
+    await act(async () => tree.root.findByProps({ testID: 'form-field-condition' }).props.onChangeText('Good'));
+    await act(async () => tree.root.findByType('primary-button').props.onPress());
+
+    expect(renderedDuringClear).toContain('Daily Equipment Inspection');
+    expect(renderedDuringClear).not.toContain('Form unavailable');
+    expect(Alert.alert).not.toHaveBeenCalled();
+    expect(mockSubmitForm).toHaveBeenCalledTimes(1);
+    expect(mockFinalize).toHaveBeenCalledTimes(1);
+    expect(mockRefreshWorkContext).toHaveBeenCalledTimes(1);
+    expect(mockReplace).not.toHaveBeenCalled();
+    expect(tree.root.findByType('status-banner').props.message).toBe('Clock-in completed successfully.');
+  });
+
+  it('retries only clock-in finalization after the form submission was accepted', async () => {
+    let beforeRemove: any;
+    mockAddListener.mockImplementation((_event: string, listener: unknown) => {
+      beforeRemove = listener;
+      return jest.fn();
+    });
+    const requiredForm = { ...mockForm, trigger: 'before_clock_in' };
+    const requirement = { requirementId: 'requirement-1', formId: 'form-1', form: requiredForm };
+    mockParams = {
+      formId: 'form-1', trigger: 'before_clock_in', workflowOccurrenceId: 'occurrence-1',
+      workflowRequirementId: 'requirement-1',
+    };
+    mockPendingClockIn = {
+      ...mockPendingClockIn,
+      workflow: { workflowOccurrenceId: 'occurrence-1', remainingForms: [requirement] },
+      currentRequirement: requirement,
+      busy: false,
+    };
+    mockFinalize
+      .mockResolvedValueOnce({ ok: false, error: 'Clock-in could not be finalized. Your required form progress is still saved.' })
+      .mockResolvedValueOnce({ ok: true });
+    let tree: any;
+    await act(async () => { tree = create(<FormScreen />); });
+    await act(async () => tree.root.findByProps({ testID: 'form-field-condition' }).props.onChangeText('Good'));
+    await act(async () => tree.root.findByType('primary-button').props.onPress());
+
+    expect(tree.root.findByType('primary-button').props.label).toBe('Retry Finish Clock In');
+    expect(tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ')).not.toContain('Form unavailable');
+    const preventDefault = jest.fn();
+    await act(async () => beforeRemove({ preventDefault, data: { action: { type: 'GO_BACK' } } }));
+    expect(preventDefault).not.toHaveBeenCalled();
+    expect(Alert.alert).not.toHaveBeenCalled();
+
+    await act(async () => tree.root.findByType('primary-button').props.onPress());
+    expect(mockSubmitForm).toHaveBeenCalledTimes(1);
+    expect(mockFinalize).toHaveBeenCalledTimes(2);
+    expect(mockRefreshWorkContext).toHaveBeenCalledTimes(1);
+    expect(tree.root.findByType('status-banner').props.message).toBe('Clock-in completed successfully.');
+  });
+
+  it('keeps the accepted clock-out form stable while its workflow clears during finalization', async () => {
+    const requiredForm = { ...mockForm, trigger: 'after_clock_out' };
+    const requirement = { workflowRequirementId: 'requirement-1', completed: false, form: requiredForm };
+    mockParams = {
+      formId: 'form-1', trigger: 'after_clock_out', workflowOccurrenceId: 'occurrence-1',
+      workflowRequirementId: 'requirement-1',
+    };
+    mockPendingClockOut = {
+      ...mockPendingClockOut,
+      workflow: { workflowOccurrenceId: 'occurrence-1', requirements: [requirement] },
+      currentRequirement: requirement,
+      busy: false,
+    };
+    let tree: any;
+    let renderedDuringClear = '';
+    mockFinalize.mockImplementationOnce(async () => {
+      mockPendingClockOut = { ...mockPendingClockOut, workflow: null, currentRequirement: null };
+      tree.update(<FormScreen />);
+      renderedDuringClear = tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ');
+      return { ok: true };
+    });
+
+    await act(async () => { tree = create(<FormScreen />); });
+    await act(async () => tree.root.findByProps({ testID: 'form-field-condition' }).props.onChangeText('Good'));
+    await act(async () => tree.root.findByType('primary-button').props.onPress());
+
+    expect(renderedDuringClear).toContain('Daily Equipment Inspection');
+    expect(renderedDuringClear).not.toContain('Form unavailable');
+    expect(mockSubmitForm).toHaveBeenCalledTimes(1);
+    expect(mockRefreshWorkContext).toHaveBeenCalledTimes(1);
+    expect(tree.root.findByType('status-banner').props.message).toBe('Clock-out submitted successfully.');
   });
 
   it('sequences multiple mandatory clock-in requirements before finalization', async () => {

@@ -10,6 +10,7 @@ const mockSubmitEmployeeForm = jest.fn();
 const mockLoadRecord = jest.fn();
 const mockSaveRecord = jest.fn();
 const mockClearRecord = jest.fn();
+const mockRefreshWorkContext = jest.fn();
 let mockOnline = true;
 let pendingStore: any;
 
@@ -58,6 +59,9 @@ jest.mock('@/store/authStore', () => ({
     user: { businessId: 'business-1', id: 'user-1', employeeId: 'employee-1' },
   }),
 }));
+jest.mock('@/hooks/useClockingActions', () => ({
+  useClockingActions: () => ({ refreshWorkContext: mockRefreshWorkContext }),
+}));
 jest.mock('@react-native-community/netinfo', () => ({
   __esModule: true,
   default: { addEventListener: jest.fn(() => jest.fn()) },
@@ -88,6 +92,7 @@ describe('PendingClockOutProvider', () => {
     mockLoadRecord.mockReset().mockResolvedValue(null);
     mockSaveRecord.mockReset().mockResolvedValue(undefined);
     mockClearRecord.mockReset().mockResolvedValue(undefined);
+    mockRefreshWorkContext.mockReset().mockResolvedValue({ ok: true });
     mockLoadBootstrap.mockReset().mockResolvedValue({
       ok: true,
       capabilities: { requiredAfterClockOutForms: true },
@@ -179,5 +184,6 @@ describe('PendingClockOutProvider', () => {
     expect(result).toEqual({ ok: true });
     expect(mockClearRecord).toHaveBeenCalledWith('business-1:user-1:employee-1');
     expect(pendingStore.workflow).toBeNull();
+    expect(mockRefreshWorkContext).not.toHaveBeenCalled();
   });
 });

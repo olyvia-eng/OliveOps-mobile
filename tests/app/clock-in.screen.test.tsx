@@ -14,6 +14,7 @@ let mockPendingClockOut: any;
 const mockLoadUnbillableCategoriesIfNeeded = jest.fn().mockResolvedValue(undefined);
 const mockRetryUnbillableCategories = jest.fn().mockResolvedValue(undefined);
 let mockOfflineClock: any;
+let mockRouteFocused = true;
 
 const mockUseClockingActions = jest.fn(() => ({
   clockIn: mockClockIn,
@@ -74,6 +75,10 @@ jest.mock('expo-router', () => ({
     replace: jest.fn(),
     push: jest.fn(),
   },
+  useFocusEffect: (callback: () => void) => require('react').useEffect(() => {
+    if (mockRouteFocused) return callback();
+    return undefined;
+  }, [callback]),
 }));
 
 jest.mock('@/hooks/useClockingActions', () => ({
@@ -166,6 +171,7 @@ import { router } from 'expo-router';
 
 describe('ClockInScreen', () => {
   beforeEach(() => {
+    mockRouteFocused = true;
     (router.replace as jest.Mock).mockReset();
     (router.push as jest.Mock).mockReset();
     mockClockIn.mockReset();
@@ -239,6 +245,27 @@ describe('ClockInScreen', () => {
     });
 
     expect(router.replace).toHaveBeenCalledWith('/active-shift');
+    expect(router.replace).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not redirect a covered Clock In route while the Form route is active', async () => {
+    mockRouteFocused = false;
+    mockOfflineClock = {
+      hydrated: true,
+      effectiveState: {
+        activeEntry: { id: 'server-entry-1' },
+        effectiveStatus: 'clocked_in_synced',
+      },
+      effectiveTimeEntries: [],
+      cache: null,
+    };
+
+    let tree: any;
+    await act(async () => { tree = create(<ClockInScreen />); });
+    await act(async () => tree.update(<ClockInScreen />));
+
+    expect(router.replace).not.toHaveBeenCalled();
+    expect(router.push).not.toHaveBeenCalled();
   });
 
   it('shows offline notice and disables submit until a job is selected', async () => {

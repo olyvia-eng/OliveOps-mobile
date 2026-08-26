@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { OfflineNotice } from '@/components/OfflineNotice';
 import { AdvisoryFormsPrompt } from '@/components/AdvisoryFormsPrompt';
 import { PrimaryActionButton } from '@/components/PrimaryActionButton';
@@ -61,10 +61,10 @@ export default function ClockInScreen() {
   const continuingWorkflowRef = useRef<string | null>(null);
   const openedMandatoryRequirementRef = useRef<string | null>(null);
 
-  function openMandatoryForm(
+  const openMandatoryForm = useCallback((
     workflowOccurrenceId: string,
     requirement: NonNullable<typeof pendingClockIn.currentRequirement>,
-  ) {
+  ) => {
     const form = pendingClockInRequirementForm(requirement);
     if (!form) return false;
     const navigationKey = `${workflowOccurrenceId}:${requirement.requirementId}`;
@@ -80,7 +80,7 @@ export default function ClockInScreen() {
       },
     });
     return true;
-  }
+  }, []);
 
   useEffect(() => {
     void refreshWorkContext();
@@ -95,12 +95,12 @@ export default function ClockInScreen() {
     setSelectedUnbillableCategoryId(intent.unbillableCategoryId ?? '');
   }, [pendingClockIn.workflow?.workflowOccurrenceId, user?.employeeId]);
 
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     if (!pendingClockIn.workflow || !pendingClockIn.currentRequirement) return;
     openMandatoryForm(pendingClockIn.workflow.workflowOccurrenceId, pendingClockIn.currentRequirement);
-  }, [pendingClockIn.currentForm, pendingClockIn.currentRequirement, pendingClockIn.workflow]);
+  }, [openMandatoryForm, pendingClockIn.currentForm, pendingClockIn.currentRequirement, pendingClockIn.workflow]));
 
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     if (!pendingClockIn.workflow && effectiveClock.hydrated && (
       effectiveClock.effectiveStatus === 'clocked_in_pending'
       || effectiveClock.effectiveStatus === 'clocked_in_synced'
@@ -108,7 +108,7 @@ export default function ClockInScreen() {
     )) {
       router.replace('/active-shift');
     }
-  }, [effectiveClock.activeEntry, effectiveClock.effectiveStatus, effectiveClock.hydrated, pendingClockIn.workflow]);
+  }, [effectiveClock.activeEntry, effectiveClock.effectiveStatus, effectiveClock.hydrated, pendingClockIn.workflow]));
 
   const assignedJobs = useMemo(() => {
     const employeeId = user?.employeeId;

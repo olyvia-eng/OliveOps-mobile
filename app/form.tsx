@@ -33,6 +33,8 @@ import {
 import { colors, spacing, typography } from '@/theme/colors';
 import type { EmployeeForm } from '@/types/forms';
 
+type MandatoryFinalizationKind = 'clock_in' | 'clock_out';
+
 function matchesParams(form: EmployeeForm, params: Record<string, string | string[] | undefined>) {
   return form.id === params.formId
     && form.trigger === params.trigger
@@ -70,17 +72,19 @@ export default function FormScreen() {
     ? workflow.forms[workflow.completedCount] ?? null
     : null;
   const matchedForm = useMemo(
-    () => mandatoryForm && mandatoryForm.id === params.formId
-      ? mandatoryForm
+    () => params.workflowOccurrenceId && params.workflowRequirementId
+      ? mandatoryForm?.id === params.formId ? mandatoryForm : null
       : workflowForm && matchesParams(workflowForm, params)
-      ? workflowForm
-      : candidates.find((item) => matchesParams(item, params)) ?? null,
+        ? workflowForm
+        : candidates.find((item) => matchesParams(item, params)) ?? null,
     [candidates, mandatoryForm, params, workflowForm],
   );
   const formSnapshotRef = useRef<EmployeeForm | null>(null);
   const submissionInProgressRef = useRef(false);
   if (matchedForm) formSnapshotRef.current = matchedForm;
-  const form = matchedForm ?? (submissionInProgressRef.current ? formSnapshotRef.current : null);
+  const [mandatorySubmissionAccepted, setMandatorySubmissionAccepted] = useState(false);
+  const [finalizationKind, setFinalizationKind] = useState<MandatoryFinalizationKind | null>(null);
+  const form = matchedForm ?? (submissionInProgressRef.current || mandatorySubmissionAccepted ? formSnapshotRef.current : null);
   const initialValues = useMemo(
     () => initialFormValues(form?.fields ?? [], {}, new Date(), businessTimeZone),
     [businessTimeZone, form],
@@ -111,6 +115,10 @@ export default function FormScreen() {
   useEffect(() => {
     if (!submissionIdentity || initializedAttemptRef.current === submissionIdentity) return;
     initializedAttemptRef.current = submissionIdentity;
+    submittedRef.current = false;
+    submissionInProgressRef.current = false;
+    setMandatorySubmissionAccepted(false);
+    setFinalizationKind(null);
     setValues(initialValues);
     setFieldErrors({});
   }, [initialValues, submissionIdentity]);
@@ -215,6 +223,27 @@ export default function FormScreen() {
   const orderedFields = [...form.fields].sort((left, right) => left.order - right.order);
   const unsupportedRequired = hasRequiredUnsupportedField(orderedFields);
 
+  async function finishMandatoryWorkflow(kind: MandatoryFinalizationKind) {
+    const mandatoryStore = kind === 'clock_in' ? pendingClockIn : pendingClockOut;
+    setError(null);
+    const finalized = await mandatoryStore.finalize();
+    if (!finalized.ok) {
+      submissionInProgressRef.current = false;
+      setError(finalized.error);
+      return;
+    }
+
+    submissionInProgressRef.current = false;
+    if (kind === 'clock_in') setClockInCompleted(true);
+    else setClockOutCompleted(true);
+    setFinalizationKind(null);
+    try {
+      await refreshWorkContext();
+    } catch {
+      // Finalization succeeded; the next app refresh will reconcile clock state.
+    }
+  }
+
   async function onSubmit() {
     if (!form) return;
     const validationErrors = validateFormValues(orderedFields, values);
@@ -272,6 +301,8 @@ export default function FormScreen() {
     }
 
     if (mandatoryRequirementId) {
+      submittedRef.current = true;
+      setMandatorySubmissionAccepted(true);
       const refreshedClockIn = mandatoryClockInRequirement
         ? await pendingClockIn.refreshAfterSubmission()
         : null;
@@ -307,17 +338,9 @@ export default function FormScreen() {
         });
         return;
       }
-      const finalized = await mandatoryStore.finalize();
-      if (!finalized.ok) {
-        submissionInProgressRef.current = false;
-        setError(finalized.error);
-        return;
-      }
-      if (mandatoryClockOutRequirement) await refreshWorkContext();
-      submittedRef.current = true;
-      submissionInProgressRef.current = false;
-      if (mandatoryClockInRequirement) setClockInCompleted(true);
-      else setClockOutCompleted(true);
+      const kind = mandatoryClockInRequirement ? 'clock_in' : 'clock_out';
+      setFinalizationKind(kind);
+      await finishMandatoryWorkflow(kind);
       return;
     }
 
@@ -354,7 +377,7 @@ export default function FormScreen() {
           field={field}
           value={values[field.id] ?? ''}
           error={fieldErrors[field.id]}
-          disabled={submitting}
+          disabled={submitting || mandatorySubmissionAccepted}
           onChange={(value) => {
             setValues((current) => ({ ...current, [field.id]: value }));
             setFieldErrors((current) => {
@@ -369,9 +392,20 @@ export default function FormScreen() {
       {unsupportedRequired ? <StatusBanner tone="info" message="A required field needs a newer mobile Forms version. This form cannot be submitted here yet." /> : null}
       {error ? <StatusBanner tone="error" message={error} /> : null}
       <PrimaryActionButton
-        label={submitting ? 'Submitting...' : error ? 'Retry Submit' : 'Submit Form'}
-        disabled={submitting || unsupportedRequired}
-        onPress={() => { void onSubmit(); }}
+        label={mandatorySubmissionAccepted
+          ? (finalizationKind && !pendingClockIn.busy && !pendingClockOut.busy
+              ? `Retry Finish Clock ${finalizationKind === 'clock_in' ? 'In' : 'Out'}`
+              : 'Finishing...')
+          : submitting
+            ? 'Submitting...'
+            : error
+              ? 'Retry Submit'
+              : 'Submit Form'}
+        disabled={submitting || Boolean(mandatorySubmissionAccepted && (!finalizationKind || pendingClockIn.busy || pendingClockOut.busy)) || unsupportedRequired}
+        onPress={() => {
+          if (finalizationKind) void finishMandatoryWorkflow(finalizationKind);
+          else void onSubmit();
+        }}
       />
       <Text style={styles.requiredHint}>* Required field</Text>
     </Screen>
