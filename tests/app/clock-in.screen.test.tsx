@@ -240,12 +240,47 @@ describe('ClockInScreen', () => {
       cache: null,
     };
 
+    let tree: any;
     await act(async () => {
-      create(React.createElement(ClockInScreen));
+      tree = create(React.createElement(ClockInScreen));
     });
+    await act(async () => tree.update(<ClockInScreen />));
 
     expect(router.replace).toHaveBeenCalledWith('/active-shift');
     expect(router.replace).toHaveBeenCalledTimes(1);
+  });
+
+  it('prioritizes a pending required Form over the Active Shift redirect', async () => {
+    const requiredForm = {
+      id: 'form-clock', name: 'Morning Truck Inspection', trigger: 'before_clock_in', required: true,
+      completionRequirement: 'required', context: {}, fields: [], submissionState: { completed: false },
+    };
+    const requirement = { requirementId: 'requirement-1', formId: 'form-clock', form: requiredForm };
+    mockPendingClockIn = {
+      ...mockPendingClockIn,
+      workflow: { workflowOccurrenceId: 'occurrence-1', remainingForms: [requirement] },
+      currentRequirement: requirement,
+      currentForm: requiredForm,
+      totalCount: 1,
+    };
+    mockOfflineClock = {
+      hydrated: true,
+      effectiveState: {
+        activeEntry: { id: 'server-entry-1' },
+        effectiveStatus: 'clocked_in_synced',
+      },
+      effectiveTimeEntries: [],
+      cache: null,
+    };
+
+    let tree: any;
+    await act(async () => { tree = create(<ClockInScreen />); });
+    await act(async () => tree.update(<ClockInScreen />));
+
+    expect(router.push).toHaveBeenCalledTimes(1);
+    expect(router.replace).not.toHaveBeenCalled();
+    expect(tree.root.findAllByProps({ testID: 'activity-option-job' })).toHaveLength(0);
+    expect(tree.root.findAllByType('primary-button').some((node: any) => node.props.label === 'Clock In')).toBe(false);
   });
 
   it('does not redirect a covered Clock In route while the Form route is active', async () => {
@@ -276,6 +311,7 @@ describe('ClockInScreen', () => {
 
     const offline = tree.root.findAllByType('offline-notice');
     expect(offline.length).toBe(1);
+    expect(mockRefresh).not.toHaveBeenCalled();
 
     const submitButton = tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Clock In');
     expect(submitButton?.props.disabled).toBe(true);
@@ -442,13 +478,9 @@ describe('ClockInScreen', () => {
     await act(async () => tree.root.findByProps({ testID: 'activity-option-drive_time' }).props.onPress());
     await act(async () => tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Clock In').props.onPress());
 
-    expect(router.push).toHaveBeenCalledWith({
-      pathname: '/form',
-      params: {
-        formId: 'form-clock', trigger: 'before_clock_in', workflowOccurrenceId: 'occurrence-1',
-        workflowRequirementId: 'requirement-1',
-      },
-    });
+    expect(mockPendingClockIn.acceptWorkflow).toHaveBeenCalledTimes(1);
+    expect(mockPendingClockIn.acceptWorkflow).toHaveBeenCalledWith(pendingWorkflow);
+    expect(router.push).not.toHaveBeenCalled();
 
     mockPendingClockIn = {
       ...mockPendingClockIn,
@@ -458,7 +490,16 @@ describe('ClockInScreen', () => {
     };
     await act(async () => tree.update(<ClockInScreen />));
     await act(async () => tree.update(<ClockInScreen />));
+    expect(router.push).toHaveBeenCalledWith({
+      pathname: '/form',
+      params: {
+        formId: 'form-clock', trigger: 'before_clock_in', workflowOccurrenceId: 'occurrence-1',
+        workflowRequirementId: 'requirement-1',
+      },
+    });
     expect(router.push).toHaveBeenCalledTimes(1);
+    expect(mockPendingClockIn.acceptWorkflow).toHaveBeenCalledTimes(1);
+    expect(tree.root.findAllByProps({ testID: 'activity-option-drive_time' })).toHaveLength(0);
   });
 
   it('restores a completed Form workflow and clocks into the selected job exactly once', async () => {

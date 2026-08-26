@@ -35,7 +35,7 @@ export default function ClockInScreen() {
   const { jobs } = useClockingStore();
   const offlineClock = useOptionalOfflineClockStore();
   const effectiveClock = useEffectiveClockState();
-  const { clockIn, loading, refreshWorkContext } = useClockingActions();
+  const { clockIn, loading } = useClockingActions();
   const { getRequiredForms, refreshForms } = useFormsActions();
   const { workflow, startWorkflow, clearWorkflow } = useFormsWorkflowStore();
   const pendingClockIn = usePendingClockInStore();
@@ -60,6 +60,7 @@ export default function ClockInScreen() {
   const checkingFormsRef = useRef(false);
   const continuingWorkflowRef = useRef<string | null>(null);
   const openedMandatoryRequirementRef = useRef<string | null>(null);
+  const redirectingActiveShiftRef = useRef(false);
 
   const openMandatoryForm = useCallback((
     workflowOccurrenceId: string,
@@ -83,10 +84,6 @@ export default function ClockInScreen() {
   }, []);
 
   useEffect(() => {
-    void refreshWorkContext();
-  }, [refreshWorkContext]);
-
-  useEffect(() => {
     const intent = pendingClockIn.workflow?.clockInIntent;
     if (!intent || intent.employeeId !== user?.employeeId) return;
     setSelectedWorkType(intent.workType);
@@ -96,19 +93,25 @@ export default function ClockInScreen() {
   }, [pendingClockIn.workflow?.workflowOccurrenceId, user?.employeeId]);
 
   useFocusEffect(useCallback(() => {
-    if (!pendingClockIn.workflow || !pendingClockIn.currentRequirement) return;
-    openMandatoryForm(pendingClockIn.workflow.workflowOccurrenceId, pendingClockIn.currentRequirement);
-  }, [openMandatoryForm, pendingClockIn.currentForm, pendingClockIn.currentRequirement, pendingClockIn.workflow]));
-
-  useFocusEffect(useCallback(() => {
-    if (!pendingClockIn.workflow && effectiveClock.hydrated && (
+    if (pendingClockIn.workflow) {
+      redirectingActiveShiftRef.current = false;
+      if (pendingClockIn.currentRequirement) {
+        openMandatoryForm(pendingClockIn.workflow.workflowOccurrenceId, pendingClockIn.currentRequirement);
+      }
+      return;
+    }
+    if (effectiveClock.hydrated && (
       effectiveClock.effectiveStatus === 'clocked_in_pending'
       || effectiveClock.effectiveStatus === 'clocked_in_synced'
       || (effectiveClock.effectiveStatus === 'needs_attention' && effectiveClock.activeEntry)
     )) {
+      if (redirectingActiveShiftRef.current) return;
+      redirectingActiveShiftRef.current = true;
       router.replace('/active-shift');
+      return;
     }
-  }, [effectiveClock.activeEntry, effectiveClock.effectiveStatus, effectiveClock.hydrated, pendingClockIn.workflow]));
+    redirectingActiveShiftRef.current = false;
+  }, [effectiveClock.activeEntry, effectiveClock.effectiveStatus, effectiveClock.hydrated, openMandatoryForm, pendingClockIn.currentForm, pendingClockIn.currentRequirement, pendingClockIn.workflow]));
 
   const assignedJobs = useMemo(() => {
     const employeeId = user?.employeeId;
@@ -335,13 +338,9 @@ export default function ClockInScreen() {
 
     const pendingWorkflow = 'pendingWorkflow' in result ? result.pendingWorkflow : undefined;
     if (pendingWorkflow) {
-      const acceptedWorkflow = await pendingClockIn.acceptWorkflow(pendingWorkflow);
+      await pendingClockIn.acceptWorkflow(pendingWorkflow);
       setRetryMeta(null);
       clearWorkflow();
-      const requirement = acceptedWorkflow.remainingForms[0] ?? null;
-      if (!requirement || !openMandatoryForm(acceptedWorkflow.workflowOccurrenceId, requirement)) {
-        setError('Required form could not be loaded. Check your connection and try again.');
-      }
       return;
     }
 
@@ -355,18 +354,20 @@ export default function ClockInScreen() {
     <Screen>
       <OfflineNotice />
       <ScreenHeader title="Clock In" subtitle="Start a new shift" />
-      <ActivitySelector
-        heading="What are you working on?"
-        selectedType={activityChosen ? selectedWorkType : null}
-        onSelect={(type) => {
-          setSelectedWorkType(type);
-          setActivityChosen(true);
-          setSelectedJobId('');
-          setSelectedUnbillableCategoryId('');
-          setAdvisoryForms([]);
-          advisoryAcceptedRef.current = false;
-        }}
-      />
+      {!pendingClockIn.workflow ? (
+        <>
+          <ActivitySelector
+            heading="What are you working on?"
+            selectedType={activityChosen ? selectedWorkType : null}
+            onSelect={(type) => {
+              setSelectedWorkType(type);
+              setActivityChosen(true);
+              setSelectedJobId('');
+              setSelectedUnbillableCategoryId('');
+              setAdvisoryForms([]);
+              advisoryAcceptedRef.current = false;
+            }}
+          />
 
         {showJobSelection ? (
           <View style={styles.progressiveSection}>
@@ -419,6 +420,8 @@ export default function ClockInScreen() {
             />
           </View>
         ) : null}
+        </>
+      ) : null}
 
       {status ? <StatusBanner tone="success" message={status} /> : null}
       {error ? <StatusBanner tone="error" message={error} /> : null}
