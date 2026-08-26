@@ -1,18 +1,19 @@
 import { useEffect, useState } from 'react';
 import NetInfo from '@react-native-community/netinfo';
 import { StatusBanner } from '@/components/StatusBanner';
+import { connectivityStatus, type ConnectivityStatus } from '@/services/connectivity';
 
 export function OfflineNotice() {
-  const [offline, setOffline] = useState(false);
+  const [status, setStatus] = useState<ConnectivityStatus>('unknown');
 
   useEffect(() => {
     const sub = NetInfo.addEventListener((state) => {
-      setOffline(!(state.isConnected && state.isInternetReachable !== false));
+      setStatus(connectivityStatus(state));
     });
 
     return () => sub();
   }, []);
 
-  if (!offline) return null;
+  if (status !== 'offline') return null;
   return <StatusBanner tone="offline" message="No internet connection. Requests will not be submitted until online." />;
 }

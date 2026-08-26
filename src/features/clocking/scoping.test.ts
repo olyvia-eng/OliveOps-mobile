@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
-import { scopeJobsForSession, scopeTimeEntriesForSession } from '@/features/clocking/scoping';
+import { isJobAvailableForClocking, scopeJobsForSession, scopeTimeEntriesForSession } from '@/features/clocking/scoping';
 
 const session = {
   id: 'u-1',
@@ -12,6 +12,18 @@ const session = {
 };
 
 describe('clocking scoping', () => {
+  it.each([
+    ['scheduled', true],
+    ['in_progress', true],
+    ['on_hold', false],
+    ['completed', false],
+    ['cancelled', false],
+  ] as const)('treats %s jobs as available: %s', (status, expected) => {
+    expect(isJobAvailableForClocking({
+      id: 'j-1', title: 'A', status, assignedEmployeeIds: ['emp-1'],
+    })).toBe(expected);
+  });
+
   it('loads assigned jobs only for employee and active statuses', () => {
     const jobs = [
       { id: 'j-1', title: 'A', status: 'scheduled' as const, assignedEmployeeIds: ['emp-1'] },
@@ -22,6 +34,17 @@ describe('clocking scoping', () => {
 
     const scoped = scopeJobsForSession(jobs, session);
     expect(scoped.map((j) => j.id)).toEqual(['j-1', 'j-4']);
+  });
+
+  it.each([
+    ['completed', 'in_progress'],
+    ['on_hold', 'scheduled'],
+  ] as const)('makes a job visible after refreshed status changes from %s to %s', (previousStatus, refreshedStatus) => {
+    const previousJobs = [{ id: 'j-1', title: 'A', status: previousStatus, assignedEmployeeIds: ['emp-1'] }];
+    const refreshedJobs = [{ id: 'j-1', title: 'A', status: refreshedStatus, assignedEmployeeIds: ['emp-1'] }];
+
+    expect(scopeJobsForSession(previousJobs, session)).toEqual([]);
+    expect(scopeJobsForSession(refreshedJobs, session).map((job) => job.id)).toEqual(['j-1']);
   });
 
   it('never returns other employee time entries (cross-tenant/identity safety guard)', () => {

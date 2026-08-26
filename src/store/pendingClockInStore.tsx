@@ -19,6 +19,11 @@ import { ApiError } from '@/types/errors';
 import type { EmployeeForm, SubmitEmployeeFormRequest } from '@/types/forms';
 
 type FinalizeResult = { ok: true } | { ok: false; error: string };
+type FinalizationRecovery =
+  | { status: 'recovered'; workflow: PendingClockInWorkflow }
+  | { status: 'completed' }
+  | { status: 'missing' }
+  | { status: 'unavailable' };
 
 type PendingClockInState = {
   hydrated: boolean;
@@ -205,15 +210,60 @@ export function PendingClockInProvider({ children }: { children: React.ReactNode
     return recover();
   }, [acceptWorkflow, accessToken, recover]);
 
+  const recoverForFinalization = useCallback(async (): Promise<FinalizationRecovery> => {
+    let bootstrapConfirmedNotActive = false;
+    try {
+      const bootstrap = await clockingApi.loadBootstrap(accessToken, { force: true });
+      if (bootstrap.pendingClockInWorkflow) {
+        return { status: 'recovered', workflow: await acceptWorkflow(bootstrap.pendingClockInWorkflow) };
+      }
+      if (bootstrap.currentActiveEntryId) {
+        await commit(null);
+        return { status: 'completed' };
+      }
+      bootstrapConfirmedNotActive = true;
+    } catch {
+      // The dedicated pending endpoint can still recover the exact workflow.
+    }
+
+    try {
+      const response = await clockingApi.loadPendingClockIn(accessToken);
+      if (response.status !== 'no_pending_clock_in') {
+        return { status: 'recovered', workflow: await acceptWorkflow(response) };
+      }
+      if (bootstrapConfirmedNotActive) {
+        await commit(null);
+        return { status: 'missing' };
+      }
+      return { status: 'unavailable' };
+    } catch {
+      return { status: 'unavailable' };
+    }
+  }, [acceptWorkflow, accessToken, commit]);
+
   const finalize = useCallback((): Promise<FinalizeResult> => {
     if (finalizePromiseRef.current) return finalizePromiseRef.current;
     const run = async (): Promise<FinalizeResult> => {
-      const current = recordRef.current?.workflow;
-      if (!current) return { ok: false, error: 'No pending clock-in was found.' };
       if (!await isOnline()) return { ok: false, error: 'Reconnect to finish clocking in.' };
       setBusy(true);
       setError(null);
       try {
+        let current = recordRef.current?.workflow;
+        if (!current) {
+          const recovered = await recoverForFinalization();
+          if (recovered.status === 'completed') return { ok: true };
+          if (recovered.status === 'missing') {
+            const message = 'No pending clock-in was found after refreshing.';
+            setError(message);
+            return { ok: false, error: message };
+          }
+          if (recovered.status === 'unavailable') {
+            const message = 'Clock-in status could not be verified. Check your connection and try again.';
+            setError(message);
+            return { ok: false, error: message };
+          }
+          current = recovered.workflow;
+        }
         const response = await clockingApi.finalizeClockIn({ workflowOccurrenceId: current.workflowOccurrenceId }, accessToken);
         if (response.status === 'clock_in_pending_required_forms') {
           await acceptWorkflow(response);
@@ -258,7 +308,7 @@ export function PendingClockInProvider({ children }: { children: React.ReactNode
     });
     finalizePromiseRef.current = promise;
     return promise;
-  }, [acceptWorkflow, accessToken, commit, recover, recoverStaleWorkflow]);
+  }, [acceptWorkflow, accessToken, commit, recover, recoverForFinalization, recoverStaleWorkflow]);
 
   const syncQueued = useCallback(() => {
     if (syncPromiseRef.current || !identityKey || !accessToken) return syncPromiseRef.current;

@@ -331,7 +331,7 @@ export function useClockingActions() {
           return { ok: false, error: 'Offline. Reconnect to refresh jobs and shift status.' };
         }
 
-        await syncWorkContextFromBootstrap();
+        await syncWorkContextFromBootstrap(true);
         return { ok: true };
       } catch (error) {
         return {

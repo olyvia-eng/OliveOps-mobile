@@ -379,6 +379,93 @@ describe('PendingClockInProvider', () => {
     expect(pendingStore.error).toBeNull();
   });
 
+  it('recovers a temporarily missing local workflow and finalizes its exact occurrence', async () => {
+    await mount();
+    mockLoadPendingClockIn.mockResolvedValueOnce({ ok: true, status: 'no_pending_clock_in' });
+    await act(async () => { await pendingStore.recover(); });
+    expect(pendingStore.workflow).toBeNull();
+    mockLoadBootstrap.mockResolvedValueOnce({
+      ok: true,
+      capabilities: { requiredBeforeClockInForms: true },
+      pendingClockInWorkflow: workflow(true),
+      currentActiveEntryId: null,
+    });
+
+    let result: any;
+    await act(async () => { result = await pendingStore.finalize(); });
+
+    expect(result).toEqual({ ok: true });
+    expect(mockFinalizeClockIn).toHaveBeenCalledWith({ workflowOccurrenceId: 'occurrence-1' }, 'token-1');
+    expect(mockFinalizeClockIn).toHaveBeenCalledTimes(1);
+  });
+
+  it('treats an authoritative active shift as successful when the local workflow is missing', async () => {
+    await mount();
+    mockLoadPendingClockIn.mockResolvedValueOnce({ ok: true, status: 'no_pending_clock_in' });
+    await act(async () => { await pendingStore.recover(); });
+    mockLoadBootstrap.mockResolvedValueOnce({
+      ok: true,
+      capabilities: { requiredBeforeClockInForms: true },
+      pendingClockInWorkflow: null,
+      currentActiveEntryId: 'entry-1',
+    });
+
+    let result: any;
+    await act(async () => { result = await pendingStore.finalize(); });
+
+    expect(result).toEqual({ ok: true });
+    expect(mockFinalizeClockIn).not.toHaveBeenCalled();
+    expect(pendingStore.workflow).toBeNull();
+  });
+
+  it('returns a controlled error only after authoritative recovery confirms no workflow or active shift', async () => {
+    await mount();
+    mockLoadPendingClockIn.mockResolvedValue({ ok: true, status: 'no_pending_clock_in' });
+    await act(async () => { await pendingStore.recover(); });
+    mockLoadBootstrap.mockResolvedValueOnce({
+      ok: true,
+      capabilities: { requiredBeforeClockInForms: true },
+      pendingClockInWorkflow: null,
+      currentActiveEntryId: null,
+    });
+
+    let result: any;
+    await act(async () => { result = await pendingStore.finalize(); });
+
+    expect(result).toEqual({ ok: false, error: 'No pending clock-in was found after refreshing.' });
+    expect(mockLoadPendingClockIn).toHaveBeenCalledTimes(2);
+    expect(mockFinalizeClockIn).not.toHaveBeenCalled();
+  });
+
+  it('shares one recovery and finalization when repeated taps start without a local workflow', async () => {
+    await mount();
+    mockLoadPendingClockIn.mockResolvedValueOnce({ ok: true, status: 'no_pending_clock_in' });
+    await act(async () => { await pendingStore.recover(); });
+    let resolveBootstrap!: (result: any) => void;
+    mockLoadBootstrap.mockImplementationOnce(() => new Promise((resolve) => { resolveBootstrap = resolve; }));
+
+    let first!: Promise<unknown>;
+    let second!: Promise<unknown>;
+    await act(async () => {
+      first = pendingStore.finalize();
+      second = pendingStore.finalize();
+      await Promise.resolve();
+    });
+
+    expect(first).toBe(second);
+    await act(async () => {
+      resolveBootstrap({
+        ok: true,
+        pendingClockInWorkflow: workflow(true),
+        currentActiveEntryId: null,
+      });
+      await Promise.all([first, second]);
+    });
+    expect(mockFinalizeClockIn).toHaveBeenCalledTimes(1);
+    await expect(first).resolves.toEqual({ ok: true });
+    await expect(second).resolves.toEqual({ ok: true });
+  });
+
   it('refreshes the authoritative workflow for required_forms_outstanding', async () => {
     mockFinalizeClockIn.mockResolvedValue({ ok: true, status: 'required_forms_outstanding' });
     await mount();

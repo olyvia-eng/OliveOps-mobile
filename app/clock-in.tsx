@@ -9,6 +9,7 @@ import { StatusBanner } from '@/components/StatusBanner';
 import { UnbillableCategorySelector } from '@/components/UnbillableCategorySelector';
 import { ActivitySelector } from '@/components/ActivitySelector';
 import { ListRow, ScreenHeader, SectionHeader } from '@/components/MobilePrimitives';
+import { scopeJobsForSession } from '@/features/clocking/scoping';
 import { useClockingActions } from '@/hooks/useClockingActions';
 import { useEffectiveClockState } from '@/hooks/useEffectiveClockState';
 import { useFormsActions } from '@/hooks/useFormsActions';
@@ -118,13 +119,8 @@ export default function ClockInScreen() {
     const availableJobs = jobs.length > 0
       ? jobs
       : (offlineClock?.cache?.jobs ?? []).map((job) => ({ ...job, assignedEmployeeIds: employeeId ? [employeeId] : [] }));
-    return availableJobs.filter((job) => {
-      if (job.status !== 'scheduled' && job.status !== 'in_progress') return false;
-      if (!employeeId) return true;
-      if (!Array.isArray(job.assignedEmployeeIds) || job.assignedEmployeeIds.length === 0) return true;
-      return job.assignedEmployeeIds.includes(employeeId);
-    });
-  }, [jobs, offlineClock?.cache?.jobs, user?.employeeId]);
+    return scopeJobsForSession(availableJobs, user);
+  }, [jobs, offlineClock?.cache?.jobs, user]);
 
   const activityOptions = useMemo<ActivityOption[]>(() => [
       {
@@ -376,8 +372,8 @@ export default function ClockInScreen() {
               <StatusBanner
                 tone={requiresJobSelection ? 'error' : 'info'}
                 message={requiresJobSelection
-                  ? 'No assigned scheduled/in-progress jobs available.'
-                  : 'No assigned scheduled/in-progress jobs available. You can continue without a job context.'}
+                  ? 'No assigned active jobs available.'
+                  : 'No assigned active jobs available. You can continue without a job context.'}
               />
             ) : (
               <View style={styles.selectionList}>

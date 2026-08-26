@@ -52,7 +52,7 @@ let currentActions: ReturnType<typeof useClockingActions>;
 
 function ActionsProbe({ refreshOnMount = false }: { refreshOnMount?: boolean }) {
   currentActions = useClockingActions();
-  const { currentActiveEntryId } = useClockingStore();
+  const { currentActiveEntryId, jobs } = useClockingStore();
 
   useEffect(() => {
     if (refreshOnMount) {
@@ -60,7 +60,11 @@ function ActionsProbe({ refreshOnMount = false }: { refreshOnMount?: boolean }) 
     }
   }, [refreshOnMount, currentActions.refreshWorkContext]);
 
-  return React.createElement('actions-probe', { currentActiveEntryId });
+  return React.createElement('actions-probe', {
+    currentActiveEntryId,
+    jobIds: jobs.map((job) => job.id),
+    jobStatuses: jobs.map((job) => job.status),
+  });
 }
 
 function activeEntry(id = 'entry-1') {
@@ -161,6 +165,30 @@ describe('useClockingActions bootstrap behavior', () => {
       await currentActions.refreshWorkContext();
     });
     expect(mockUpdateEligibilityCache).not.toHaveBeenCalled();
+  });
+
+  it('forces explicit refreshes and replaces stale job eligibility with authoritative server data', async () => {
+    mockLoadBootstrap
+      .mockResolvedValueOnce({
+        ...bootstrapPayload(),
+        jobs: [{ id: 'job-1', title: 'Job 1', status: 'on_hold', assignedEmployeeIds: ['emp-1'] }],
+      })
+      .mockResolvedValueOnce({
+        ...bootstrapPayload(),
+        jobs: [{ id: 'job-1', title: 'Job 1', status: 'scheduled', assignedEmployeeIds: ['emp-1'] }],
+      });
+    await act(async () => {
+      tree = create(React.createElement(ClockingProvider, null, React.createElement(ActionsProbe)));
+    });
+
+    await act(async () => { await currentActions.refreshWorkContext(); });
+    expect(tree.root.findByType('actions-probe').props.jobIds).toEqual([]);
+
+    await act(async () => { await currentActions.refreshWorkContext(); });
+    expect(tree.root.findByType('actions-probe').props.jobIds).toEqual(['job-1']);
+    expect(tree.root.findByType('actions-probe').props.jobStatuses).toEqual(['scheduled']);
+    expect(mockLoadBootstrap).toHaveBeenNthCalledWith(1, 'token-1', { force: true });
+    expect(mockLoadBootstrap).toHaveBeenNthCalledWith(2, 'token-1', { force: true });
   });
 
   it('reconciles after each mutation without retriggering mount refreshes', async () => {
