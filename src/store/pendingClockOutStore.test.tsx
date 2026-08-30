@@ -2,6 +2,7 @@ import React from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import type { PendingClockOutRecord } from '@/services/pendingClockOutStorage';
+import { ApiError } from '@/types/errors';
 
 const mockLoadBootstrap = jest.fn();
 const mockLoadPendingClockOut = jest.fn();
@@ -184,6 +185,39 @@ describe('PendingClockOutProvider', () => {
     );
   });
 
+  it('updates a rejected queued answer without appending a second clock-out attempt', async () => {
+    mockOnline = false;
+    const rejectedPayload = {
+      clientSubmissionId: 'form-submission:stable-1', formId: 'form-1', trigger: 'after_clock_out' as const,
+      workflowOccurrenceId: 'occurrence-1', workflowRequirementId: 'requirement-1',
+      responses: [{ fieldId: 'fit', value: 'no' }],
+    };
+    mockLoadRecord.mockResolvedValue({
+      workflow: workflow(), submissionIds: { 'requirement-1': rejectedPayload.clientSubmissionId },
+      queuedSubmissions: [{
+        workflowOccurrenceId: 'occurrence-1', workflowRequirementId: 'requirement-1',
+        payload: rejectedPayload, queuedAt: '2026-08-25T20:31:00.000Z',
+      }],
+      submissionFailure: {
+        workflowRequirementId: 'requirement-1', code: 'form_response_requirement_failed',
+        error: 'Contact your supervisor.', fieldId: 'fit',
+      },
+    });
+    await mount();
+    const correctedPayload = { ...rejectedPayload, responses: [{ fieldId: 'fit', value: 'yes' }] };
+
+    await act(async () => pendingStore.queueSubmission(correctedPayload));
+
+    expect(pendingStore.queuedSubmissionFor('requirement-1')).toEqual(correctedPayload);
+    expect(mockSaveRecord).toHaveBeenLastCalledWith(
+      'business-1:user-1:employee-1',
+      expect.objectContaining({
+        queuedSubmissions: [expect.objectContaining({ payload: correctedPayload })],
+        submissionFailure: undefined,
+      }),
+    );
+  });
+
   it('finalizes idempotently and clears persisted pending state only after server success', async () => {
     await mount();
 
@@ -241,6 +275,37 @@ describe('PendingClockOutProvider', () => {
     expect(mockFinalizeClockOut).toHaveBeenCalledTimes(1);
     expect(mockRefreshWorkContext).toHaveBeenCalledTimes(1);
     expect(pendingStore.workflow).toBeNull();
+  });
+
+  it('retains a server-rejected queued clock-out response without finalizing', async () => {
+    const payload = {
+      clientSubmissionId: 'form-submission:queued-rejected', formId: 'form-1', trigger: 'after_clock_out' as const,
+      workflowOccurrenceId: 'occurrence-1', workflowRequirementId: 'requirement-1',
+      responses: [{ fieldId: 'fit', value: 'no' }],
+    };
+    mockLoadRecord.mockResolvedValue({
+      workflow: workflow(), submissionIds: {},
+      queuedSubmissions: [{
+        workflowOccurrenceId: 'occurrence-1', workflowRequirementId: 'requirement-1', payload,
+        queuedAt: '2026-08-25T20:31:00.000Z',
+      }],
+    });
+    mockSubmitEmployeeForm.mockRejectedValue(new ApiError(
+      'Contact your supervisor.', 400, 'form_response_requirement_failed', 'fit',
+    ));
+
+    await mount();
+
+    expect(mockFinalizeClockOut).not.toHaveBeenCalled();
+    expect(pendingStore.queuedSubmissionFor('requirement-1')).toEqual(payload);
+    expect(pendingStore.submissionFailure).toEqual({
+      workflowRequirementId: 'requirement-1', code: 'form_response_requirement_failed',
+      error: 'Contact your supervisor.', fieldId: 'fit',
+    });
+    expect(mockSaveRecord).toHaveBeenLastCalledWith(
+      'business-1:user-1:employee-1',
+      expect.objectContaining({ queuedSubmissions: [expect.objectContaining({ payload })] }),
+    );
   });
 
   it('shares one successful clock-out finalization across simultaneous callers', async () => {

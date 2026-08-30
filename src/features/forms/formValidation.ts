@@ -10,6 +10,8 @@ const TIME_PATTERN = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
 
 export const DISPLAY_FIELD_TYPES = new Set(['section_header', 'paragraph_text']);
 export const UNSUPPORTED_FIELD_TYPES = new Set(['signature', 'photo_upload', 'file_upload']);
+const ACCEPTED_RESPONSE_FIELD_TYPES = new Set(['yes_no', 'checkbox', 'multiple_choice', 'dropdown']);
+export const ACCEPTED_RESPONSE_FALLBACK = 'Your response does not meet the requirement for this question.';
 
 export function isValidFormDate(value: string) {
   const match = DATE_PATTERN.exec(value);
@@ -121,6 +123,13 @@ export function validateFormValues(fields: EmployeeFormField[], values: Employee
     } else if (['employee_selector', 'job_selector', 'customer_selector'].includes(field.type)
       && !(field.choices ?? []).some((choice) => choice.value === value)) {
       errors[field.id] = 'Choose one of the available options.';
+    }
+
+    if (!errors[field.id]
+      && field.acceptedResponse
+      && ACCEPTED_RESPONSE_FIELD_TYPES.has(field.type)
+      && value !== field.acceptedResponse.value.trim()) {
+      errors[field.id] = field.acceptedResponse.message?.trim() || ACCEPTED_RESPONSE_FALLBACK;
     }
   }
 

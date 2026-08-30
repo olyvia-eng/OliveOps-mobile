@@ -15,7 +15,7 @@ import { useClockingActions } from '@/hooks/useClockingActions';
 import { useAuthStore } from '@/store/authStore';
 import type { PendingClockOutRequirement, PendingClockOutWorkflow } from '@/types/api';
 import { ApiError } from '@/types/errors';
-import type { EmployeeForm, SubmitEmployeeFormRequest } from '@/types/forms';
+import type { EmployeeForm, QueuedFormSubmissionFailure, SubmitEmployeeFormRequest } from '@/types/forms';
 
 type FinalizeResult = { ok: true } | { ok: false; error: string };
 
@@ -32,6 +32,9 @@ type PendingClockOutState = {
   recover: () => Promise<PendingClockOutWorkflow | null>;
   submissionIdFor: (workflowRequirementId: string) => Promise<string>;
   queueSubmission: (payload: SubmitEmployeeFormRequest) => Promise<void>;
+  queuedSubmissionFor: (workflowRequirementId: string) => SubmitEmployeeFormRequest | null;
+  completeQueuedSubmission: (clientSubmissionId: string) => Promise<void>;
+  submissionFailure: QueuedFormSubmissionFailure | null;
   refreshAfterSubmission: () => Promise<PendingClockOutWorkflow | null>;
   finalize: () => Promise<FinalizeResult>;
 };
@@ -117,6 +120,9 @@ export function PendingClockOutProvider({ children }: { children: React.ReactNod
       queuedSubmissions: current?.workflow.workflowOccurrenceId === nextWorkflow.workflowOccurrenceId
         ? current.queuedSubmissions
         : [],
+      submissionFailure: current?.workflow.workflowOccurrenceId === nextWorkflow.workflowOccurrenceId
+        ? current.submissionFailure
+        : undefined,
     });
     setError(null);
   }, [commit]);
@@ -197,11 +203,28 @@ export function PendingClockOutProvider({ children }: { children: React.ReactNod
           await submitEmployeeForm(queued.payload, accessToken);
         } catch (submitError) {
           const code = errorCode(submitError);
+          if (code === 'form_response_requirement_failed' && submitError instanceof ApiError) {
+            const current = recordRef.current;
+            if (current) await commit({ ...current, submissionFailure: {
+              workflowRequirementId: queued.workflowRequirementId,
+              code,
+              error: submitError.message,
+              fieldId: submitError.fieldId,
+            } });
+            setError(submitError.message);
+            return;
+          }
           if (code !== 'workflow_requirement_already_completed') return;
         }
         const current = recordRef.current;
         if (!current) return;
-        await commit({ ...current, queuedSubmissions: current.queuedSubmissions.slice(1) });
+        await commit({
+          ...current,
+          queuedSubmissions: current.queuedSubmissions.slice(1),
+          submissionFailure: current.submissionFailure?.workflowRequirementId === queued.workflowRequirementId
+            ? undefined
+            : current.submissionFailure,
+        });
         processedQueuedSubmission = true;
       }
       if (!processedQueuedSubmission) return;
@@ -281,7 +304,15 @@ export function PendingClockOutProvider({ children }: { children: React.ReactNod
     if (current.workflow.workflowOccurrenceId !== payload.workflowOccurrenceId) {
       throw new Error('This required form belongs to a different clock-out.');
     }
-    if (current.queuedSubmissions.some((item) => item.payload.clientSubmissionId === payload.clientSubmissionId)) return;
+    const existingIndex = current.queuedSubmissions.findIndex((item) => item.payload.clientSubmissionId === payload.clientSubmissionId);
+    if (existingIndex >= 0) {
+      await commit({
+        ...current,
+        queuedSubmissions: current.queuedSubmissions.map((item, index) => index === existingIndex ? { ...item, payload } : item),
+        submissionFailure: undefined,
+      });
+      return;
+    }
     await commit({
       ...current,
       queuedSubmissions: [...current.queuedSubmissions, {
@@ -290,6 +321,24 @@ export function PendingClockOutProvider({ children }: { children: React.ReactNod
         payload,
         queuedAt: new Date().toISOString(),
       }],
+      submissionFailure: undefined,
+    });
+  }, [commit]);
+
+  const queuedSubmissionFor = useCallback((workflowRequirementId: string) => (
+    recordRef.current?.queuedSubmissions.find((item) => item.workflowRequirementId === workflowRequirementId)?.payload ?? null
+  ), []);
+
+  const completeQueuedSubmission = useCallback(async (clientSubmissionId: string) => {
+    const current = recordRef.current;
+    if (!current) return;
+    const completed = current.queuedSubmissions.find((item) => item.payload.clientSubmissionId === clientSubmissionId);
+    await commit({
+      ...current,
+      queuedSubmissions: current.queuedSubmissions.filter((item) => item.payload.clientSubmissionId !== clientSubmissionId),
+      submissionFailure: completed?.workflowRequirementId === current.submissionFailure?.workflowRequirementId
+        ? undefined
+        : current.submissionFailure,
     });
   }, [commit]);
 
@@ -315,9 +364,12 @@ export function PendingClockOutProvider({ children }: { children: React.ReactNod
     recover,
     submissionIdFor,
     queueSubmission,
+    queuedSubmissionFor,
+    completeQueuedSubmission,
+    submissionFailure: recordRef.current?.submissionFailure ?? null,
     refreshAfterSubmission,
     finalize,
-  }), [acceptWorkflow, busy, completedCount, currentRequirement, error, finalize, hydrated, queueSubmission, recover, refreshAfterSubmission, submissionIdFor, totalCount, workflow]);
+  }), [acceptWorkflow, busy, completeQueuedSubmission, completedCount, currentRequirement, error, finalize, hydrated, queueSubmission, queuedSubmissionFor, recover, refreshAfterSubmission, submissionIdFor, totalCount, workflow]);
 
   return <PendingClockOutContext.Provider value={value}>{children}</PendingClockOutContext.Provider>;
 }

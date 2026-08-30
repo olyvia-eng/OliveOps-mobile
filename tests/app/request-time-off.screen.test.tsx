@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 
 const mockCreate = jest.fn().mockResolvedValue({ ok: true, request: { id: 'request-1' } });
 const mockReplace = jest.fn();
+const mockDismissTo = jest.fn();
 const mockSetDraft = jest.fn((draft: any) => { mockStore.draft = draft; });
 const mockStore: any = {
   draft: { requestType: 'vacation', startDate: '', endDate: '', employeeNote: '' },
@@ -12,7 +13,10 @@ const mockStore: any = {
 };
 let mockSubmitting = false;
 
-jest.mock('expo-router', () => ({ router: { replace: (...args: unknown[]) => mockReplace(...args) } }));
+jest.mock('expo-router', () => ({ router: {
+  replace: (...args: unknown[]) => mockReplace(...args),
+  dismissTo: (...args: unknown[]) => mockDismissTo(...args),
+} }));
 jest.mock('@/store/timeOffStore', () => ({ useTimeOffStore: () => mockStore }));
 jest.mock('@/hooks/useTimeOffActions', () => ({
   useTimeOffActions: () => ({ create: mockCreate, submitting: mockSubmitting }),
@@ -44,6 +48,7 @@ describe('RequestTimeOffScreen', () => {
   beforeEach(() => {
     mockCreate.mockClear().mockResolvedValue({ ok: true, request: { id: 'request-1' } });
     mockReplace.mockClear();
+    mockDismissTo.mockClear();
     mockSetDraft.mockClear();
     mockSubmitting = false;
     mockStore.submissionAttempt = null;
@@ -76,6 +81,8 @@ describe('RequestTimeOffScreen', () => {
     expect(mockCreate).toHaveBeenCalledWith({
       requestType: 'sick', startDate: '2026-08-30', endDate: '2026-08-30', employeeNote: 'Unwell',
     });
+    expect(mockDismissTo).toHaveBeenCalledWith('/time-off');
+    expect(mockReplace).not.toHaveBeenCalled();
   });
 
   it('preserves values and shows errors when submission is not confirmed', async () => {

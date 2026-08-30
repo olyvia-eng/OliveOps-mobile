@@ -30,6 +30,7 @@ import { useFormsWorkflowStore } from '@/store/formsWorkflowStore';
 import { usePendingClockOutStore } from '@/store/pendingClockOutStore';
 import { colors } from '@/theme/colors';
 import { toUserFacingError } from '@/utils/userFacingError';
+import { returnToParentOrReplace } from '@/utils/navigation';
 import type { EmployeeForm } from '@/types/forms';
 
 type PhotoAttachmentStatus = 'uploading' | 'uploaded' | 'failed';
@@ -447,7 +448,7 @@ export default function ClockOutScreen() {
     submittedRef.current = true;
     setSuccess(pendingSync ? 'Clock-out saved on this device. It will sync when online.' : 'Clock-out submitted successfully.');
     if (pendingSync) {
-      router.replace('/home');
+      returnToParentOrReplace('/home');
       return;
     }
     const leavingJobId = activeEntry.jobIds?.[0] ?? activeEntry.jobId;
@@ -471,7 +472,7 @@ export default function ClockOutScreen() {
       setPostActionForms(forms);
       return;
     }
-    router.replace('/home');
+    returnToParentOrReplace('/home');
   }
 
   function onConfirmClockOut() {
@@ -532,7 +533,7 @@ export default function ClockOutScreen() {
               label="Done"
               onPress={() => {
                 clearWorkflow();
-                router.replace('/home');
+                returnToParentOrReplace('/home');
               }}
             />
           </>
@@ -555,7 +556,7 @@ export default function ClockOutScreen() {
             })}
             onSkip={() => {
               clearWorkflow();
-              router.replace('/home');
+              returnToParentOrReplace('/home');
             }}
           />
         )}
@@ -686,7 +687,7 @@ export default function ClockOutScreen() {
           }}
           onSkip={() => {
             clearWorkflow();
-            router.replace('/home');
+            returnToParentOrReplace('/home');
           }}
         />
       ) : null}

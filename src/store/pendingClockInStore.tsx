@@ -16,7 +16,7 @@ import { useAuthStore } from '@/store/authStore';
 import { useOptionalOfflineClockStore } from '@/store/offlineClockContext';
 import type { PendingClockInRequirement, PendingClockInWorkflow } from '@/types/api';
 import { ApiError } from '@/types/errors';
-import type { EmployeeForm, SubmitEmployeeFormRequest } from '@/types/forms';
+import type { EmployeeForm, QueuedFormSubmissionFailure, SubmitEmployeeFormRequest } from '@/types/forms';
 
 type FinalizeResult = { ok: true } | { ok: false; error: string };
 type FinalizationRecovery =
@@ -39,6 +39,9 @@ type PendingClockInState = {
   recover: () => Promise<PendingClockInWorkflow | null>;
   submissionIdFor: (requirementId: string) => Promise<string>;
   queueSubmission: (payload: SubmitEmployeeFormRequest) => Promise<void>;
+  queuedSubmissionFor: (requirementId: string) => SubmitEmployeeFormRequest | null;
+  completeQueuedSubmission: (clientSubmissionId: string) => Promise<void>;
+  submissionFailure: QueuedFormSubmissionFailure | null;
   refreshAfterSubmission: () => Promise<PendingClockInWorkflow | null>;
   finalize: () => Promise<FinalizeResult>;
 };
@@ -136,6 +139,7 @@ export function PendingClockInProvider({ children }: { children: React.ReactNode
       workflow: enrichedWorkflow,
       submissionIds: sameOccurrence ? current.submissionIds : {},
       queuedSubmissions: sameOccurrence ? current.queuedSubmissions : [],
+      submissionFailure: sameOccurrence ? current.submissionFailure : undefined,
     });
     setError(null);
     return enrichedWorkflow;
@@ -320,11 +324,29 @@ export function PendingClockInProvider({ children }: { children: React.ReactNode
         try {
           await submitEmployeeForm(payload, accessToken);
         } catch (submitError) {
-          if (errorCode(submitError) !== 'workflow_requirement_already_completed') return;
+          const code = errorCode(submitError);
+          if (code === 'form_response_requirement_failed' && submitError instanceof ApiError && payload.workflowRequirementId) {
+            const current = recordRef.current;
+            if (current) await commit({ ...current, submissionFailure: {
+              workflowRequirementId: payload.workflowRequirementId,
+              code,
+              error: submitError.message,
+              fieldId: submitError.fieldId,
+            } });
+            setError(submitError.message);
+            return;
+          }
+          if (code !== 'workflow_requirement_already_completed') return;
         }
         const current = recordRef.current;
         if (!current) return;
-        await commit({ ...current, queuedSubmissions: current.queuedSubmissions.slice(1) });
+        await commit({
+          ...current,
+          queuedSubmissions: current.queuedSubmissions.slice(1),
+          submissionFailure: current.submissionFailure?.workflowRequirementId === payload.workflowRequirementId
+            ? undefined
+            : current.submissionFailure,
+        });
         processedQueuedSubmission = true;
       }
       if (!processedQueuedSubmission) return;
@@ -393,8 +415,28 @@ export function PendingClockInProvider({ children }: { children: React.ReactNode
     const current = recordRef.current;
     if (!current || !payload.workflowOccurrenceId || !payload.workflowRequirementId) throw new Error('Required clock-in workflow metadata is missing.');
     if (current.workflow.workflowOccurrenceId !== payload.workflowOccurrenceId) throw new Error('This required form belongs to a different clock-in.');
-    if (current.queuedSubmissions.some((item) => item.clientSubmissionId === payload.clientSubmissionId)) return;
-    await commit({ ...current, queuedSubmissions: [...current.queuedSubmissions, payload] });
+    const existingIndex = current.queuedSubmissions.findIndex((item) => item.clientSubmissionId === payload.clientSubmissionId);
+    const queuedSubmissions = existingIndex >= 0
+      ? current.queuedSubmissions.map((item, index) => index === existingIndex ? payload : item)
+      : [...current.queuedSubmissions, payload];
+    await commit({ ...current, queuedSubmissions, submissionFailure: undefined });
+  }, [commit]);
+
+  const queuedSubmissionFor = useCallback((requirementId: string) => (
+    recordRef.current?.queuedSubmissions.find((item) => item.workflowRequirementId === requirementId) ?? null
+  ), []);
+
+  const completeQueuedSubmission = useCallback(async (clientSubmissionId: string) => {
+    const current = recordRef.current;
+    if (!current) return;
+    const completed = current.queuedSubmissions.find((item) => item.clientSubmissionId === clientSubmissionId);
+    await commit({
+      ...current,
+      queuedSubmissions: current.queuedSubmissions.filter((item) => item.clientSubmissionId !== clientSubmissionId),
+      submissionFailure: completed?.workflowRequirementId === current.submissionFailure?.workflowRequirementId
+        ? undefined
+        : current.submissionFailure,
+    });
   }, [commit]);
 
   const currentRequirement = workflow?.remainingForms[0] ?? null;
@@ -412,9 +454,12 @@ export function PendingClockInProvider({ children }: { children: React.ReactNode
     recover,
     submissionIdFor,
     queueSubmission,
+    queuedSubmissionFor,
+    completeQueuedSubmission,
+    submissionFailure: recordRef.current?.submissionFailure ?? null,
     refreshAfterSubmission: recover,
     finalize,
-  }), [acceptWorkflow, busy, currentRequirement, ensureCurrentForm, error, finalize, hydrated, queueSubmission, recover, submissionIdFor, workflow]);
+  }), [acceptWorkflow, busy, completeQueuedSubmission, currentRequirement, ensureCurrentForm, error, finalize, hydrated, queueSubmission, queuedSubmissionFor, recover, submissionIdFor, workflow]);
 
   return <PendingClockInContext.Provider value={value}>{children}</PendingClockInContext.Provider>;
 }

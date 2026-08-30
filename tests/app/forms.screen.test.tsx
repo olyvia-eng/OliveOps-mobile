@@ -108,9 +108,19 @@ describe('FormsScreen', () => {
     expect(textOf(tree)).not.toContain('Required');
 
     await act(async () => tree.root.findByProps({ testID: 'forms-tab-completed' }).props.onPress());
-    expect(textOf(tree)).toContain('Pending review');
+    expect(textOf(tree)).toContain('Submitted');
     await act(async () => tree.root.findByProps({ testID: 'submission-row-sub-1' }).props.onPress());
     expect(mockPush).toHaveBeenCalledWith({ pathname: '/form-submission', params: { id: 'sub-1' } });
+  });
+
+  it('renders pending review as a successful completed submission status', async () => {
+    mockFormsState.completed = [{ ...mockFormsState.completed[0], status: 'pending_review' }] as any;
+    let tree: any;
+    await act(async () => { tree = create(<FormsScreen />); });
+    await act(async () => tree.root.findByProps({ testID: 'forms-tab-completed' }).props.onPress());
+
+    expect(textOf(tree)).toContain('Pending review');
+    expect(tree.root.findByProps({ testID: 'submission-row-sub-1' })).toBeTruthy();
   });
 
   it('opens an exact backend form instance with its context', async () => {

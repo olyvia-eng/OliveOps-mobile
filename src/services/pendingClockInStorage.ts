@@ -1,6 +1,6 @@
 import * as SQLite from 'expo-sqlite';
 import type { PendingClockInWorkflow } from '@/types/api';
-import type { SubmitEmployeeFormRequest } from '@/types/forms';
+import type { QueuedFormSubmissionFailure, SubmitEmployeeFormRequest } from '@/types/forms';
 
 const DATABASE_NAME = 'oliveops-offline-clock.db';
 let databasePromise: ReturnType<typeof SQLite.openDatabaseAsync> | null = null;
@@ -9,6 +9,7 @@ export type PendingClockInRecord = {
   workflow: PendingClockInWorkflow;
   submissionIds: Record<string, string>;
   queuedSubmissions: SubmitEmployeeFormRequest[];
+  submissionFailure?: QueuedFormSubmissionFailure;
 };
 
 async function database() {

@@ -12,6 +12,7 @@ import { useTimeOffActions } from '@/hooks/useTimeOffActions';
 import { useTimeOffStore } from '@/store/timeOffStore';
 import { colors, radii, spacing, typography } from '@/theme/colors';
 import type { TimeOffRequestType } from '@/types/timeOff';
+import { returnToParentOrReplace } from '@/utils/navigation';
 
 const requestTypes: TimeOffRequestType[] = ['vacation', 'sick', 'personal', 'unpaid', 'other'];
 
@@ -39,7 +40,7 @@ export default function RequestTimeOffScreen() {
       return;
     }
     setSubmitted(true);
-    router.replace('/time-off');
+    returnToParentOrReplace('/time-off');
   }
 
   return (

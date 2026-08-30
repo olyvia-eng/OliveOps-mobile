@@ -22,7 +22,8 @@ export function getSubmissionStatusLabel(status: EmployeeFormSubmissionStatus) {
   if (status === 'approved') return 'Approved';
   if (status === 'rejected') return 'Rejected';
   if (status === 'draft') return 'Draft';
-  return 'Pending review';
+  if (status === 'pending_review') return 'Pending review';
+  return 'Submitted';
 }
 
 export function getPrimaryContextLabel(context?: EmployeeFormContext) {

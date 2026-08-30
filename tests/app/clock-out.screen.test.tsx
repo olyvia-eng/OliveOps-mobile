@@ -70,6 +70,7 @@ jest.mock('expo-router', () => ({
   router: {
     replace: jest.fn(),
     push: jest.fn(),
+    dismissTo: jest.fn(),
   },
   useFocusEffect: (callback: () => void) => require('react').useEffect(() => {
     if (mockRouteFocused) return callback();
@@ -195,6 +196,7 @@ describe('ClockOutScreen', () => {
     mockEffectiveClockOverride = null;
     (Alert.alert as jest.Mock).mockReset();
     (router.replace as jest.Mock).mockReset();
+    (router.dismissTo as jest.Mock).mockReset();
     mockClockOut.mockReset();
     mockClockOut.mockResolvedValue({ ok: true });
     mockCreateRequestMeta.mockReset();
@@ -274,7 +276,7 @@ describe('ClockOutScreen', () => {
     );
     expect(noShiftBanners).toHaveLength(0);
     expect(mockClockOut).toHaveBeenCalledTimes(1);
-    expect(router.replace).toHaveBeenCalledWith('/home');
+    expect(router.dismissTo).toHaveBeenCalledWith('/home');
   });
 
   it('clocks out a hydrated local-only pending shift without a no-shift banner', async () => {
@@ -368,7 +370,7 @@ describe('ClockOutScreen', () => {
     expect(text).toContain('Post Shift Report');
 
     await act(async () => tree.root.findAllByType('secondary-button').find((node: any) => node.props.label === 'Do Later').props.onPress());
-    expect(router.replace).toHaveBeenCalledWith('/home');
+    expect(router.dismissTo).toHaveBeenCalledWith('/home');
   });
 
   it('opens the mandatory form flow for a pending clock-out without advisory checks', async () => {
@@ -445,7 +447,7 @@ describe('ClockOutScreen', () => {
     expect(mockClockOut).not.toHaveBeenCalled();
     await act(async () => tree.root.findByType('primary-button').props.onPress());
     expect(mockClearWorkflow).toHaveBeenCalled();
-    expect(router.replace).toHaveBeenCalledWith('/home');
+    expect(router.dismissTo).toHaveBeenCalledWith('/home');
   });
 
   it('continues through multiple post-shift Forms without replaying clock-out', async () => {
@@ -479,7 +481,7 @@ describe('ClockOutScreen', () => {
     await act(async () => tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Clock Out').props.onPress());
 
     expect(mockClockOut).toHaveBeenCalledTimes(1);
-    expect(router.replace).toHaveBeenCalledWith('/home');
+    expect(router.dismissTo).toHaveBeenCalledWith('/home');
   });
 
   it('shows offline notice and keeps confirm enabled when active shift exists', async () => {

@@ -82,6 +82,7 @@ jest.mock('expo-router', () => ({
   router: {
     replace: jest.fn(),
     push: jest.fn(),
+    dismissTo: jest.fn(),
   },
 }));
 
@@ -163,6 +164,7 @@ import { router } from 'expo-router';
 describe('SwitchActivityScreen', () => {
   beforeEach(() => {
     (router.replace as jest.Mock).mockReset();
+    (router.dismissTo as jest.Mock).mockReset();
     mockSwitchActivity.mockReset();
     mockRefresh.mockClear();
     mockGetRequiredForms.mockReset().mockResolvedValue({ ok: true, forms: [] });
@@ -262,7 +264,7 @@ describe('SwitchActivityScreen', () => {
     });
 
     expect(mockSwitchActivity).toHaveBeenCalledWith('non_billable', [], 'cat-training', { requestId: 'req-switch-1', idempotencyKey: 'key-switch-1' });
-    expect(router.replace).toHaveBeenCalledWith('/active-shift');
+    expect(router.dismissTo).toHaveBeenCalledWith('/active-shift');
   });
 
   it('surfaces before-starting Forms and continues the job switch non-blocking', async () => {
@@ -285,7 +287,7 @@ describe('SwitchActivityScreen', () => {
     await act(async () => tree.root.findAllByType('secondary-button').find((node: any) => node.props.label === 'Skip for Now').props.onPress());
     expect(mockSwitchActivity).toHaveBeenCalledTimes(1);
     expect(mockGetRequiredForms).toHaveBeenCalledWith('after_leaving_job', { jobId: 'job-1' });
-    expect(router.replace).toHaveBeenCalledWith('/active-shift');
+    expect(router.dismissTo).toHaveBeenCalledWith('/active-shift');
   });
 
   it('resumes the preserved job switch once after its Form is completed', async () => {
@@ -312,7 +314,7 @@ describe('SwitchActivityScreen', () => {
     const text = tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ');
     expect(text).toContain('Job Departure Report');
     await act(async () => tree.root.findAllByType('secondary-button').find((node: any) => node.props.label === 'Do Later').props.onPress());
-    expect(router.replace).toHaveBeenCalledWith('/active-shift');
+    expect(router.dismissTo).toHaveBeenCalledWith('/active-shift');
   });
 
   it('offers Drive Time without capability data and submits its canonical work type', async () => {
@@ -334,6 +336,6 @@ describe('SwitchActivityScreen', () => {
     });
 
     expect(mockSwitchActivity).toHaveBeenCalledWith('drive_time', [], undefined, { requestId: 'req-switch-1', idempotencyKey: 'key-switch-1' });
-    expect(router.replace).toHaveBeenCalledWith('/active-shift');
+    expect(router.dismissTo).toHaveBeenCalledWith('/active-shift');
   });
 });

@@ -129,6 +129,8 @@ The server validates all answers, creates the submission and responses in one Dy
 }
 ```
 
+Forms may include optional `requiresApproval: true`. Those submissions return `status: "pending_review"`; forms without it retain `status: "submitted"`. Both statuses mean the employee submission succeeded and both satisfy mandatory clock workflow requirements without waiting for manager approval.
+
 Clients may send `{ "data": { ... } }` around the request body for compatibility. A submission may contain at most 99 answer-bearing responses. Required and recurring submissions use deterministic IDs to protect against retries; on-demand submissions receive a new ID.
 
 ## Get a completed submission
@@ -172,6 +174,21 @@ Employees can retrieve only their own submissions. The response includes summary
 
 Each field package includes `id`, `type`, `label`, `helpText`, `required`, `defaultValue`, `placeholder`, `options`, and `order`. Selector fields also include authorized `choices` as `{ "value", "label" }` objects.
 
+Yes/No and configured-option fields may also include:
+
+```json
+{
+  "acceptedResponse": {
+    "value": "yes",
+    "message": "Contact your supervisor."
+  }
+}
+```
+
+Mobile and backend trim the submitted value and configured `acceptedResponse.value`, then compare them with case-sensitive exact equality. Yes/No uses `yes` or `no`; `checkbox`, `multiple_choice`, and `dropdown` use the exact configured `options[]` value. When metadata is absent, validation retains the previous behavior.
+
+An accepted-response rejection is HTTP `400` with `{ "ok": false, "code": "form_response_requirement_failed", "fieldId": "...", "error": "..." }`. Mobile displays `error` on the identified field, retains answers and pending workflow state, and does not finalize clocking. Offline queued rejections remain queued for employee correction.
+
 | Type | Mobile behavior | Submitted value |
 | --- | --- | --- |
 | `section_header`, `paragraph_text` | Display only | Do not submit |
@@ -214,7 +231,7 @@ Timestamps are stored in UTC. Period keys are calculated in the configured IANA 
 - Monthly: local calendar month, for example `2026-03`.
 - Job start/completion: completion is scoped to the authorized job context.
 
-A `submitted` or `approved` submission satisfies a required instance. A `draft` or `rejected` submission does not.
+A `submitted`, `pending_review`, or `approved` submission satisfies a required instance. A `draft` or `rejected` submission does not.
 
 ## Errors and retry behavior
 

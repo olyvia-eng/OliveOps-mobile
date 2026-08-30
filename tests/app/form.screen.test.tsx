@@ -11,6 +11,7 @@ const mockSubmitForm = jest.fn();
 const mockRefreshForms = jest.fn().mockResolvedValue({ ok: true });
 const mockReplace = jest.fn();
 const mockBack = jest.fn();
+const mockDismissTo = jest.fn();
 const mockDispatch = jest.fn();
 const mockAddListener = jest.fn(() => jest.fn());
 const mockCompleteCurrentForm = jest.fn();
@@ -47,6 +48,7 @@ jest.mock('expo-router', () => ({
   router: {
     replace: (...args: unknown[]) => mockReplace(...args),
     back: (...args: unknown[]) => mockBack(...args),
+    dismissTo: (...args: unknown[]) => mockDismissTo(...args),
   },
   useLocalSearchParams: () => mockParams,
   useNavigation: () => ({ addListener: mockAddListener, dispatch: mockDispatch }),
@@ -127,6 +129,7 @@ describe('FormScreen', () => {
     mockRefreshForms.mockClear();
     mockReplace.mockClear();
     mockBack.mockClear();
+    mockDismissTo.mockClear();
     mockCompleteCurrentForm.mockClear();
     mockWorkflow = null;
     mockPendingClockOut = {
@@ -161,6 +164,7 @@ describe('FormScreen', () => {
     mockForm.name = 'Daily Equipment Inspection';
     mockForm.fields = defaultFields;
     mockForm.fields[3].required = false;
+    mockForm.fields.forEach((field: any) => { delete field.acceptedResponse; });
   });
 
   it('blocks missing required fields locally', async () => {
@@ -169,6 +173,46 @@ describe('FormScreen', () => {
     await act(async () => tree.root.findByType('primary-button').props.onPress());
     expect(mockSubmitForm).not.toHaveBeenCalled();
     expect(tree.root.findByProps({ accessibilityRole: 'alert' }).props.children).toBe('This field is required.');
+  });
+
+  it('blocks a known rejected response locally without submitting', async () => {
+    mockForm.fields = [{
+      id: 'fit', type: 'yes_no', label: 'Fit for work?', required: true, order: 1,
+      acceptedResponse: { value: 'yes', message: 'Contact your supervisor.' },
+    }];
+    let tree: any;
+    await act(async () => { tree = create(<FormScreen />); });
+    await act(async () => tree.root.findByProps({ testID: 'form-field-fit-option-no' }).props.onPress());
+    await act(async () => tree.root.findByType('primary-button').props.onPress());
+
+    expect(mockSubmitForm).not.toHaveBeenCalled();
+    expect(tree.root.findByProps({ accessibilityRole: 'alert' }).props.children).toBe('Contact your supervisor.');
+  });
+
+  it('restores queued mandatory answers and the server rejection after recovery', async () => {
+    const requiredForm = { ...mockForm, trigger: 'before_clock_in' };
+    const requirement = { requirementId: 'requirement-1', formId: 'form-1', form: requiredForm };
+    mockParams = {
+      formId: 'form-1', trigger: 'before_clock_in', workflowOccurrenceId: 'occurrence-1',
+      workflowRequirementId: 'requirement-1',
+    };
+    mockPendingClockIn = {
+      ...mockPendingClockIn,
+      workflow: { workflowOccurrenceId: 'occurrence-1', remainingForms: [requirement] },
+      currentRequirement: requirement,
+      queuedSubmissionFor: () => ({ responses: [{ fieldId: 'condition', value: 'Queued answer' }] }),
+      submissionFailure: {
+        workflowRequirementId: 'requirement-1', code: 'form_response_requirement_failed',
+        error: 'Contact your supervisor.', fieldId: 'condition',
+      },
+    };
+
+    let tree: any;
+    await act(async () => { tree = create(<FormScreen />); });
+
+    expect(tree.root.findByProps({ testID: 'form-field-condition' }).props.value).toBe('Queued answer');
+    expect(tree.root.findByProps({ accessibilityRole: 'alert' }).props.children).toBe('Contact your supervisor.');
+    expect(mockFinalize).not.toHaveBeenCalled();
   });
 
   it('submits exact trimmed responses and shows confirmation before returning to Forms', async () => {
@@ -194,7 +238,7 @@ describe('FormScreen', () => {
     expect(text).toContain('Form submitted');
     expect(text).toContain('Daily Equipment Inspection has been submitted successfully.');
     await act(async () => tree.root.findByType('primary-button').props.onPress());
-    expect(mockReplace).toHaveBeenCalledWith('/forms');
+    expect(mockDismissTo).toHaveBeenCalledWith('/forms');
   });
 
   it('preserves entered values and offers the same submit action after failure', async () => {
@@ -872,5 +916,56 @@ describe('FormScreen', () => {
     await act(async () => tree.root.findByType('primary-button').props.onPress());
 
     expect(tree.root.findByProps({ accessibilityRole: 'alert' }).props.children).toBe('Check this answer and try again.');
+  });
+
+  it('keeps a mandatory form and workflow active after server accepted-response rejection', async () => {
+    const requiredForm = { ...mockForm, trigger: 'after_clock_out' };
+    const requirement = { workflowRequirementId: 'requirement-1', completed: false, form: requiredForm };
+    mockParams = {
+      formId: 'form-1', trigger: 'after_clock_out', workflowOccurrenceId: 'occurrence-1',
+      workflowRequirementId: 'requirement-1',
+    };
+    mockPendingClockOut = {
+      ...mockPendingClockOut,
+      workflow: { workflowOccurrenceId: 'occurrence-1', requirements: [requirement] },
+      currentRequirement: requirement,
+    };
+    mockSubmitForm.mockResolvedValue({
+      ok: false,
+      code: 'form_response_requirement_failed',
+      error: 'Contact your supervisor.',
+      fieldErrors: { condition: 'Contact your supervisor.' },
+    });
+    let tree: any;
+    await act(async () => { tree = create(<FormScreen />); });
+    await act(async () => tree.root.findByProps({ testID: 'form-field-condition' }).props.onChangeText('Still here'));
+    await act(async () => tree.root.findByType('primary-button').props.onPress());
+
+    expect(tree.root.findByProps({ testID: 'form-field-condition' }).props.value).toBe('Still here');
+    expect(tree.root.findByProps({ accessibilityRole: 'alert' }).props.children).toBe('Contact your supervisor.');
+    expect(mockFinalize).not.toHaveBeenCalled();
+    expect(mockRecoverPending).not.toHaveBeenCalled();
+  });
+
+  it('finalizes a mandatory form when the accepted submission is pending review', async () => {
+    const requiredForm = { ...mockForm, trigger: 'before_clock_in', requiresApproval: true };
+    const requirement = { requirementId: 'requirement-1', formId: 'form-1', form: requiredForm };
+    mockParams = {
+      formId: 'form-1', trigger: 'before_clock_in', workflowOccurrenceId: 'occurrence-1',
+      workflowRequirementId: 'requirement-1',
+    };
+    mockPendingClockIn = {
+      ...mockPendingClockIn,
+      workflow: { workflowOccurrenceId: 'occurrence-1', remainingForms: [requirement] },
+      currentRequirement: requirement,
+    };
+    mockSubmitForm.mockResolvedValue({ ok: true, submission: { id: 'sub-1', status: 'pending_review' } });
+    let tree: any;
+    await act(async () => { tree = create(<FormScreen />); });
+    await act(async () => tree.root.findByProps({ testID: 'form-field-condition' }).props.onChangeText('Good'));
+    await act(async () => tree.root.findByType('primary-button').props.onPress());
+
+    expect(mockFinalize).toHaveBeenCalledTimes(1);
+    expect(tree.root.findByType('status-banner').props.message).toBe('Clock-in completed successfully.');
   });
 });

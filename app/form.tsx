@@ -32,6 +32,7 @@ import {
 } from '@/store/pendingClockOutStore';
 import { colors, spacing, typography } from '@/theme/colors';
 import type { EmployeeForm } from '@/types/forms';
+import { returnToParentOrReplace, returnToParentThenPush } from '@/utils/navigation';
 
 type MandatoryFinalizationKind = 'clock_in' | 'clock_out';
 type FinalizationState = 'idle' | 'finalizing' | 'failed';
@@ -117,9 +118,16 @@ export default function FormScreen() {
     () => [...(form?.fields ?? [])].sort((left, right) => left.order - right.order),
     [form],
   );
+  const mandatoryStore = mandatoryKind === 'clock_in' ? pendingClockIn : pendingClockOut;
+  const queuedMandatorySubmission = mandatoryKind && params.workflowRequirementId
+    ? mandatoryStore.queuedSubmissionFor?.(params.workflowRequirementId) ?? null
+    : null;
+  const queuedValues = useMemo(() => Object.fromEntries(
+    (queuedMandatorySubmission?.responses ?? []).map((response) => [response.fieldId, response.value]),
+  ), [queuedMandatorySubmission]);
   const generatedInitialValues = useMemo(
-    () => initialFormValues(orderedFields, {}, new Date(), businessTimeZone),
-    [businessTimeZone, orderedFields],
+    () => initialFormValues(orderedFields, queuedValues, new Date(), businessTimeZone),
+    [businessTimeZone, orderedFields, queuedValues],
   );
   const mandatoryInitialValuesRef = useRef<InitialValuesSnapshot | null>(null);
   if (mandatoryInitialValuesRef.current?.routeKey !== mandatoryRouteKey) {
@@ -143,6 +151,7 @@ export default function FormScreen() {
   const initializedAttemptRef = useRef('');
   const clientSubmissionRef = useRef<{ identity: string; value: string } | null>(null);
   const refreshedMissingRef = useRef<string | null>(null);
+  const submissionFailure = mandatoryKind ? mandatoryStore.submissionFailure : null;
   const submissionIdentity = form && user
     ? `${user.businessId}:${user.id}:${user.employeeId ?? ''}:${mandatoryRouteKey ?? ''}:${form.id}:${form.trigger}:${form.context?.jobId ?? ''}:${form.context?.equipmentId ?? ''}:${form.context?.divisionId ?? ''}`
     : '';
@@ -173,6 +182,14 @@ export default function FormScreen() {
     void refreshForms({ force: true }).finally(() => setRefreshing(false));
   }, [form, formRouteIdentity, refreshForms]);
 
+  useEffect(() => {
+    if (!submissionFailure || submissionFailure.workflowRequirementId !== params.workflowRequirementId) return;
+    setError(submissionFailure.error);
+    if (submissionFailure.fieldId) {
+      setFieldErrors((current) => ({ ...current, [submissionFailure.fieldId!]: submissionFailure.error }));
+    }
+  }, [params.workflowRequirementId, submissionFailure]);
+
   const dirty = JSON.stringify(values) !== JSON.stringify(initialValues);
 
   useEffect(() => navigation.addListener('beforeRemove', (event: { preventDefault: () => void; data: { action: unknown } }) => {
@@ -202,7 +219,7 @@ export default function FormScreen() {
       <Screen>
         <ScreenHeader title="Clocked in" subtitle="Your required pre-shift forms were submitted and your shift is active." />
         <StatusBanner tone="success" message="Clock-in completed successfully." />
-        <PrimaryActionButton label="View Active Shift" onPress={() => router.replace('/active-shift')} />
+        <PrimaryActionButton label="View Active Shift" onPress={() => returnToParentThenPush('/home', '/active-shift')} />
       </Screen>
     );
   }
@@ -212,7 +229,7 @@ export default function FormScreen() {
       <Screen>
         <ScreenHeader title="Clocked out" subtitle="Your required forms were submitted and your shift is complete." />
         <StatusBanner tone="success" message="Clock-out submitted successfully." />
-        <PrimaryActionButton label="Done" onPress={() => router.replace('/home')} />
+        <PrimaryActionButton label="Done" onPress={() => returnToParentOrReplace('/home')} />
       </Screen>
     );
   }
@@ -225,7 +242,7 @@ export default function FormScreen() {
         <StatusBanner tone="offline" message={clockInPending
           ? 'Reconnect to submit this form and finish clocking in.'
           : 'Reconnect to submit this form and finish clocking out.'} />
-        <PrimaryActionButton label="Return Home" onPress={() => router.replace('/home')} />
+        <PrimaryActionButton label="Return Home" onPress={() => returnToParentOrReplace('/home')} />
       </Screen>
     );
   }
@@ -245,10 +262,10 @@ export default function FormScreen() {
       <Screen>
         <ScreenHeader title="Form submitted" subtitle={`${submittedFormName} has been submitted successfully.`} />
         <StatusBanner tone="success" message="Submission complete" />
-        <PrimaryActionButton label={returnLabel} onPress={() => router.replace(returnPath as never)} />
+        <PrimaryActionButton label={returnLabel} onPress={() => returnToParentOrReplace(returnPath as never)} />
         {returnPath === '/home'
-          ? <SecondaryButton label="View Forms" onPress={() => router.replace('/forms')} />
-          : <SecondaryButton label="Home" onPress={() => router.replace('/home')} />}
+          ? <SecondaryButton label="View Forms" onPress={() => returnToParentOrReplace('/forms')} />
+          : <SecondaryButton label="Home" onPress={() => returnToParentOrReplace('/home')} />}
       </Screen>
     );
   }
@@ -258,7 +275,7 @@ export default function FormScreen() {
       <Screen>
         <ScreenHeader title="Form unavailable" subtitle="This form may have changed or no longer be assigned to you." />
         {refreshing ? <StatusBanner tone="info" message="Refreshing Forms..." /> : null}
-        <PrimaryActionButton label="Back to Forms" onPress={() => router.replace('/forms')} />
+        <PrimaryActionButton label="Back to Forms" onPress={() => returnToParentOrReplace('/forms')} />
       </Screen>
     );
   }
@@ -266,10 +283,10 @@ export default function FormScreen() {
   const unsupportedRequired = hasRequiredUnsupportedField(orderedFields);
 
   async function finishMandatoryWorkflow(kind: MandatoryFinalizationKind) {
-    const mandatoryStore = kind === 'clock_in' ? pendingClockIn : pendingClockOut;
+    const finalizationStore = kind === 'clock_in' ? pendingClockIn : pendingClockOut;
     setError(null);
     setFinalizationState('finalizing');
-    const finalized = await mandatoryStore.finalize();
+    const finalized = await finalizationStore.finalize();
     if (!finalized.ok) {
       submissionInProgressRef.current = false;
       setFinalizationState('failed');
@@ -304,7 +321,6 @@ export default function FormScreen() {
     }
 
     submissionInProgressRef.current = true;
-    const mandatoryStore = mandatoryKind === 'clock_in' ? pendingClockIn : pendingClockOut;
     const clientSubmissionId = mandatoryKind && params.workflowRequirementId
       ? await mandatoryStore.submissionIdFor(params.workflowRequirementId)
       : clientSubmissionRef.current?.value ?? createFormClientSubmissionId();
@@ -327,6 +343,9 @@ export default function FormScreen() {
       setQueuedOffline(true);
       return;
     }
+    if (mandatoryKind && queuedMandatorySubmission) {
+      await mandatoryStore.queueSubmission(payload);
+    }
     const result = await submitForm(payload);
     if (!result.ok) {
       const resultCode = 'code' in result ? result.code : undefined;
@@ -344,6 +363,7 @@ export default function FormScreen() {
     }
 
     if (mandatoryKind) {
+      await mandatoryStore.completeQueuedSubmission?.(clientSubmissionId);
       submittedRef.current = true;
       setMandatorySubmissionAccepted(true);
       const refreshedClockIn = mandatoryKind === 'clock_in'
@@ -422,6 +442,7 @@ export default function FormScreen() {
           disabled={submitting || mandatorySubmissionAccepted}
           onChange={(value) => {
             setValues((current) => ({ ...current, [field.id]: value }));
+            if (submissionFailure?.fieldId === field.id) setError(null);
             setFieldErrors((current) => {
               if (!current[field.id]) return current;
               const next = { ...current };

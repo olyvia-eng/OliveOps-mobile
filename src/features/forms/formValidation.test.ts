@@ -1,5 +1,6 @@
 import { describe, expect, it } from '@jest/globals';
 import {
+  ACCEPTED_RESPONSE_FALLBACK,
   buildFormResponses,
   formatFormDate,
   hasRequiredUnsupportedField,
@@ -141,6 +142,29 @@ describe('formValidation', () => {
       { fieldId: 'no', value: 'no' },
       { fieldId: 'zero', value: '0' },
     ]);
+  });
+
+  it('validates accepted responses using trimmed case-sensitive canonical values', () => {
+    const fields = [
+      field({ id: 'fit', type: 'yes_no', label: 'Fit for work?', acceptedResponse: { value: ' yes ', message: 'Contact your supervisor.' } }),
+      field({ id: 'check', type: 'checkbox', label: 'Acknowledge', options: ['Agreed'], acceptedResponse: { value: 'Agreed' } }),
+      field({ id: 'choice', type: 'multiple_choice', label: 'Condition', options: ['Safe', 'Unsafe'], acceptedResponse: { value: 'Safe' } }),
+    ];
+
+    expect(validateFormValues(fields, { fit: 'yes', check: 'Agreed', choice: 'Safe' })).toEqual({});
+    expect(validateFormValues(fields, { fit: 'no', check: 'Agreed', choice: 'Unsafe' })).toEqual({
+      fit: 'Contact your supervisor.',
+      choice: ACCEPTED_RESPONSE_FALLBACK,
+    });
+    expect(validateFormValues(fields, { fit: 'Yes', check: 'Agreed', choice: 'Safe' })).toEqual({
+      fit: 'Choose Yes or No.',
+    });
+  });
+
+  it('preserves old behavior when accepted-response metadata is absent', () => {
+    const yesNo = field({ id: 'fit', type: 'yes_no', label: 'Fit for work?' });
+
+    expect(validateFormValues([yesNo], { fit: 'no' })).toEqual({});
   });
 
   it('blocks required signature, photo, and file fields without submitting them', () => {

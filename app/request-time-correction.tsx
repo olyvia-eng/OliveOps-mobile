@@ -25,6 +25,7 @@ import { colors } from '@/theme/colors';
 import type { CreateTimeCorrectionRequest } from '@/types/api';
 import type { TimeCorrectionRequestType, TimeEntryWorkType } from '@/types/domain';
 import { businessDateKey, businessLocalDateTimeToIso, formatBusinessTime } from '@/utils/businessTime';
+import { returnToParentOrReplace } from '@/utils/navigation';
 
 const REQUEST_TYPE_OPTIONS: Array<{ id: TimeCorrectionRequestType; label: string }> = [
   { id: 'forgot_clock_in', label: 'Forgot to clock in' },
@@ -261,7 +262,7 @@ export default function RequestTimeCorrectionScreen() {
     setRetryMeta(null);
     setStatus(result.warning || 'Correction request submitted');
     setTimeout(() => {
-      router.replace('/time-history');
+      returnToParentOrReplace('/time-history');
     }, 500);
   }
 

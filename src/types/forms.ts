@@ -32,8 +32,13 @@ export type EmployeeFormFieldType =
   | 'photo_upload'
   | 'file_upload';
 
-export type EmployeeFormSubmissionStatus = 'draft' | 'submitted' | 'approved' | 'rejected';
+export type EmployeeFormSubmissionStatus = 'draft' | 'submitted' | 'pending_review' | 'approved' | 'rejected';
 export type EmployeeFormCompletionRequirement = 'reminder' | 'required';
+
+export interface EmployeeFormAcceptedResponse {
+  value: string;
+  message?: string;
+}
 
 export interface EmployeeFormChoice {
   value: string;
@@ -51,6 +56,7 @@ export interface EmployeeFormField {
   options?: string[];
   order: number;
   choices?: EmployeeFormChoice[];
+  acceptedResponse?: EmployeeFormAcceptedResponse | null;
 }
 
 export interface EmployeeFormContext {
@@ -77,6 +83,7 @@ export interface EmployeeForm {
   trigger: EmployeeFormTrigger;
   required: boolean;
   completionRequirement?: EmployeeFormCompletionRequirement;
+  requiresApproval?: boolean;
   periodKey?: string;
   context?: EmployeeFormContext;
   fields: EmployeeFormField[];
@@ -127,6 +134,13 @@ export interface SubmitEmployeeFormRequest {
   responses: EmployeeFormResponse[];
 }
 
+export interface QueuedFormSubmissionFailure {
+  workflowRequirementId: string;
+  code: 'form_response_requirement_failed';
+  error: string;
+  fieldId?: string;
+}
+
 export interface SubmittedEmployeeForm {
   id: string;
   clientSubmissionId?: string;
@@ -135,7 +149,7 @@ export interface SubmittedEmployeeForm {
   trigger: EmployeeFormTrigger;
   periodKey?: string;
   submittedAt: string;
-  status: 'submitted';
+  status: Extract<EmployeeFormSubmissionStatus, 'submitted' | 'pending_review' | 'approved'>;
   submittedBy: string;
   submittedByUserId: string;
   responsesCreated: number;

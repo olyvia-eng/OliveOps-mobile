@@ -184,10 +184,15 @@ export function useFormsActions() {
 
       captureUnexpectedFormsError(error, 'submit');
       if (error instanceof ApiError && error.fieldId) {
+        const code = error.code?.toLowerCase();
+        const employeeMessage = code === 'form_response_requirement_failed'
+          ? error.message
+          : 'Check this answer and try again.';
         return {
           ok: false as const,
-          error: 'Some answers need attention before this form can be submitted.',
-          fieldErrors: { [error.fieldId]: 'Check this answer and try again.' },
+          code,
+          error: employeeMessage,
+          fieldErrors: { [error.fieldId]: employeeMessage },
         };
       }
       return {

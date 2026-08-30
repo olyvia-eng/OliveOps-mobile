@@ -2,6 +2,7 @@ import React from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import type { PendingClockInRecord } from '@/services/pendingClockInStorage';
+import { ApiError } from '@/types/errors';
 
 const mockLoadBootstrap = jest.fn();
 const mockLoadPendingClockIn = jest.fn();
@@ -291,6 +292,33 @@ describe('PendingClockInProvider', () => {
     expect(second).toBe(first);
   });
 
+  it('updates a rejected queued answer without appending a second clock-in attempt', async () => {
+    mockOnline = false;
+    const rejectedPayload = {
+      clientSubmissionId: 'form-submission:stable-1', formId: 'form-1', trigger: 'before_clock_in' as const,
+      workflowOccurrenceId: 'occurrence-1', workflowRequirementId: 'requirement-1',
+      responses: [{ fieldId: 'fit', value: 'no' }],
+    };
+    mockLoadRecord.mockResolvedValue({
+      workflow: workflow(), submissionIds: { 'requirement-1': rejectedPayload.clientSubmissionId },
+      queuedSubmissions: [rejectedPayload],
+      submissionFailure: {
+        workflowRequirementId: 'requirement-1', code: 'form_response_requirement_failed',
+        error: 'Contact your supervisor.', fieldId: 'fit',
+      },
+    });
+    await mount();
+    const correctedPayload = { ...rejectedPayload, responses: [{ fieldId: 'fit', value: 'yes' }] };
+
+    await act(async () => pendingStore.queueSubmission(correctedPayload));
+
+    expect(pendingStore.queuedSubmissionFor('requirement-1')).toEqual(correctedPayload);
+    expect(mockSaveRecord).toHaveBeenLastCalledWith(
+      'business-1:user-1:employee-1',
+      expect.objectContaining({ queuedSubmissions: [correctedPayload], submissionFailure: undefined }),
+    );
+  });
+
   it('treats clock_in_already_finalized as idempotent success and clears local state', async () => {
     mockFinalizeClockIn.mockResolvedValue({ ok: true, status: 'clock_in_already_finalized' });
     await mount();
@@ -352,6 +380,31 @@ describe('PendingClockInProvider', () => {
     expect(mockFinalizeClockIn).toHaveBeenCalledTimes(1);
     expect(mockRefreshWorkContext).toHaveBeenCalledTimes(1);
     expect(pendingStore.workflow).toBeNull();
+  });
+
+  it('retains a server-rejected queued clock-in response without finalizing', async () => {
+    const payload = {
+      clientSubmissionId: 'form-submission:queued-rejected', formId: 'form-1', trigger: 'before_clock_in' as const,
+      workflowOccurrenceId: 'occurrence-1', workflowRequirementId: 'requirement-1',
+      responses: [{ fieldId: 'fit', value: 'no' }],
+    };
+    mockLoadRecord.mockResolvedValue({ workflow: workflow(), submissionIds: {}, queuedSubmissions: [payload] });
+    mockSubmitEmployeeForm.mockRejectedValue(new ApiError(
+      'Contact your supervisor.', 400, 'form_response_requirement_failed', 'fit',
+    ));
+
+    await mount();
+
+    expect(mockFinalizeClockIn).not.toHaveBeenCalled();
+    expect(pendingStore.queuedSubmissionFor('requirement-1')).toEqual(payload);
+    expect(pendingStore.submissionFailure).toEqual({
+      workflowRequirementId: 'requirement-1', code: 'form_response_requirement_failed',
+      error: 'Contact your supervisor.', fieldId: 'fit',
+    });
+    expect(mockSaveRecord).toHaveBeenLastCalledWith(
+      'business-1:user-1:employee-1',
+      expect.objectContaining({ queuedSubmissions: [payload] }),
+    );
   });
 
   it('shares one successful clock-in finalization across simultaneous callers', async () => {

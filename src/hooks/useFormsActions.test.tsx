@@ -281,4 +281,26 @@ describe('useFormsActions', () => {
       uncertain: false,
     });
   });
+
+  it('preserves an accepted-response rejection as employee-facing form and field errors', async () => {
+    mockSubmitEmployeeForm.mockRejectedValue(new ApiError(
+      'You cannot clock in because you are not fit for work.',
+      400,
+      'form_response_requirement_failed',
+      'fit-for-work',
+    ));
+    await mount();
+
+    let result: any;
+    await act(async () => {
+      result = await currentActions.submitForm({ clientSubmissionId: 'attempt-rejected', formId: 'form-1', trigger: 'before_clock_in', responses: [] });
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      code: 'form_response_requirement_failed',
+      error: 'You cannot clock in because you are not fit for work.',
+      fieldErrors: { 'fit-for-work': 'You cannot clock in because you are not fit for work.' },
+    });
+  });
 });

@@ -23,6 +23,7 @@ import { useFormsWorkflowStore, type FormsWorkflowIntent } from '@/store/formsWo
 import { colors } from '@/theme/colors';
 import type { TimeEntryWorkType } from '@/types/domain';
 import type { EmployeeForm } from '@/types/forms';
+import { returnToParentOrReplace } from '@/utils/navigation';
 
 type ActivityOption = {
   type: TimeEntryWorkType;
@@ -293,7 +294,7 @@ export default function SwitchActivityScreen() {
       }
     }
     clearWorkflow();
-    router.replace('/active-shift');
+    returnToParentOrReplace('/active-shift');
   }
 
   if (postSwitchWorkflow) {
@@ -309,7 +310,7 @@ export default function SwitchActivityScreen() {
             label="Done"
             onPress={() => {
               clearWorkflow();
-              router.replace('/active-shift');
+              returnToParentOrReplace('/active-shift');
             }}
           />
         ) : (
@@ -331,7 +332,7 @@ export default function SwitchActivityScreen() {
             })}
             onSkip={() => {
               clearWorkflow();
-              router.replace('/active-shift');
+              returnToParentOrReplace('/active-shift');
             }}
           />
         )}
@@ -448,7 +449,7 @@ export default function SwitchActivityScreen() {
           onCancel={() => {
             clearWorkflow();
             setAdvisoryForms([]);
-            router.replace('/active-shift');
+            returnToParentOrReplace('/active-shift');
           }}
         />
       ) : postActionForms.length > 0 ? (
@@ -470,7 +471,7 @@ export default function SwitchActivityScreen() {
               });
             });
           }}
-          onSkip={() => router.replace('/active-shift')}
+          onSkip={() => returnToParentOrReplace('/active-shift')}
         />
       ) : (
         <PrimaryActionButton
