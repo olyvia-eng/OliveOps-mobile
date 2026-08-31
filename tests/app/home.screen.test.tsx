@@ -341,6 +341,9 @@ describe('HomeScreen', () => {
     expect(renderedText).not.toContain('Required form 2 of 1');
     expect(labels).toContain('Retry Finish Clock In');
     expect(labels).not.toContain('Resume Required Form');
+    expect(tree.root.findAllByType('status-banner')).toEqual(expect.arrayContaining([
+      expect.objectContaining({ props: expect.objectContaining({ message: 'Reconnect to finish clocking in.' }) }),
+    ]));
 
     await act(async () => tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Retry Finish Clock In').props.onPress());
     expect(finalize).toHaveBeenCalledTimes(1);

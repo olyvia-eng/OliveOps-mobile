@@ -112,6 +112,9 @@ export default function HomeScreen() {
 
       {loadError && !loadError.startsWith('Offline.') ? <StatusBanner tone="error" message={loadError} /> : null}
       {pendingFormError ? <StatusBanner tone="error" message={pendingFormError} /> : null}
+      {pendingClockInReady && pendingClockIn.error
+        ? <StatusBanner tone="error" message={pendingClockIn.error} />
+        : null}
 
       {pendingClockOut.workflow ? (
         <ActionCard>

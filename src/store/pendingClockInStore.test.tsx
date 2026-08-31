@@ -16,6 +16,7 @@ const mockRefreshWorkContext = jest.fn();
 const mockAcknowledgePendingClockInWorkflow = jest.fn();
 const mockPrepareFormSubmissionAttachments = jest.fn();
 const mockMarkFormAttachmentsSubmitted = jest.fn();
+const mockCaptureMessage = jest.fn();
 let mockOutboxWorkflow: ReturnType<typeof workflow> | null = null;
 let mockOnline = true;
 let pendingStore: any;
@@ -55,6 +56,9 @@ jest.mock('@/api/clockingApi', () => ({
   loadBootstrap: (...args: unknown[]) => mockLoadBootstrap(...args),
   loadPendingClockIn: (...args: unknown[]) => mockLoadPendingClockIn(...args),
   finalizeClockIn: (...args: unknown[]) => mockFinalizeClockIn(...args),
+}));
+jest.mock('@sentry/react-native', () => ({
+  captureMessage: (...args: unknown[]) => mockCaptureMessage(...args),
 }));
 jest.mock('@/api/formsApi', () => ({
   loadRequiredForms: (...args: unknown[]) => mockLoadRequiredForms(...args),
@@ -141,6 +145,7 @@ describe('PendingClockInProvider', () => {
     mockRefreshWorkContext.mockReset().mockResolvedValue({ ok: true });
     mockPrepareFormSubmissionAttachments.mockReset().mockImplementation(async (payload) => payload);
     mockMarkFormAttachmentsSubmitted.mockReset().mockResolvedValue(undefined);
+    mockCaptureMessage.mockReset();
   });
 
   afterEach(async () => {
@@ -672,5 +677,146 @@ describe('PendingClockInProvider', () => {
     expect(result).toEqual({ ok: false, error: 'Complete the remaining required form.' });
     expect(mockLoadPendingClockIn).toHaveBeenCalled();
     expect(pendingStore.workflow?.workflowOccurrenceId).toBe('occurrence-1');
+  });
+
+  it('returns to the remaining Form when authoritative recovery reports forms outstanding', async () => {
+    mockLoadBootstrap.mockResolvedValue({
+      ok: true,
+      capabilities: { requiredBeforeClockInForms: true },
+      pendingClockInWorkflow: workflow(true),
+    });
+    mockFinalizeClockIn.mockRejectedValue(new ApiError(
+      'Required forms remain.', 409, 'required_forms_outstanding',
+    ));
+    mockLoadPendingClockIn.mockResolvedValue(workflow());
+
+    await mount();
+
+    expect(pendingStore.phase).toEqual({ kind: 'requirements_outstanding', current: 1, total: 1 });
+    expect(pendingStore.currentForm).toBe(requiredForm);
+    expect(pendingStore.error).toBeNull();
+    expect(mockCaptureMessage).not.toHaveBeenCalledWith('clock_in_finalize_failed', expect.anything());
+  });
+
+  it('shows an explicit error when forms-outstanding recovery still reports ready to finalize', async () => {
+    mockLoadBootstrap.mockResolvedValue({
+      ok: true,
+      capabilities: { requiredBeforeClockInForms: true },
+      pendingClockInWorkflow: workflow(true),
+    });
+    mockFinalizeClockIn.mockRejectedValue(new ApiError(
+      'Required forms remain.', 409, 'required_forms_outstanding',
+    ));
+    mockLoadPendingClockIn.mockResolvedValue(workflow(true));
+
+    await mount();
+
+    expect(pendingStore.phase).toEqual({ kind: 'ready_to_finalize', total: 1 });
+    expect(pendingStore.busy).toBe(false);
+    expect(pendingStore.error).toBe('Clock-in could not be finalized yet. Your required form progress is saved.');
+  });
+
+  it('surfaces a pending clock-out conflict and retains the ready workflow', async () => {
+    mockLoadBootstrap.mockResolvedValue({
+      ok: true,
+      capabilities: { requiredBeforeClockInForms: true },
+      pendingClockInWorkflow: workflow(true),
+    });
+    mockFinalizeClockIn.mockRejectedValue(new ApiError(
+      'Complete the pending clock-out workflow before clocking in.',
+      409,
+      'pending_clock_out_requires_finalization',
+    ));
+
+    await mount();
+
+    expect(pendingStore.workflow?.workflowOccurrenceId).toBe('occurrence-1');
+    expect(pendingStore.error).toBe('Complete the pending clock-out workflow before clocking in.');
+  });
+
+  it('reconciles an active shift conflict as successful finalization', async () => {
+    mockLoadBootstrap
+      .mockResolvedValueOnce({
+        ok: true,
+        capabilities: { requiredBeforeClockInForms: true },
+        pendingClockInWorkflow: workflow(true),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        capabilities: { requiredBeforeClockInForms: true },
+        pendingClockInWorkflow: null,
+        currentActiveEntryId: 'entry-1',
+      });
+    mockFinalizeClockIn.mockRejectedValue(new ApiError(
+      'Employee is already clocked in.', 409, 'offline_shift_state_conflict',
+    ));
+
+    await mount();
+
+    expect(pendingStore.workflow).toBeNull();
+    expect(pendingStore.error).toBeNull();
+    expect(mockRefreshWorkContext).toHaveBeenCalledTimes(1);
+    expect(mockCaptureMessage).not.toHaveBeenCalledWith('clock_in_finalize_failed', expect.anything());
+  });
+
+  it.each([
+    ['request timeout', new ApiError('Request timed out.', 408, 'REQUEST_TIMEOUT'), 'Request timed out.', 'request_timeout', 408],
+    ['unknown server error', new ApiError('Internal details', 500), 'Clock-in could not be finalized. Your required form progress is still saved.', 'unknown', 500],
+  ])('retains a retryable ready state after %s', async (_name, failure, expectedMessage, expectedCode, expectedStatus) => {
+    const completed = {
+      ...workflow(true),
+      clockInIntent: {
+        ...workflow(true).clockInIntent,
+        workAreaId: 'work-area-x',
+        clockingContractVersion: 2,
+      },
+    };
+    mockLoadBootstrap.mockResolvedValue({
+      ok: true,
+      capabilities: { requiredBeforeClockInForms: true },
+      pendingClockInWorkflow: completed,
+    });
+    mockFinalizeClockIn.mockRejectedValue(failure);
+
+    await mount();
+
+    expect(pendingStore.phase).toEqual({ kind: 'ready_to_finalize', total: 1 });
+    expect(pendingStore.busy).toBe(false);
+    expect(pendingStore.error).toBe(expectedMessage);
+    expect(mockCaptureMessage).toHaveBeenCalledWith('clock_in_finalize_failed', expect.objectContaining({
+      level: 'warning',
+      contexts: {
+        clock_in_finalize: {
+          workflowOccurrenceId: 'occurrence-1',
+          resultCode: expectedCode,
+          httpStatus: expectedStatus,
+          pendingPhase: 'ready_to_finalize',
+          requiredFormCount: 1,
+          completedRequiredFormCount: 1,
+          remainingRequiredFormCount: 0,
+          clockingContractVersion: 2,
+          isJobWork: true,
+          jobCount: 1,
+          hasWorkAreaId: true,
+        },
+      },
+    }));
+  });
+
+  it('makes only one automatic attempt after failure despite lifecycle recovery signals', async () => {
+    mockLoadBootstrap.mockResolvedValue({
+      ok: true,
+      capabilities: { requiredBeforeClockInForms: true },
+      pendingClockInWorkflow: workflow(true),
+    });
+    mockLoadPendingClockIn.mockResolvedValue(workflow(true));
+    mockFinalizeClockIn.mockRejectedValue(new ApiError('Request timed out.', 408, 'REQUEST_TIMEOUT'));
+
+    await mount();
+    await act(async () => mockNetworkListener?.({ isConnected: true, isInternetReachable: true }));
+    await act(async () => mockAppStateListener?.('active'));
+
+    expect(mockFinalizeClockIn).toHaveBeenCalledTimes(1);
+    expect(pendingStore.error).toBe('Request timed out.');
   });
 });

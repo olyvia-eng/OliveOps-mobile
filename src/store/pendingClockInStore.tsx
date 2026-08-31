@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
+import * as Sentry from '@sentry/react-native';
 import * as clockingApi from '@/api/clockingApi';
 import { loadRequiredForms, submitEmployeeForm } from '@/api/formsApi';
 import { isOnline } from '@/services/connectivity';
@@ -105,6 +106,15 @@ const CLOCK_IN_INTENT_ERROR_CODES = new Set([
   'job_work_area_unavailable',
 ]);
 
+const SAFE_CLOCK_IN_FINALIZE_ERROR_CODES = new Set([
+  ...CLOCK_IN_INTENT_ERROR_CODES,
+  'employee_form_context_unavailable',
+  'offline_event_order_conflict',
+  'offline_shift_state_conflict',
+  'pending_clock_out_requires_finalization',
+  'request_timeout',
+]);
+
 export function PendingClockInProvider({ children }: { children: React.ReactNode }) {
   const { accessToken, status, user } = useAuthStore();
   const { refreshWorkContext } = useClockingActions();
@@ -117,6 +127,8 @@ export function PendingClockInProvider({ children }: { children: React.ReactNode
   const recordRef = useRef<PendingClockInRecord | null>(null);
   const syncPromiseRef = useRef<Promise<void> | null>(null);
   const finalizePromiseRef = useRef<Promise<FinalizeResult> | null>(null);
+  const automaticFinalizeAttemptedRef = useRef<Set<string>>(new Set());
+  const finalizationErrorRef = useRef<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
   const [workflow, setWorkflow] = useState<PendingClockInWorkflow | null>(null);
   const [busy, setBusy] = useState(false);
@@ -171,7 +183,16 @@ export function PendingClockInProvider({ children }: { children: React.ReactNode
       queuedSubmissions: sameOccurrence ? current.queuedSubmissions : [],
       submissionFailure: sameOccurrence ? current.submissionFailure : undefined,
     });
-    setError(null);
+    const preserveFinalizationError = sameOccurrence
+      && pendingClockInPhase(current.workflow).kind === 'ready_to_finalize'
+      && pendingClockInPhase(enrichedWorkflow).kind === 'ready_to_finalize'
+      && finalizationErrorRef.current;
+    if (preserveFinalizationError) {
+      setError(preserveFinalizationError);
+    } else {
+      finalizationErrorRef.current = null;
+      setError(null);
+    }
     return enrichedWorkflow;
   }, [accessToken, commit]);
 
@@ -233,18 +254,6 @@ export function PendingClockInProvider({ children }: { children: React.ReactNode
     }
   }, [acceptWorkflow, accessToken]);
 
-  const recoverStaleWorkflow = useCallback(async () => {
-    try {
-      const bootstrap = await clockingApi.loadBootstrap(accessToken, { force: true });
-      if (bootstrap.pendingClockInWorkflow) {
-        return await acceptWorkflow(bootstrap.pendingClockInWorkflow);
-      }
-    } catch {
-      // Continue to the dedicated workflow endpoint.
-    }
-    return recover();
-  }, [acceptWorkflow, accessToken, recover]);
-
   const recoverForFinalization = useCallback(async (): Promise<FinalizationRecovery> => {
     let bootstrapConfirmedNotActive = false;
     try {
@@ -276,15 +285,70 @@ export function PendingClockInProvider({ children }: { children: React.ReactNode
     }
   }, [acceptWorkflow, accessToken, commit]);
 
+  const failFinalization = useCallback((message: string, code?: string, httpStatus?: number): FinalizeResult => {
+    const current = recordRef.current?.workflow ?? null;
+    const phase = pendingClockInPhase(current);
+    finalizationErrorRef.current = message;
+    setError(message);
+    Sentry.captureMessage('clock_in_finalize_failed', {
+      level: 'warning',
+      contexts: {
+        clock_in_finalize: {
+          workflowOccurrenceId: current?.workflowOccurrenceId ?? 'unavailable',
+          resultCode: code ?? 'unknown',
+          httpStatus: httpStatus ?? 0,
+          pendingPhase: phase.kind,
+          requiredFormCount: current?.requiredFormCount ?? 0,
+          completedRequiredFormCount: current?.completedRequiredFormCount ?? 0,
+          remainingRequiredFormCount: current?.remainingRequiredFormCount ?? 0,
+          clockingContractVersion: current?.clockInIntent.clockingContractVersion ?? 0,
+          isJobWork: current?.clockInIntent.workType === 'job',
+          jobCount: current?.clockInIntent.jobIds.length ?? 0,
+          hasWorkAreaId: Boolean(current?.clockInIntent.workAreaId),
+        },
+      },
+    });
+    return { ok: false, error: message };
+  }, []);
+
+  const reconcileFinalizationFailure = useCallback(async (input: {
+    message: string;
+    code?: string;
+    httpStatus?: number;
+    recoveredWorkflow?: PendingClockInWorkflow | null;
+    verifyActiveShift?: boolean;
+  }): Promise<FinalizeResult> => {
+    let recovered = input.recoveredWorkflow;
+    if (input.verifyActiveShift) {
+      const recovery = await recoverForFinalization();
+      if (recovery.status === 'completed') return { ok: true };
+      recovered = recovery.status === 'recovered' ? recovery.workflow : null;
+    } else if (recovered === undefined) {
+      recovered = await recover();
+      if (!recovered) {
+        const recovery = await recoverForFinalization();
+        if (recovery.status === 'completed') return { ok: true };
+        recovered = recovery.status === 'recovered' ? recovery.workflow : null;
+      }
+    }
+    if (recovered && pendingClockInPhase(recovered).kind === 'requirements_outstanding') {
+      setError(null);
+      return { ok: false, error: 'Complete the remaining required form.' };
+    }
+    return failFinalization(input.message, input.code, input.httpStatus);
+  }, [failFinalization, recover, recoverForFinalization]);
+
   const finalize = useCallback((): Promise<FinalizeResult> => {
     if (finalizePromiseRef.current) return finalizePromiseRef.current;
     const run = async (): Promise<FinalizeResult> => {
       if (!await isOnline()) {
         const message = 'Reconnect to finish clocking in.';
+        finalizationErrorRef.current = message;
         setError(message);
         return { ok: false, error: message };
       }
       setBusy(true);
+      finalizationErrorRef.current = null;
       setError(null);
       try {
         let current = recordRef.current?.workflow;
@@ -305,41 +369,66 @@ export function PendingClockInProvider({ children }: { children: React.ReactNode
         }
         const response = await clockingApi.finalizeClockIn({ workflowOccurrenceId: current.workflowOccurrenceId }, accessToken);
         if (response.status === 'clock_in_pending_required_forms') {
-          await acceptWorkflow(response);
-          return { ok: false, error: 'Complete the remaining required form.' };
+          const recovered = await acceptWorkflow(response);
+          return reconcileFinalizationFailure({
+            message: 'Clock-in could not be finalized yet. Your required form progress is saved.',
+            code: response.status,
+            recoveredWorkflow: recovered,
+          });
         }
         if (response.status === 'required_forms_outstanding') {
-          await recover();
-          return { ok: false, error: 'Complete the remaining required form.' };
+          return reconcileFinalizationFailure({
+            message: 'Clock-in could not be finalized yet. Your required form progress is saved.',
+            code: response.status,
+          });
         }
         if (response.status === 'clock_in_workflow_not_found') {
-          await recoverStaleWorkflow();
-          return { ok: false, error: 'This pending clock-in changed. Refresh and continue the restored workflow.' };
+          return reconcileFinalizationFailure({
+            message: 'This pending clock-in changed. Refresh and continue the restored workflow.',
+            code: response.status,
+            verifyActiveShift: true,
+          });
         }
         if (response.status === 'clock_in_workflow_forbidden') {
-          await recoverStaleWorkflow();
-          return { ok: false, error: 'This pending clock-in is no longer available for this account.' };
+          return reconcileFinalizationFailure({
+            message: 'This pending clock-in is no longer available for this account.',
+            code: response.status,
+            verifyActiveShift: true,
+          });
         }
         await commit(null);
         return { ok: true };
       } catch (finalizeError) {
         const code = errorCode(finalizeError);
         if (code === 'required_forms_outstanding') {
-          await recover();
-          return { ok: false, error: 'Complete the remaining required form.' };
+          return reconcileFinalizationFailure({
+            message: 'Clock-in could not be finalized yet. Your required form progress is saved.',
+            code,
+            httpStatus: finalizeError instanceof ApiError ? finalizeError.status : undefined,
+          });
         }
         if (code === 'clock_in_already_finalized') {
           await commit(null);
           return { ok: true };
         }
-        if (code === 'clock_in_workflow_not_found' || code === 'clock_in_workflow_forbidden') await recoverStaleWorkflow();
+        if (code === 'clock_in_workflow_not_found' || code === 'clock_in_workflow_forbidden' || code === 'offline_shift_state_conflict') {
+          return reconcileFinalizationFailure({
+            message: code === 'clock_in_workflow_forbidden'
+              ? 'This pending clock-in is no longer available for this account.'
+              : finalizeError instanceof ApiError && SAFE_CLOCK_IN_FINALIZE_ERROR_CODES.has(code)
+                ? finalizeError.message
+                : 'Clock-in could not be finalized. Your required form progress is still saved.',
+            code,
+            httpStatus: finalizeError instanceof ApiError ? finalizeError.status : undefined,
+            verifyActiveShift: true,
+          });
+        }
         const message = code === 'clock_in_workflow_forbidden'
           ? 'This pending clock-in is no longer available for this account.'
-          : code && CLOCK_IN_INTENT_ERROR_CODES.has(code) && finalizeError instanceof ApiError
+          : code && SAFE_CLOCK_IN_FINALIZE_ERROR_CODES.has(code) && finalizeError instanceof ApiError
             ? finalizeError.message
             : 'Clock-in could not be finalized. Your required form progress is still saved.';
-        setError(message);
-        return { ok: false, error: message };
+        return failFinalization(message, code, finalizeError instanceof ApiError ? finalizeError.status : undefined);
       } finally {
         setBusy(false);
       }
@@ -349,7 +438,7 @@ export function PendingClockInProvider({ children }: { children: React.ReactNode
     });
     finalizePromiseRef.current = promise;
     return promise;
-  }, [acceptWorkflow, accessToken, commit, recover, recoverForFinalization, recoverStaleWorkflow]);
+  }, [acceptWorkflow, accessToken, commit, failFinalization, reconcileFinalizationFailure, recoverForFinalization]);
 
   const syncQueued = useCallback((authoritativeWorkflow?: PendingClockInWorkflow | null) => {
     if (syncPromiseRef.current || !identityKey || !accessToken) return syncPromiseRef.current;
@@ -395,7 +484,16 @@ export function PendingClockInProvider({ children }: { children: React.ReactNode
       const refreshed = processedQueuedSubmission || authoritativeWorkflow === undefined
         ? await recover()
         : authoritativeWorkflow;
-      if (refreshed && pendingClockInPhase(refreshed).kind === 'ready_to_finalize') {
+      if (refreshed && pendingClockInPhase(refreshed).kind === 'requirements_outstanding') {
+        automaticFinalizeAttemptedRef.current.delete(refreshed.workflowOccurrenceId);
+      }
+      if (processedQueuedSubmission && refreshed) {
+        automaticFinalizeAttemptedRef.current.delete(refreshed.workflowOccurrenceId);
+      }
+      if (refreshed
+        && pendingClockInPhase(refreshed).kind === 'ready_to_finalize'
+        && !automaticFinalizeAttemptedRef.current.has(refreshed.workflowOccurrenceId)) {
+        automaticFinalizeAttemptedRef.current.add(refreshed.workflowOccurrenceId);
         const finalized = await finalize();
         if (finalized.ok) await refreshWorkContext();
       }
