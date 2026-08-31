@@ -17,6 +17,7 @@ import {
   resolveEntryPrimaryLabel,
   resolveJobTitle,
   resolveUnbillableCategoryName,
+  resolveWorkAreaName,
 } from '@/features/clocking/presentation';
 import { useEffectiveClockState } from '@/hooks/useEffectiveClockState';
 import { useAuthStore } from '@/store/authStore';
@@ -101,6 +102,7 @@ export default function ActiveShiftScreen() {
             <Text style={styles.heroLabel}>Current Activity</Text>
             <Text style={styles.heroActivity}>{entry.workType === 'non_billable' ? unbillableCategoryLabel : activityLabel}</Text>
             {entry.workType === 'job' ? <Text style={styles.heroJob}>{jobLabel}</Text> : null}
+            {resolveWorkAreaName(entry) ? <Text style={styles.heroWorkArea}>{resolveWorkAreaName(entry)}</Text> : null}
             <Text style={styles.elapsedClock}>{formatElapsedClock(effectiveClock.shiftStartedAt ?? entry.clockIn, now)}</Text>
             <Text style={styles.heroMeta}>Started {formatBusinessTime(new Date(effectiveClock.shiftStartedAt ?? entry.clockIn), businessTimeZone, { hour: 'numeric', minute: '2-digit' })}</Text>
             {effectiveClock.currentSegmentStartedAt && effectiveClock.currentSegmentStartedAt !== effectiveClock.shiftStartedAt ? (
@@ -124,6 +126,7 @@ export default function ActiveShiftScreen() {
                     </View>
                     <Text style={styles.segmentTime}>{formatEntryTimeRange(segment, segment.id === entry.id, businessTimeZone)}</Text>
                     {segment.workType === 'non_billable' ? <Text style={styles.segmentMeta}>{resolveEntryPrimaryLabel(segment, effectiveJobs)}</Text> : null}
+                    {resolveWorkAreaName(segment) ? <Text style={styles.segmentMeta}>Work Area: {resolveWorkAreaName(segment)}</Text> : null}
                   </View>
                 </View>
               ))}
@@ -162,6 +165,7 @@ const styles = StyleSheet.create({
   heroLabel: { color: '#D7E2D2', fontSize: 12, fontWeight: '700', textTransform: 'uppercase', marginTop: 6 },
   heroActivity: { color: colors.primaryText, fontSize: 24, fontWeight: '700' },
   heroJob: { color: '#E7EFE3', fontSize: 15, fontWeight: '600' },
+  heroWorkArea: { color: '#D7E2D2', fontSize: 14, fontWeight: '600' },
   heroMeta: { color: '#D7E2D2', fontSize: 14 },
   timelineSection: { gap: 8 },
   timeline: { borderTopWidth: 1, borderTopColor: colors.divider, paddingTop: 6 },

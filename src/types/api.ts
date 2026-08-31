@@ -16,6 +16,8 @@ export interface ActivityConfig {
   categories?: Array<{ id: string; label: string }>;
 }
 
+export const WORK_AREA_CLOCKING_CONTRACT_VERSION = 2 as const;
+
 export interface ApiEnvelope<T> {
   ok: boolean;
   error?: string;
@@ -49,6 +51,7 @@ export interface BootstrapResponse {
   capabilities?: {
     requiredBeforeClockInForms?: boolean;
     requiredAfterClockOutForms?: boolean;
+    workAreaClockingVersion?: number;
     [key: string]: unknown;
   };
   pendingClockInWorkflow?: PendingClockInWorkflow | null;
@@ -65,6 +68,8 @@ export interface CreateTimeCorrectionRequest {
   requestedClockInAt?: string;
   requestedClockOutAt?: string;
   requestedJobId?: string;
+  requestedWorkAreaId?: string;
+  clockingContractVersion?: number;
   requestedActivityType?: TimeEntryWorkType;
   requestedUnbillableCategoryId?: string;
   requestedUnbillableCategoryName?: string;
@@ -90,6 +95,8 @@ export interface ClockInRequest {
   employeeId: string;
   workType: TimeEntryWorkType;
   jobIds: string[];
+  workAreaId?: string;
+  clockingContractVersion?: number;
   unbillableCategoryId?: string;
   requestId: string;
   idempotencyKey: string;
@@ -114,6 +121,9 @@ export interface ClockInIntent {
   employeeId: string;
   workType: TimeEntryWorkType;
   jobIds: string[];
+  workAreaId?: string | null;
+  workAreaNameSnapshot?: string | null;
+  clockingContractVersion?: number;
   unbillableCategoryId?: string;
 }
 
@@ -209,6 +219,8 @@ export interface FinalizeClockOutRequest {
 export interface SwitchActivityRequest {
   workType: TimeEntryWorkType;
   jobIds: string[];
+  workAreaId?: string;
+  clockingContractVersion?: number;
   unbillableCategoryId?: string;
   requestId: string;
   idempotencyKey: string;

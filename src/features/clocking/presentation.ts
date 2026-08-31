@@ -66,6 +66,14 @@ export function resolveUnbillableCategoryName(entry: Pick<TimeEntry, 'workType' 
   return 'Unbillable category unavailable';
 }
 
+export function resolveWorkAreaName(entry: Pick<TimeEntry, 'workType' | 'workAreaNameSnapshot'>) {
+  if (entry.workType !== 'job') return null;
+  if (typeof entry.workAreaNameSnapshot === 'string' && entry.workAreaNameSnapshot.trim()) {
+    return entry.workAreaNameSnapshot.trim();
+  }
+  return null;
+}
+
 export function resolveEntryPrimaryLabel(entry: TimeEntry, jobs: Job[]) {
   const unbillableCategoryName = resolveUnbillableCategoryName(entry);
   if (unbillableCategoryName) return unbillableCategoryName;
@@ -142,6 +150,13 @@ export function buildEffectiveTimeEntries(entries: TimeEntry[], corrections: Tim
     const nextUnbillableCategoryName = nextWorkType === 'non_billable'
       ? (correction.requestedUnbillableCategoryName ?? entry.unbillableCategoryName)
       : undefined;
+    const changesActivityOrJob = Boolean(correction.requestedActivityType || correction.requestedJobId);
+    const nextWorkAreaId = nextWorkType === 'job'
+      ? (changesActivityOrJob ? correction.requestedWorkAreaId ?? null : entry.workAreaId)
+      : undefined;
+    const nextWorkAreaNameSnapshot = nextWorkType === 'job'
+      ? (changesActivityOrJob ? correction.requestedWorkAreaNameSnapshot ?? null : entry.workAreaNameSnapshot)
+      : undefined;
 
     return {
       ...entry,
@@ -150,6 +165,8 @@ export function buildEffectiveTimeEntries(entries: TimeEntry[], corrections: Tim
       jobId: correction.requestedJobId ?? entry.jobId,
       jobIds: nextJobIds,
       workType: nextWorkType,
+      workAreaId: nextWorkAreaId,
+      workAreaNameSnapshot: nextWorkAreaNameSnapshot,
       unbillableCategoryId: nextUnbillableCategoryId,
       unbillableCategoryName: nextUnbillableCategoryName,
     };

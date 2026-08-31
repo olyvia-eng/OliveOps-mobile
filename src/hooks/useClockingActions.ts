@@ -7,6 +7,7 @@ import { useAuthStore } from '@/store/authStore';
 import { useClockingStore } from '@/store/clockingStore';
 import { useOptionalOfflineClockStore } from '@/store/offlineClockContext';
 import type { TimeEntryWorkType } from '@/types/domain';
+import { WORK_AREA_CLOCKING_CONTRACT_VERSION } from '@/types/api';
 import { ApiError } from '@/types/errors';
 import { toUserFacingError } from '@/utils/userFacingError';
 
@@ -76,7 +77,8 @@ export function useClockingActions() {
       workType: TimeEntryWorkType,
       jobIds: string[],
       unbillableCategoryId?: string,
-      requestMeta?: { requestId: string; idempotencyKey: string }
+      requestMeta?: { requestId: string; idempotencyKey: string },
+      workArea?: { id: string; name: string },
     ) {
       const meta = requestMeta ?? createRequestMeta(employeeId);
       const online = await isOnline();
@@ -93,6 +95,9 @@ export function useClockingActions() {
             employeeId,
             workType,
             jobIds,
+            workAreaId: workType === 'job' ? workArea?.id : undefined,
+            workAreaNameSnapshot: workType === 'job' ? workArea?.name : undefined,
+            clockingContractVersion: WORK_AREA_CLOCKING_CONTRACT_VERSION,
             unbillableCategoryId: typeof unbillableCategoryId === 'string' && unbillableCategoryId.trim()
               ? unbillableCategoryId.trim()
               : undefined,
@@ -116,6 +121,8 @@ export function useClockingActions() {
           employeeId,
           workType,
           jobIds,
+          workAreaId: workType === 'job' ? workArea?.id : undefined,
+          clockingContractVersion: WORK_AREA_CLOCKING_CONTRACT_VERSION,
           unbillableCategoryId: typeof unbillableCategoryId === 'string' && unbillableCategoryId.trim()
             ? unbillableCategoryId.trim()
             : undefined,
@@ -261,7 +268,8 @@ export function useClockingActions() {
       workType: TimeEntryWorkType,
       jobIds: string[],
       unbillableCategoryId?: string,
-      requestMeta?: { requestId: string; idempotencyKey: string }
+      requestMeta?: { requestId: string; idempotencyKey: string },
+      workArea?: { id: string; name: string },
     ) {
       const employeeId = user?.employeeId;
       if (!employeeId) {
@@ -275,6 +283,9 @@ export function useClockingActions() {
           return await submitOfflineSwitchActivity({
             workType,
             jobIds,
+            workAreaId: workType === 'job' ? workArea?.id : undefined,
+            workAreaNameSnapshot: workType === 'job' ? workArea?.name : undefined,
+            clockingContractVersion: WORK_AREA_CLOCKING_CONTRACT_VERSION,
             unbillableCategoryId: typeof unbillableCategoryId === 'string' && unbillableCategoryId.trim()
               ? unbillableCategoryId.trim()
               : undefined,
@@ -298,6 +309,8 @@ export function useClockingActions() {
         const result = await clockingApi.switchActivity({
           workType,
           jobIds,
+          workAreaId: workType === 'job' ? workArea?.id : undefined,
+          clockingContractVersion: WORK_AREA_CLOCKING_CONTRACT_VERSION,
           unbillableCategoryId: typeof unbillableCategoryId === 'string' && unbillableCategoryId.trim()
             ? unbillableCategoryId.trim()
             : undefined,

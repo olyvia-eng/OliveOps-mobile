@@ -7,6 +7,7 @@ import { PrimaryActionButton } from '@/components/PrimaryActionButton';
 import { Screen } from '@/components/Screen';
 import { StatusBanner } from '@/components/StatusBanner';
 import { UnbillableCategorySelector } from '@/components/UnbillableCategorySelector';
+import { WorkAreaSelector } from '@/components/WorkAreaSelector';
 import { ActivitySelector } from '@/components/ActivitySelector';
 import { ListRow, ScreenHeader, SectionHeader } from '@/components/MobilePrimitives';
 import { scopeJobsForSession } from '@/features/clocking/scoping';
@@ -51,6 +52,7 @@ export default function ClockInScreen() {
   const [selectedWorkType, setSelectedWorkType] = useState<TimeEntryWorkType>('job');
   const [activityChosen, setActivityChosen] = useState(false);
   const [selectedJobId, setSelectedJobId] = useState('');
+  const [selectedWorkAreaId, setSelectedWorkAreaId] = useState('');
   const [selectedUnbillableCategoryId, setSelectedUnbillableCategoryId] = useState('');
   const [retryMeta, setRetryMeta] = useState<{ requestId: string; idempotencyKey: string; fingerprint: string } | null>(null);
   const [status, setStatus] = useState<string | null>(null);
@@ -90,6 +92,7 @@ export default function ClockInScreen() {
     setSelectedWorkType(intent.workType);
     setActivityChosen(true);
     setSelectedJobId(intent.jobIds[0] ?? '');
+    setSelectedWorkAreaId(intent.workAreaId ?? '');
     setSelectedUnbillableCategoryId(intent.unbillableCategoryId ?? '');
   }, [pendingClockIn.workflow?.workflowOccurrenceId, user?.employeeId]);
 
@@ -147,10 +150,30 @@ export default function ClockInScreen() {
     () => activityOptions.find((option) => option.type === selectedWorkType) ?? activityOptions[0],
     [activityOptions, selectedWorkType]
   );
+  const selectedJob = useMemo(
+    () => assignedJobs.find((job) => job.id === selectedJobId),
+    [assignedJobs, selectedJobId],
+  );
 
   const showJobSelection = activityChosen && selectedWorkType === 'job';
   const requiresJobSelection = activityChosen && selectedActivity?.requiresJob === true;
   const requiresUnbillableCategory = activityChosen && selectedWorkType === 'non_billable';
+  const requiresWorkArea = selectedWorkType === 'job' && selectedJob?.hasOperationalWorkAreas === true;
+
+  useEffect(() => {
+    if (!requiresWorkArea || !selectedJob) {
+      setSelectedWorkAreaId('');
+      return;
+    }
+    const eligible = selectedJob.eligibleOperationalWorkAreas ?? [];
+    if (eligible.length === 1) {
+      setSelectedWorkAreaId(eligible[0].id);
+      return;
+    }
+    if (!eligible.some((workArea) => workArea.id === selectedWorkAreaId)) {
+      setSelectedWorkAreaId('');
+    }
+  }, [requiresWorkArea, selectedJob, selectedWorkAreaId]);
 
   useEffect(() => {
     if (!requiresUnbillableCategory) return;
@@ -170,7 +193,11 @@ export default function ClockInScreen() {
   const canSubmit = useMemo(() => {
     if (!activityChosen) return false;
     if (!user?.employeeId) return false;
-    if (requiresJobSelection) return Boolean(selectedJobId);
+    if (requiresJobSelection) {
+      if (!selectedJobId) return false;
+      if (requiresWorkArea) return Boolean(selectedWorkAreaId);
+      return true;
+    }
     if (requiresUnbillableCategory) {
       if (unbillableCategoriesLoading) return false;
       if (Boolean(unbillableCategoriesError)) return false;
@@ -182,6 +209,8 @@ export default function ClockInScreen() {
     requiresJobSelection,
     activityChosen,
     selectedJobId,
+    requiresWorkArea,
+    selectedWorkAreaId,
     user?.employeeId,
     requiresUnbillableCategory,
     unbillableCategoriesLoading,
@@ -201,6 +230,7 @@ export default function ClockInScreen() {
     setSelectedWorkType(intent.workType);
     setActivityChosen(true);
     setSelectedJobId(intent.jobIds[0] ?? '');
+    setSelectedWorkAreaId(intent.workAreaId ?? '');
     setSelectedUnbillableCategoryId(intent.unbillableCategoryId ?? '');
     setAdvisoryForms(clockInWorkflow.forms.slice(clockInWorkflow.completedCount));
 
@@ -221,6 +251,9 @@ export default function ClockInScreen() {
       ? []
       : (selectedJobId ? [selectedJobId] : []));
     const unbillableCategoryId = intentOverride?.unbillableCategoryId ?? selectedUnbillableCategoryId;
+    const workAreaId = intentOverride?.workAreaId ?? selectedWorkAreaId;
+    const targetJob = assignedJobs.find((job) => job.id === jobIds[0]);
+    const selectedWorkArea = targetJob?.eligibleOperationalWorkAreas?.find((workArea) => workArea.id === workAreaId);
 
     if (!employeeId || employeeId !== user?.employeeId) {
       setError('Employee profile is not linked to this account.');
@@ -234,6 +267,13 @@ export default function ClockInScreen() {
 
     if (workType === 'job' && jobIds.length === 0) {
       setError('Select an assigned job before clocking in.');
+      return;
+    }
+
+    if (workType === 'job' && targetJob?.hasOperationalWorkAreas === true && !selectedWorkArea) {
+      setError(targetJob.eligibleOperationalWorkAreas?.length
+        ? 'Select a Work Area before clocking in.'
+        : 'This Job has no Work Areas available for clocking.');
       return;
     }
 
@@ -292,6 +332,7 @@ export default function ClockInScreen() {
             employeeId,
             workType,
             jobIds,
+            workAreaId: workType === 'job' ? selectedWorkArea?.id : undefined,
             unbillableCategoryId: workType === 'non_billable' ? unbillableCategoryId : undefined,
           },
           forms,
@@ -302,7 +343,7 @@ export default function ClockInScreen() {
       advisoryAcceptedRef.current = true;
     }
 
-    const fingerprint = JSON.stringify({ employeeId, workType, jobIds, unbillableCategoryId: workType === 'non_billable' ? unbillableCategoryId : undefined });
+    const fingerprint = JSON.stringify({ employeeId, workType, jobIds, workAreaId: workType === 'job' ? selectedWorkArea?.id : undefined, unbillableCategoryId: workType === 'non_billable' ? unbillableCategoryId : undefined });
     const reusableMeta = metaOverride?.fingerprint === fingerprint
       ? metaOverride
       : retryMeta?.fingerprint === fingerprint
@@ -311,13 +352,22 @@ export default function ClockInScreen() {
     const meta = { requestId: reusableMeta.requestId, idempotencyKey: reusableMeta.idempotencyKey };
     setRetryMeta({ ...meta, fingerprint });
 
-    const result = await clockIn(
-      employeeId,
-      workType,
-      jobIds,
-      workType === 'non_billable' ? unbillableCategoryId : undefined,
-      meta,
-    );
+    const result = selectedWorkArea
+      ? await clockIn(
+          employeeId,
+          workType,
+          jobIds,
+          undefined,
+          meta,
+          { id: selectedWorkArea.id, name: selectedWorkArea.name },
+        )
+      : await clockIn(
+          employeeId,
+          workType,
+          jobIds,
+          workType === 'non_billable' ? unbillableCategoryId : undefined,
+          meta,
+        );
 
     if (!result.ok) {
       setError(result.error || 'Clock-in failed.');
@@ -359,6 +409,7 @@ export default function ClockInScreen() {
               setSelectedWorkType(type);
               setActivityChosen(true);
               setSelectedJobId('');
+              setSelectedWorkAreaId('');
               setSelectedUnbillableCategoryId('');
               setAdvisoryForms([]);
               advisoryAcceptedRef.current = false;
@@ -388,6 +439,7 @@ export default function ClockInScreen() {
                       selected={selected}
                       onPress={() => {
                         setSelectedJobId(job.id);
+                        setSelectedWorkAreaId('');
                         setAdvisoryForms([]);
                         advisoryAcceptedRef.current = false;
                       }}
@@ -397,6 +449,14 @@ export default function ClockInScreen() {
               </View>
             )}
           </View>
+        ) : null}
+
+        {showJobSelection && selectedJob ? (
+          <WorkAreaSelector
+            job={selectedJob}
+            selectedWorkAreaId={selectedWorkAreaId}
+            onSelect={setSelectedWorkAreaId}
+          />
         ) : null}
 
         {activityChosen && selectedWorkType === 'drive_time' ? (

@@ -62,12 +62,11 @@ const mockUseAuthStore = jest.fn(() => ({
   },
 }));
 
+let mockJobs: any[] = [];
 const mockUseClockingStore = jest.fn(() => ({
   currentActiveEntryId: null,
   timeEntries: [],
-  jobs: [
-    { id: 'job-1', title: 'Site A', status: 'scheduled', assignedEmployeeIds: ['emp-1'] },
-  ],
+  jobs: mockJobs,
 }));
 
 jest.mock('expo-router', () => ({
@@ -171,6 +170,9 @@ import { router } from 'expo-router';
 
 describe('ClockInScreen', () => {
   beforeEach(() => {
+    mockJobs = [
+      { id: 'job-1', title: 'Site A', status: 'scheduled', assignedEmployeeIds: ['emp-1'] },
+    ];
     mockRouteFocused = true;
     (router.replace as jest.Mock).mockReset();
     (router.push as jest.Mock).mockReset();
@@ -354,6 +356,65 @@ describe('ClockInScreen', () => {
 
     expect(mockClockIn).toHaveBeenCalledWith('emp-1', 'job', ['job-1'], undefined, { requestId: 'req-1', idempotencyKey: 'key-1' });
     expect(router.replace).toHaveBeenCalledWith('/active-shift');
+  });
+
+  it('requires an explicit Work Area when a Job has multiple eligible areas', async () => {
+    mockJobs = [{
+      id: 'job-1',
+      title: 'Site A',
+      status: 'scheduled',
+      assignedEmployeeIds: ['emp-1'],
+      hasOperationalWorkAreas: true,
+      eligibleOperationalWorkAreas: [
+        { id: 'area-1', name: 'Foundation', status: 'in_progress' },
+        { id: 'area-2', name: 'Framing', status: 'not_started' },
+      ],
+    }];
+    mockClockIn.mockResolvedValue({ ok: true });
+    let tree: any;
+    await act(async () => { tree = create(<ClockInScreen />); });
+    await act(async () => { tree.root.findByProps({ testID: 'activity-option-job' }).props.onPress(); });
+    await act(async () => { tree.root.findByProps({ testID: 'job-option-job-1' }).props.onPress(); });
+
+    expect(tree.root.findByProps({ label: 'Clock In' }).props.disabled).toBe(true);
+    await act(async () => { tree.root.findByProps({ testID: 'work-area-option-area-2' }).props.onPress(); });
+    await act(async () => { tree.root.findByProps({ label: 'Clock In' }).props.onPress(); });
+
+    expect(mockClockIn).toHaveBeenCalledWith(
+      'emp-1',
+      'job',
+      ['job-1'],
+      undefined,
+      expect.any(Object),
+      { id: 'area-2', name: 'Framing' },
+    );
+  });
+
+  it('automatically selects the only eligible Work Area', async () => {
+    mockJobs = [{
+      id: 'job-1',
+      title: 'Site A',
+      status: 'scheduled',
+      assignedEmployeeIds: ['emp-1'],
+      hasOperationalWorkAreas: true,
+      eligibleOperationalWorkAreas: [{ id: 'area-1', name: 'Foundation', status: 'in_progress' }],
+    }];
+    mockClockIn.mockResolvedValue({ ok: true });
+    let tree: any;
+    await act(async () => { tree = create(<ClockInScreen />); });
+    await act(async () => { tree.root.findByProps({ testID: 'activity-option-job' }).props.onPress(); });
+    await act(async () => { tree.root.findByProps({ testID: 'job-option-job-1' }).props.onPress(); });
+
+    expect(tree.root.findByProps({ label: 'Clock In' }).props.disabled).toBe(false);
+    await act(async () => { tree.root.findByProps({ label: 'Clock In' }).props.onPress(); });
+    expect(mockClockIn).toHaveBeenCalledWith(
+      'emp-1',
+      'job',
+      ['job-1'],
+      undefined,
+      expect.any(Object),
+      { id: 'area-1', name: 'Foundation' },
+    );
   });
 
   it('keeps before_starting_job Forms advisory without locally presenting before_clock_in Forms', async () => {

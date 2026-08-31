@@ -1,7 +1,8 @@
 import type { ClockInRequest, ClockOutRequest, SwitchActivityRequest } from '@/types/api';
 import type { Job, TimeEntry, UnbillableCategory } from '@/types/domain';
 
-export const OFFLINE_CLOCK_SCHEMA_VERSION = 1 as const;
+export const OFFLINE_CLOCK_SCHEMA_VERSION = 2 as const;
+export const SUPPORTED_OFFLINE_CLOCK_SCHEMA_VERSIONS = new Set([1, OFFLINE_CLOCK_SCHEMA_VERSION]);
 
 export type OfflineClockStatus = 'pending' | 'syncing' | 'needs_attention' | 'synced';
 export type EffectiveClockStatus =
@@ -11,8 +12,12 @@ export type EffectiveClockStatus =
   | 'clocked_in_pending'
   | 'needs_attention';
 
-export type OfflineClockInPayload = Omit<ClockInRequest, 'requestId' | 'idempotencyKey' | 'clientOccurredAt'>;
-export type OfflineSwitchPayload = Omit<SwitchActivityRequest, 'requestId' | 'idempotencyKey' | 'clientOccurredAt'>;
+export type OfflineClockInPayload = Omit<ClockInRequest, 'requestId' | 'idempotencyKey' | 'clientOccurredAt'> & {
+  workAreaNameSnapshot?: string;
+};
+export type OfflineSwitchPayload = Omit<SwitchActivityRequest, 'requestId' | 'idempotencyKey' | 'clientOccurredAt'> & {
+  workAreaNameSnapshot?: string;
+};
 export type OfflineClockOutPayload = Omit<
   ClockOutRequest,
   'requestId' | 'idempotencyKey' | 'clientOccurredAt' | 'entryId' | 'photoAttachmentFileId' | 'photoAttachmentFileIds'
@@ -21,7 +26,7 @@ export type OfflineClockOutPayload = Omit<
 };
 
 export type OfflineClockCommand = {
-  schemaVersion: typeof OFFLINE_CLOCK_SCHEMA_VERSION;
+  schemaVersion: 1 | typeof OFFLINE_CLOCK_SCHEMA_VERSION;
   id: string;
   identityKey: string;
   employeeId: string;
@@ -53,7 +58,7 @@ export type OfflineClockCache = {
   schemaVersion: typeof OFFLINE_CLOCK_SCHEMA_VERSION;
   identityKey: string;
   updatedAt: string;
-  jobs: Array<Pick<Job, 'id' | 'title' | 'status'>>;
+  jobs: Array<Pick<Job, 'id' | 'title' | 'status' | 'hasOperationalWorkAreas' | 'eligibleOperationalWorkAreas'>>;
   unbillableCategories: Array<Pick<UnbillableCategory, 'id' | 'name' | 'active'>>;
   driveTimeAvailable: boolean;
   jobWorkAvailable: boolean;
@@ -70,7 +75,7 @@ export type EffectiveClockState = {
   currentSegmentStartedAt?: string;
   currentActivity: Pick<
     TimeEntry,
-    'workType' | 'jobId' | 'jobIds' | 'unbillableCategoryId' | 'unbillableCategoryName'
+    'workType' | 'jobId' | 'jobIds' | 'workAreaId' | 'workAreaNameSnapshot' | 'unbillableCategoryId' | 'unbillableCategoryName'
   > | null;
   localShiftId: string | null;
   pendingCount: number;

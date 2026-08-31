@@ -7,6 +7,7 @@ import { ScreenHeader, SectionHeader, StatusBadge } from '@/components/MobilePri
 import { Screen } from '@/components/Screen';
 import { StatusBanner } from '@/components/StatusBanner';
 import { UnbillableCategorySelector } from '@/components/UnbillableCategorySelector';
+import { WorkAreaSelector } from '@/components/WorkAreaSelector';
 import { createRequestMeta } from '@/services/requestGuards';
 import {
   formatEntryTimeRange,
@@ -22,7 +23,7 @@ import { useAuthStore } from '@/store/authStore';
 import { useClockingStore } from '@/store/clockingStore';
 import { useOptionalOfflineClockStore } from '@/store/offlineClockContext';
 import { colors } from '@/theme/colors';
-import type { CreateTimeCorrectionRequest } from '@/types/api';
+import { WORK_AREA_CLOCKING_CONTRACT_VERSION, type CreateTimeCorrectionRequest } from '@/types/api';
 import type { TimeCorrectionRequestType, TimeEntryWorkType } from '@/types/domain';
 import { businessDateKey, businessLocalDateTimeToIso, formatBusinessTime } from '@/utils/businessTime';
 import { returnToParentOrReplace } from '@/utils/navigation';
@@ -82,6 +83,7 @@ export default function RequestTimeCorrectionScreen() {
     : '17:00');
   const [requestedActivity, setRequestedActivity] = useState<TimeEntryWorkType>(params.requestedActivity ?? 'job');
   const [requestedJobId, setRequestedJobId] = useState<string>(params.requestedJobId ?? '');
+  const [requestedWorkAreaId, setRequestedWorkAreaId] = useState('');
   const [requestedUnbillableCategoryId, setRequestedUnbillableCategoryId] = useState<string>(params.requestedUnbillableCategoryId ?? '');
   const [reason, setReason] = useState(typeof params.offlineReason === 'string' ? params.offlineReason : '');
   const [retryMeta, setRetryMeta] = useState<{ requestId: string; idempotencyKey: string } | null>(null);
@@ -100,6 +102,28 @@ export default function RequestTimeCorrectionScreen() {
 
   const requiresActivitySelection = requestType === 'wrong_activity' || requestType === 'forgot_clock_in';
   const requiresUnbillableCategory = requiresActivitySelection && requestedActivity === 'non_billable';
+  const requiresJobSelection = requestType === 'wrong_job'
+    || ((requestType === 'wrong_activity' || requestType === 'forgot_clock_in') && requestedActivity === 'job');
+  const selectedJob = useMemo(
+    () => jobs.find((job) => job.id === requestedJobId),
+    [jobs, requestedJobId],
+  );
+  const requiresWorkArea = requiresJobSelection && selectedJob?.hasOperationalWorkAreas === true;
+
+  useEffect(() => {
+    if (!requiresWorkArea || !selectedJob) {
+      setRequestedWorkAreaId('');
+      return;
+    }
+    const eligible = selectedJob.eligibleOperationalWorkAreas ?? [];
+    if (eligible.length === 1) {
+      setRequestedWorkAreaId(eligible[0].id);
+      return;
+    }
+    if (!eligible.some((workArea) => workArea.id === requestedWorkAreaId)) {
+      setRequestedWorkAreaId('');
+    }
+  }, [requestedWorkAreaId, requiresWorkArea, selectedJob]);
 
   useEffect(() => {
     if (!requiresUnbillableCategory) return;
@@ -127,6 +151,7 @@ export default function RequestTimeCorrectionScreen() {
       ...meta,
       requestType,
       reason: reason.trim(),
+      clockingContractVersion: WORK_AREA_CLOCKING_CONTRACT_VERSION,
     };
 
     if (targetEntryId) {
@@ -139,6 +164,7 @@ export default function RequestTimeCorrectionScreen() {
       payload.requestedActivityType = requestedActivity;
       if (requestedActivity === 'job') {
         payload.requestedJobId = requestedJobId || undefined;
+        payload.requestedWorkAreaId = requestedWorkAreaId || undefined;
       }
       if (requestedActivity === 'non_billable') {
         payload.requestedUnbillableCategoryId = requestedUnbillableCategoryId || undefined;
@@ -161,12 +187,14 @@ export default function RequestTimeCorrectionScreen() {
     if (requestType === 'wrong_job') {
       payload.requestedActivityType = 'job';
       payload.requestedJobId = requestedJobId || undefined;
+      payload.requestedWorkAreaId = requestedWorkAreaId || undefined;
     }
 
     if (requestType === 'wrong_activity') {
       payload.requestedActivityType = requestedActivity;
       if (requestedActivity === 'job') {
         payload.requestedJobId = requestedJobId || undefined;
+        payload.requestedWorkAreaId = requestedWorkAreaId || undefined;
       }
       if (requestedActivity === 'non_billable') {
         payload.requestedUnbillableCategoryId = requestedUnbillableCategoryId || undefined;
@@ -217,6 +245,13 @@ export default function RequestTimeCorrectionScreen() {
       && requestedActivity === 'job'
       && !requestedJobId) {
       setError('Choose a correct job before submitting.');
+      return;
+    }
+
+    if (requiresWorkArea && !requestedWorkAreaId) {
+      setError(selectedJob?.eligibleOperationalWorkAreas?.length
+        ? 'Choose a Work Area before submitting.'
+        : 'This Job has no Work Areas available for clocking.');
       return;
     }
 
@@ -390,7 +425,11 @@ export default function RequestTimeCorrectionScreen() {
         <ActivitySelector
           heading="Choose correct activity"
           selectedType={requestedActivity}
-          onSelect={setRequestedActivity}
+          onSelect={(activity) => {
+            setRequestedActivity(activity);
+            setRequestedJobId('');
+            setRequestedWorkAreaId('');
+          }}
         />
       ) : null}
 
@@ -414,13 +453,25 @@ export default function RequestTimeCorrectionScreen() {
             <Pressable
               key={job.id}
               style={[styles.option, requestedJobId === job.id ? styles.optionSelected : null]}
-              onPress={() => setRequestedJobId(job.id)}
+              onPress={() => {
+                setRequestedJobId(job.id);
+                setRequestedWorkAreaId('');
+              }}
               testID={`job-option-${job.id}`}
             >
               <Text style={styles.optionLabel}>{job.title || 'Untitled job'}</Text>
             </Pressable>
           ))}
         </View>
+      ) : null}
+
+      {requiresJobSelection && selectedJob ? (
+        <WorkAreaSelector
+          job={selectedJob}
+          selectedWorkAreaId={requestedWorkAreaId}
+          onSelect={setRequestedWorkAreaId}
+          testIDPrefix="correction-work-area-option"
+        />
       ) : null}
 
       <View style={styles.section}>
@@ -451,6 +502,7 @@ export default function RequestTimeCorrectionScreen() {
         disabled={
           submitting
           || requiresClockOutFirst
+          || (requiresWorkArea && !requestedWorkAreaId)
           || (requiresUnbillableCategory && (
             unbillableCategoriesLoading
             || Boolean(unbillableCategoriesError)

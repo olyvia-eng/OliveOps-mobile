@@ -1,6 +1,6 @@
 import * as SQLite from 'expo-sqlite';
 import type { OfflineClockCache, OfflineClockCommand, OfflineShiftMapping } from '@/features/offlineClocking/types';
-import { OFFLINE_CLOCK_SCHEMA_VERSION } from '@/features/offlineClocking/types';
+import { SUPPORTED_OFFLINE_CLOCK_SCHEMA_VERSIONS } from '@/features/offlineClocking/types';
 
 const DATABASE_NAME = 'oliveops-offline-clock.db';
 let databasePromise: ReturnType<typeof SQLite.openDatabaseAsync> | null = null;
@@ -50,7 +50,7 @@ export async function loadOfflineCommands(identityKey: string): Promise<OfflineC
   );
   const commands = rows.map((row) => JSON.parse(row.command_json) as OfflineClockCommand);
   for (const command of commands) {
-    if (command.schemaVersion === OFFLINE_CLOCK_SCHEMA_VERSION) continue;
+    if (SUPPORTED_OFFLINE_CLOCK_SCHEMA_VERSIONS.has(command.schemaVersion)) continue;
     const attention = {
       ...command,
       status: 'needs_attention' as const,

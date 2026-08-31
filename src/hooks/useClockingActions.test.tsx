@@ -321,7 +321,12 @@ describe('useClockingActions bootstrap behavior', () => {
 
     expect(result).toEqual({ ok: true, pendingSync: true });
     expect(submitClockIn).toHaveBeenCalledWith(
-      { employeeId: 'emp-1', workType: 'job', jobIds: ['job-1'], unbillableCategoryId: undefined },
+      expect.objectContaining({
+        employeeId: 'emp-1',
+        workType: 'job',
+        jobIds: ['job-1'],
+        clockingContractVersion: 2,
+      }),
       expect.objectContaining({ requestId: expect.any(String), idempotencyKey: expect.any(String) }),
     );
     expect(mockClockIn).not.toHaveBeenCalled();

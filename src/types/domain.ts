@@ -22,6 +22,12 @@ export type TimeCorrectionRequestType =
   | 'other';
 export type TimeCorrectionRequestStatus = 'pending' | 'approved' | 'rejected';
 
+export interface JobWorkArea {
+  id: string;
+  name: string;
+  status: 'not_started' | 'in_progress';
+}
+
 export interface TimeCorrectionSegmentRequest {
   id: string;
   startAt: string;
@@ -40,6 +46,9 @@ export interface TimeCorrectionRequest {
   requestedClockInAt?: string;
   requestedClockOutAt?: string;
   requestedJobId?: string;
+  requestedWorkAreaId?: string | null;
+  requestedWorkAreaNameSnapshot?: string | null;
+  clockingContractVersion?: number;
   requestedActivityType?: TimeEntryWorkType;
   requestedUnbillableCategoryId?: string;
   requestedUnbillableCategoryName?: string;
@@ -54,6 +63,8 @@ export interface TimeCorrectionRequest {
   originalClockOutAt?: string;
   originalJobId?: string;
   originalJobIds?: string[];
+  originalWorkAreaId?: string | null;
+  originalWorkAreaNameSnapshot?: string | null;
   originalActivityType?: TimeEntryWorkType;
   originalUnbillableCategoryId?: string;
   originalUnbillableCategoryName?: string;
@@ -66,6 +77,8 @@ export interface Job {
   title: string;
   status: 'scheduled' | 'in_progress' | 'on_hold' | 'completed' | 'cancelled';
   assignedEmployeeIds: string[];
+  hasOperationalWorkAreas?: boolean;
+  eligibleOperationalWorkAreas?: JobWorkArea[];
 }
 
 export interface UnbillableCategory {
@@ -84,6 +97,8 @@ export interface TimeEntry {
   jobId?: string;
   jobIds?: string[];
   workType: TimeEntryWorkType;
+  workAreaId?: string | null;
+  workAreaNameSnapshot?: string | null;
   unbillableCategoryId?: string;
   unbillableCategoryName?: string;
   clockIn: string;

@@ -9,6 +9,7 @@ export type FormsWorkflowIntent =
     employeeId: string;
     workType: TimeEntryWorkType;
     jobIds: string[];
+    workAreaId?: string;
     unbillableCategoryId?: string;
   }
   | {
@@ -17,6 +18,7 @@ export type FormsWorkflowIntent =
     activeEntryId: string;
     workType: TimeEntryWorkType;
     jobIds: string[];
+    workAreaId?: string;
     unbillableCategoryId?: string;
   }
   | {

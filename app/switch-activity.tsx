@@ -7,6 +7,7 @@ import { PrimaryActionButton } from '@/components/PrimaryActionButton';
 import { Screen } from '@/components/Screen';
 import { StatusBanner } from '@/components/StatusBanner';
 import { UnbillableCategorySelector } from '@/components/UnbillableCategorySelector';
+import { WorkAreaSelector } from '@/components/WorkAreaSelector';
 import { ActivitySelector } from '@/components/ActivitySelector';
 import { ListRow, ScreenHeader, SectionHeader } from '@/components/MobilePrimitives';
 import { getWorkTypeLabel, resolveJobTitle } from '@/features/clocking/presentation';
@@ -50,6 +51,7 @@ export default function SwitchActivityScreen() {
   const [selectedWorkType, setSelectedWorkType] = useState<TimeEntryWorkType>('job');
   const [activityChosen, setActivityChosen] = useState(false);
   const [selectedJobId, setSelectedJobId] = useState('');
+  const [selectedWorkAreaId, setSelectedWorkAreaId] = useState('');
   const [selectedUnbillableCategoryId, setSelectedUnbillableCategoryId] = useState('');
   const [retryMeta, setRetryMeta] = useState<{ requestId: string; idempotencyKey: string; fingerprint: string } | null>(null);
   const [status, setStatus] = useState<string | null>(null);
@@ -106,10 +108,30 @@ export default function SwitchActivityScreen() {
     () => activityOptions.find((option) => option.type === selectedWorkType) ?? activityOptions[0],
     [activityOptions, selectedWorkType]
   );
+  const selectedJob = useMemo(
+    () => assignedJobs.find((job) => job.id === selectedJobId),
+    [assignedJobs, selectedJobId],
+  );
 
   const showJobSelection = activityChosen && selectedWorkType === 'job';
   const requiresJobSelection = activityChosen && selectedActivity?.requiresJob === true;
   const requiresUnbillableCategory = activityChosen && selectedWorkType === 'non_billable';
+  const requiresWorkArea = selectedWorkType === 'job' && selectedJob?.hasOperationalWorkAreas === true;
+
+  useEffect(() => {
+    if (!requiresWorkArea || !selectedJob) {
+      setSelectedWorkAreaId('');
+      return;
+    }
+    const eligible = selectedJob.eligibleOperationalWorkAreas ?? [];
+    if (eligible.length === 1) {
+      setSelectedWorkAreaId(eligible[0].id);
+      return;
+    }
+    if (!eligible.some((workArea) => workArea.id === selectedWorkAreaId)) {
+      setSelectedWorkAreaId('');
+    }
+  }, [requiresWorkArea, selectedJob, selectedWorkAreaId]);
 
   useEffect(() => {
     if (!requiresUnbillableCategory) return;
@@ -129,7 +151,11 @@ export default function SwitchActivityScreen() {
   const canSubmit = useMemo(() => {
     if (!activityChosen) return false;
     if (!activeEntry) return false;
-    if (requiresJobSelection) return Boolean(selectedJobId);
+    if (requiresJobSelection) {
+      if (!selectedJobId) return false;
+      if (requiresWorkArea) return Boolean(selectedWorkAreaId);
+      return true;
+    }
     if (requiresUnbillableCategory) {
       if (unbillableCategoriesLoading) return false;
       if (Boolean(unbillableCategoriesError)) return false;
@@ -142,6 +168,8 @@ export default function SwitchActivityScreen() {
     activityChosen,
     requiresJobSelection,
     selectedJobId,
+    requiresWorkArea,
+    selectedWorkAreaId,
     requiresUnbillableCategory,
     unbillableCategoriesLoading,
     unbillableCategoriesError,
@@ -163,6 +191,7 @@ export default function SwitchActivityScreen() {
     setSelectedWorkType(intent.workType);
     setActivityChosen(true);
     setSelectedJobId(intent.jobIds[0] ?? '');
+    setSelectedWorkAreaId(intent.workAreaId ?? '');
     setSelectedUnbillableCategoryId(intent.unbillableCategoryId ?? '');
     setAdvisoryForms(preSwitchWorkflow.forms.slice(preSwitchWorkflow.completedCount));
 
@@ -183,6 +212,9 @@ export default function SwitchActivityScreen() {
       ? []
       : (selectedJobId ? [selectedJobId] : []));
     const unbillableCategoryId = intentOverride?.unbillableCategoryId ?? selectedUnbillableCategoryId;
+    const workAreaId = intentOverride?.workAreaId ?? selectedWorkAreaId;
+    const targetJob = assignedJobs.find((job) => job.id === jobIds[0]);
+    const selectedWorkArea = targetJob?.eligibleOperationalWorkAreas?.find((workArea) => workArea.id === workAreaId);
 
     if (!activeEntry || !employeeId || employeeId !== user?.employeeId) {
       setError('No active shift found.');
@@ -202,6 +234,13 @@ export default function SwitchActivityScreen() {
 
     if (workType === 'job' && jobIds.length === 0) {
       setError('Select a job before switching to job work.');
+      return;
+    }
+
+    if (workType === 'job' && targetJob?.hasOperationalWorkAreas === true && !selectedWorkArea) {
+      setError(targetJob.eligibleOperationalWorkAreas?.length
+        ? 'Select a Work Area before switching activity.'
+        : 'This Job has no Work Areas available for clocking.');
       return;
     }
 
@@ -247,6 +286,7 @@ export default function SwitchActivityScreen() {
             activeEntryId: activeEntry.id,
             workType,
             jobIds,
+            workAreaId: workType === 'job' ? selectedWorkArea?.id : undefined,
             unbillableCategoryId: workType === 'non_billable' ? unbillableCategoryId : undefined,
           },
           forms: advisory.forms,
@@ -257,7 +297,7 @@ export default function SwitchActivityScreen() {
       advisoryAcceptedRef.current = true;
     }
 
-    const fingerprint = JSON.stringify({ employeeId, activeEntryId: activeEntry.id, workType, jobIds, unbillableCategoryId: workType === 'non_billable' ? unbillableCategoryId : undefined });
+    const fingerprint = JSON.stringify({ employeeId, activeEntryId: activeEntry.id, workType, jobIds, workAreaId: workType === 'job' ? selectedWorkArea?.id : undefined, unbillableCategoryId: workType === 'non_billable' ? unbillableCategoryId : undefined });
     const reusableMeta = metaOverride?.fingerprint === fingerprint
       ? metaOverride
       : retryMeta?.fingerprint === fingerprint
@@ -266,12 +306,20 @@ export default function SwitchActivityScreen() {
     const meta = { requestId: reusableMeta.requestId, idempotencyKey: reusableMeta.idempotencyKey };
     setRetryMeta({ ...meta, fingerprint });
 
-    const result = await switchActivity(
-      workType,
-      jobIds,
-      workType === 'non_billable' ? unbillableCategoryId : undefined,
-      meta,
-    );
+    const result = selectedWorkArea
+      ? await switchActivity(
+          workType,
+          jobIds,
+          undefined,
+          meta,
+          { id: selectedWorkArea.id, name: selectedWorkArea.name },
+        )
+      : await switchActivity(
+          workType,
+          jobIds,
+          workType === 'non_billable' ? unbillableCategoryId : undefined,
+          meta,
+        );
     if (!result.ok) {
       setError(result.error || 'Could not switch activity.');
       return;
@@ -356,6 +404,7 @@ export default function SwitchActivityScreen() {
                 setSelectedWorkType(type);
                 setActivityChosen(true);
                 setSelectedJobId('');
+                setSelectedWorkAreaId('');
                 setSelectedUnbillableCategoryId('');
                 setAdvisoryForms([]);
                 advisoryAcceptedRef.current = false;
@@ -385,6 +434,7 @@ export default function SwitchActivityScreen() {
                           selected={selected}
                           onPress={() => {
                             setSelectedJobId(job.id);
+                            setSelectedWorkAreaId('');
                             setAdvisoryForms([]);
                             advisoryAcceptedRef.current = false;
                           }}
@@ -394,6 +444,15 @@ export default function SwitchActivityScreen() {
                   </View>
                 )}
               </View>
+            ) : null}
+
+            {showJobSelection && selectedJob ? (
+              <WorkAreaSelector
+                job={selectedJob}
+                selectedWorkAreaId={selectedWorkAreaId}
+                onSelect={setSelectedWorkAreaId}
+                testIDPrefix="switch-work-area-option"
+              />
             ) : null}
 
             {activityChosen && selectedWorkType === 'drive_time' ? (

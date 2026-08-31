@@ -6,6 +6,7 @@ import * as clockingApi from '@/api/clockingApi';
 import { buildEffectiveClockState, nextReplayableCommand } from '@/features/offlineClocking/model';
 import {
   OFFLINE_CLOCK_SCHEMA_VERSION,
+  SUPPORTED_OFFLINE_CLOCK_SCHEMA_VERSIONS,
   type OfflineClockCache,
   type OfflineClockCommand,
   type OfflineClockInPayload,
@@ -126,7 +127,17 @@ export function OfflineClockProvider({ children }: { children: React.ReactNode }
       schemaVersion: OFFLINE_CLOCK_SCHEMA_VERSION,
       identityKey,
       updatedAt: new Date().toISOString(),
-      jobs: update.jobs?.map(({ id, title, status: jobStatus }) => ({ id, title, status: jobStatus }))
+      jobs: update.jobs?.map(({ id, title, status: jobStatus, hasOperationalWorkAreas, eligibleOperationalWorkAreas }) => ({
+        id,
+        title,
+        status: jobStatus,
+        hasOperationalWorkAreas,
+        eligibleOperationalWorkAreas: eligibleOperationalWorkAreas?.map(({ id: workAreaId, name, status: workAreaStatus }) => ({
+          id: workAreaId,
+          name,
+          status: workAreaStatus,
+        })),
+      }))
         ?? previous?.jobs
         ?? [],
       unbillableCategories: update.unbillableCategories?.map(({ id, name, active }) => ({ id, name, active }))
@@ -172,7 +183,7 @@ export function OfflineClockProvider({ children }: { children: React.ReactNode }
       if (cancelled || identityRef.current !== identityKey) return;
       const supported = stored
         .filter((command) => !obsoleteShiftIds.has(command.localShiftId))
-        .map((command) => command.schemaVersion === OFFLINE_CLOCK_SCHEMA_VERSION
+        .map((command) => SUPPORTED_OFFLINE_CLOCK_SCHEMA_VERSIONS.has(command.schemaVersion)
         ? command
         : { ...command, status: 'needs_attention' as const, lastErrorCategory: 'unsupported_schema' });
       setCommands(supported);

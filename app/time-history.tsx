@@ -13,6 +13,7 @@ import {
   hasPendingCorrectionForEntry,
   isAuthoritativeActiveEntry,
   resolveEntryPrimaryLabel,
+  resolveWorkAreaName,
 } from '@/features/clocking/presentation';
 import { useEffectiveClockState } from '@/hooks/useEffectiveClockState';
 import { useAuthStore } from '@/store/authStore';
@@ -93,6 +94,7 @@ export default function TimeHistoryScreen() {
               ) : null}
             </View>
             <Text style={styles.entryRange}>Today · {formatEntryTimeRange(item, isAuthoritativeActiveEntry(item.id, authoritativeActiveEntryId), businessTimeZone)}</Text>
+            {resolveWorkAreaName(item) ? <Text style={styles.entryRange}>Work Area: {resolveWorkAreaName(item)}</Text> : null}
             <Pressable
               testID={`request-correction-${item.id}`}
               accessibilityRole="button"

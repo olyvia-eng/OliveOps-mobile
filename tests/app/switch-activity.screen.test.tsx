@@ -48,12 +48,10 @@ const mockUseAuthStore = jest.fn(() => ({
   },
 }));
 
+let mockJobs: any[] = [];
 const mockUseClockingStore = jest.fn(() => ({
   currentActiveEntryId: 'entry-1',
-  jobs: [
-    { id: 'job-1', title: 'Site A', status: 'scheduled', assignedEmployeeIds: ['emp-1'] },
-    { id: 'job-2', title: 'Warehouse', status: 'scheduled', assignedEmployeeIds: ['emp-1'] },
-  ],
+  jobs: mockJobs,
   timeEntries: [
     {
       id: 'entry-2',
@@ -163,6 +161,10 @@ import { router } from 'expo-router';
 
 describe('SwitchActivityScreen', () => {
   beforeEach(() => {
+    mockJobs = [
+      { id: 'job-1', title: 'Site A', status: 'scheduled', assignedEmployeeIds: ['emp-1'] },
+      { id: 'job-2', title: 'Warehouse', status: 'scheduled', assignedEmployeeIds: ['emp-1'] },
+    ];
     (router.replace as jest.Mock).mockReset();
     (router.dismissTo as jest.Mock).mockReset();
     mockSwitchActivity.mockReset();
@@ -213,6 +215,34 @@ describe('SwitchActivityScreen', () => {
     expect(selectedJob.props.style).toEqual(expect.arrayContaining([
       expect.objectContaining({ backgroundColor: '#EBF1E7', borderColor: '#56734A' }),
     ]));
+  });
+
+  it('clears the Work Area when switching the selected Job', async () => {
+    mockJobs = [
+      {
+        id: 'job-1', title: 'Site A', status: 'scheduled', assignedEmployeeIds: ['emp-1'], hasOperationalWorkAreas: true,
+        eligibleOperationalWorkAreas: [
+          { id: 'area-1', name: 'Foundation', status: 'in_progress' },
+          { id: 'area-2', name: 'Framing', status: 'not_started' },
+        ],
+      },
+      {
+        id: 'job-2', title: 'Warehouse', status: 'scheduled', assignedEmployeeIds: ['emp-1'], hasOperationalWorkAreas: true,
+        eligibleOperationalWorkAreas: [
+          { id: 'area-3', name: 'Loading Bay', status: 'in_progress' },
+          { id: 'area-4', name: 'Office', status: 'not_started' },
+        ],
+      },
+    ];
+    let tree: any;
+    await act(async () => { tree = create(<SwitchActivityScreen />); });
+    await act(async () => { tree.root.findByProps({ testID: 'switch-activity-option-job' }).props.onPress(); });
+    await act(async () => { tree.root.findByProps({ testID: 'switch-job-option-job-1' }).props.onPress(); });
+    await act(async () => { tree.root.findByProps({ testID: 'switch-work-area-option-area-1' }).props.onPress(); });
+    expect(tree.root.findByProps({ label: 'Switch Activity' }).props.disabled).toBe(false);
+
+    await act(async () => { tree.root.findByProps({ testID: 'switch-job-option-job-2' }).props.onPress(); });
+    expect(tree.root.findByProps({ label: 'Switch Activity' }).props.disabled).toBe(true);
   });
 
   it('loads categories from shared source for unbillable switch', async () => {

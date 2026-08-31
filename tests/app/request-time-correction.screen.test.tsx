@@ -156,6 +156,9 @@ import RequestTimeCorrectionScreen from '../../app/request-time-correction';
 describe('RequestTimeCorrectionScreen', () => {
   beforeEach(() => {
     mockParams = {};
+    mockClockingState.jobs = [
+      { id: 'job-1', title: 'Front Walkway', status: 'scheduled', assignedEmployeeIds: ['emp-1'] },
+    ];
     mockCorrectionLoading = false;
     mockClockingState.currentActiveEntryId = null;
     mockSubmitCorrection.mockReset();
@@ -376,6 +379,38 @@ describe('RequestTimeCorrectionScreen', () => {
     expect(mockSubmitCorrection).toHaveBeenCalled();
     expect(mockSubmitCorrection.mock.calls[0][0].timeEntryId).toBeUndefined();
     expect(mockSubmitCorrection.mock.calls[0][0].requestType).toBe('forgot_clock_in');
+  });
+
+  it('submits a Job correction with the selected Work Area and contract version', async () => {
+    mockParams = { requestType: 'forgot_clock_in' };
+    mockClockingState.jobs = [{
+      id: 'job-1',
+      title: 'Front Walkway',
+      status: 'scheduled',
+      assignedEmployeeIds: ['emp-1'],
+      hasOperationalWorkAreas: true,
+      eligibleOperationalWorkAreas: [
+        { id: 'area-1', name: 'Excavation', status: 'in_progress' },
+        { id: 'area-2', name: 'Concrete', status: 'not_started' },
+      ],
+    }] as any;
+
+    let tree: any;
+    await act(async () => { tree = create(<RequestTimeCorrectionScreen />); });
+    await act(async () => { tree.root.findByProps({ testID: 'job-option-job-1' }).props.onPress(); });
+    expect(tree.root.findByProps({ label: 'Submit Request' }).props.disabled).toBe(true);
+    await act(async () => { tree.root.findByProps({ testID: 'correction-work-area-option-area-2' }).props.onPress(); });
+    await act(async () => {
+      tree.root.findByProps({ testID: 'correction-reason-input' }).props.onChangeText('Missed the morning entry.');
+    });
+    await act(async () => { await tree.root.findByProps({ label: 'Submit Request' }).props.onPress(); });
+
+    expect(mockSubmitCorrection).toHaveBeenCalledWith(expect.objectContaining({
+      requestType: 'forgot_clock_in',
+      requestedJobId: 'job-1',
+      requestedWorkAreaId: 'area-2',
+      clockingContractVersion: 2,
+    }));
   });
 
   it('offers Drive Time without capability data and submits its canonical activity type', async () => {
