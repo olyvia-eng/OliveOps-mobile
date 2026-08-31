@@ -11,6 +11,7 @@ import {
   type PendingClockOutRecord,
 } from '@/services/pendingClockOutStorage';
 import { createFormClientSubmissionId } from '@/services/requestGuards';
+import { markFormAttachmentsSubmitted, prepareFormSubmissionAttachments } from '@/services/formAttachmentStorage';
 import { useClockingActions } from '@/hooks/useClockingActions';
 import { useAuthStore } from '@/store/authStore';
 import type { PendingClockOutRequirement, PendingClockOutWorkflow } from '@/types/api';
@@ -200,7 +201,15 @@ export function PendingClockOutProvider({ children }: { children: React.ReactNod
       while (recordRef.current?.queuedSubmissions.length) {
         const queued = recordRef.current.queuedSubmissions[0];
         try {
-          await submitEmployeeForm(queued.payload, accessToken);
+          const preparedPayload = await prepareFormSubmissionAttachments(queued.payload, identityKey, accessToken);
+          if (JSON.stringify(preparedPayload) !== JSON.stringify(queued.payload)) {
+            const current = recordRef.current;
+            if (current) await commit({
+              ...current,
+              queuedSubmissions: [{ ...queued, payload: preparedPayload }, ...current.queuedSubmissions.slice(1)],
+            });
+          }
+          await submitEmployeeForm(preparedPayload, accessToken);
         } catch (submitError) {
           const code = errorCode(submitError);
           if (code === 'form_response_requirement_failed' && submitError instanceof ApiError) {
@@ -216,6 +225,7 @@ export function PendingClockOutProvider({ children }: { children: React.ReactNod
           }
           if (code !== 'workflow_requirement_already_completed') return;
         }
+        await markFormAttachmentsSubmitted(identityKey, queued.payload.clientSubmissionId);
         const current = recordRef.current;
         if (!current) return;
         await commit({

@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Image, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { colors, radii, spacing, typography } from '@/theme/colors';
-import type { EmployeeFormField } from '@/types/forms';
+import type { EmployeeFormField, LocalFormAttachment } from '@/types/forms';
+import type { PhotoSource } from '@/services/photoPicker';
 import {
   dateFromCanonicalValue,
   formatFormDate,
@@ -16,12 +17,20 @@ export function FormFieldRenderer({
   error,
   disabled = false,
   onChange,
+  photoAttachment,
+  onChoosePhoto,
+  onRemovePhoto,
+  onRetryPhoto,
 }: {
   field: EmployeeFormField;
   value: string;
   error?: string;
   disabled?: boolean;
   onChange: (value: string) => void;
+  photoAttachment?: LocalFormAttachment;
+  onChoosePhoto?: (source: PhotoSource) => void;
+  onRemovePhoto?: () => void;
+  onRetryPhoto?: () => void;
 }) {
   const [showDatePicker, setShowDatePicker] = useState(false);
 
@@ -39,6 +48,39 @@ export function FormFieldRenderer({
       <View style={styles.field}>
         <Text style={styles.paragraph}>{field.label}</Text>
         {field.helpText ? <Text style={styles.help}>{field.helpText}</Text> : null}
+      </View>
+    );
+  }
+  if (field.type === 'photo_upload') {
+    const pending = photoAttachment?.state === 'upload_prepared';
+    const failed = photoAttachment?.state === 'failed';
+    return (
+      <View style={styles.field}>
+        <Text style={styles.label}>{field.label}{field.required ? ' *' : ''}</Text>
+        {field.helpText ? <Text style={styles.help}>{field.helpText}</Text> : null}
+        <View style={styles.photoActions}>
+          <Pressable disabled={disabled} onPress={() => onChoosePhoto?.('camera')} style={styles.photoButton} accessibilityRole="button">
+            <Text style={styles.photoButtonText}>Take Photo</Text>
+          </Pressable>
+          <Pressable disabled={disabled} onPress={() => onChoosePhoto?.('library')} style={styles.photoButton} accessibilityRole="button">
+            <Text style={styles.photoButtonText}>Choose Photo</Text>
+          </Pressable>
+        </View>
+        {photoAttachment ? (
+          <View style={styles.photoPreviewRow}>
+            {photoAttachment.localUri ? <Image source={{ uri: photoAttachment.localUri }} style={styles.photoPreview} /> : null}
+            <View style={styles.photoStatus}>
+              {pending ? <View style={styles.photoProgress}><ActivityIndicator size="small" color={colors.primary} /><Text style={styles.help}>Uploading...</Text></View> : null}
+              {failed ? <Text accessibilityRole="alert" style={styles.error}>Upload failed</Text> : null}
+              <View style={styles.photoLinks}>
+                <Pressable disabled={disabled} onPress={() => onChoosePhoto?.('library')} accessibilityRole="button"><Text style={styles.photoLink}>Replace</Text></Pressable>
+                <Pressable disabled={disabled} onPress={onRemovePhoto} accessibilityRole="button"><Text style={styles.photoLink}>Remove</Text></Pressable>
+                {failed ? <Pressable disabled={disabled} onPress={onRetryPhoto} accessibilityRole="button"><Text style={styles.photoLink}>Retry</Text></Pressable> : null}
+              </View>
+            </View>
+          </View>
+        ) : null}
+        {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
       </View>
     );
   }
@@ -160,4 +202,13 @@ const styles = StyleSheet.create({
   paragraph: { color: colors.textSecondary, fontSize: typography.body, lineHeight: 23 },
   unsupported: { gap: spacing.xs, borderWidth: 1, borderColor: colors.infoBorder, borderRadius: radii.md, backgroundColor: colors.infoBackground, padding: spacing.md },
   unsupportedText: { color: colors.info, fontSize: typography.bodySmall, lineHeight: 20 },
+  photoActions: { flexDirection: 'row', gap: spacing.sm },
+  photoButton: { minHeight: 44, justifyContent: 'center', borderWidth: 1, borderColor: colors.primary, borderRadius: radii.md, paddingHorizontal: spacing.md },
+  photoButtonText: { color: colors.primary, fontSize: typography.bodySmall, fontWeight: typography.bold },
+  photoPreviewRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  photoPreview: { width: 88, height: 66, borderRadius: radii.md, backgroundColor: colors.surfaceMuted },
+  photoStatus: { flex: 1, gap: spacing.xs },
+  photoProgress: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  photoLinks: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md },
+  photoLink: { color: colors.primary, fontSize: typography.bodySmall, fontWeight: typography.bold },
 });

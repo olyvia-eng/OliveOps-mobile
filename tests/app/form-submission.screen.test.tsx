@@ -3,6 +3,7 @@ import { act, create } from 'react-test-renderer';
 import { describe, expect, it, jest } from '@jest/globals';
 
 const mockGetSubmission = jest.fn();
+const mockPrepareDownload = jest.fn().mockResolvedValue({ ok: true, fileId: 'photo-file', downloadUrl: 'https://signed.example/photo' });
 const detail = {
   ok: true,
   submission: {
@@ -14,6 +15,7 @@ const detail = {
   answers: [
     { fieldId: 'oil', label: 'Oil Level', type: 'multiple_choice', value: 'Good' },
     { fieldId: 'damage', label: 'Visible Damage', type: 'yes_no', value: 'no' },
+    { fieldId: 'photo', label: 'Completed work', type: 'photo_upload', value: '', fileIds: ['photo-file'] },
   ],
 };
 
@@ -21,6 +23,8 @@ jest.mock('expo-router', () => ({ useLocalSearchParams: () => ({ id: 'sub-1' }) 
 jest.mock('@/store/clockingStore', () => ({ useClockingStore: () => ({ businessTimeZone: 'America/Toronto' }) }));
 jest.mock('@/store/formsStore', () => ({ useFormsStore: () => ({ submissionDetails: { 'sub-1': detail } }) }));
 jest.mock('@/hooks/useFormsActions', () => ({ useFormsActions: () => ({ getSubmission: mockGetSubmission, loadingSubmission: false }) }));
+jest.mock('@/api/storageApi', () => ({ prepareDownload: (...args: unknown[]) => mockPrepareDownload(...args) }));
+jest.mock('@/store/authStore', () => ({ useAuthStore: () => ({ accessToken: 'token-1' }) }));
 jest.mock('@/components/Screen', () => ({ Screen: ({ children }: any) => require('react').createElement('screen', {}, children) }));
 jest.mock('react-native', () => {
   const ReactModule = require('react');
@@ -30,6 +34,7 @@ jest.mock('react-native', () => {
     View: ({ children, ...props }: any) => ReactModule.createElement('view', props, children),
     Text: ({ children, ...props }: any) => ReactModule.createElement('text', props, children),
     Pressable: ({ children, ...props }: any) => ReactModule.createElement('pressable', props, children),
+    Image: (props: any) => ReactModule.createElement('image', props),
   };
 });
 
@@ -48,6 +53,9 @@ describe('FormSubmissionScreen', () => {
     expect(text).toContain('no');
     expect(text).not.toContain('Approve');
     expect(text).not.toContain('Reject');
+    expect(text).not.toContain('photo-file');
+    expect(tree.root.findByType('image').props.source.uri).toBe('https://signed.example/photo');
+    expect(mockPrepareDownload).toHaveBeenCalledWith('photo-file', 'token-1');
     expect(tree.root.findAllByType('textinput')).toHaveLength(0);
     expect(mockGetSubmission).not.toHaveBeenCalled();
   });

@@ -120,6 +120,34 @@ export interface EmployeeRequiredFormsResponse {
 export interface EmployeeFormResponse {
   fieldId: string;
   value: string;
+  fileIds?: string[];
+}
+
+export type FormAttachmentState = 'local' | 'upload_prepared' | 'completed' | 'failed' | 'submitted';
+
+export interface LocalFormAttachment {
+  localAttachmentId: string;
+  identityKey: string;
+  clientSubmissionId: string;
+  formId: string;
+  fieldId: string;
+  workflowOccurrenceId?: string;
+  workflowRequirementId?: string;
+  jobId?: string;
+  equipmentId?: string;
+  divisionId?: string;
+  localUri: string;
+  fileName: string;
+  mimeType: 'image/jpeg';
+  sizeBytes: number;
+  state: FormAttachmentState;
+  fileId?: string;
+  uploadUrl?: string;
+  uploadExpiresAt?: string;
+  requiredHeaders?: Record<string, string>;
+  error?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface SubmitEmployeeFormRequest {

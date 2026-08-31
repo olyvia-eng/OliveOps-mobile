@@ -237,9 +237,17 @@ export interface PrepareUploadRequest {
   fileName: string;
   mimeType: string;
   sizeBytes: number;
-  entityType: 'time-entry';
+  entityType: 'time-entry' | 'form-attachment';
   entityId: string;
-  category: 'clock-in-photo' | 'clock-out-photo';
+  category: 'clock-in-photo' | 'clock-out-photo' | 'photo';
+  formId?: string;
+  fieldId?: string;
+  clientSubmissionId?: string;
+  workflowOccurrenceId?: string;
+  workflowRequirementId?: string;
+  jobId?: string;
+  equipmentId?: string;
+  divisionId?: string;
 }
 
 export interface PrepareUploadResponse {

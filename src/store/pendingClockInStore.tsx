@@ -11,6 +11,7 @@ import {
   type PendingClockInRecord,
 } from '@/services/pendingClockInStorage';
 import { createFormClientSubmissionId } from '@/services/requestGuards';
+import { markFormAttachmentsSubmitted, prepareFormSubmissionAttachments } from '@/services/formAttachmentStorage';
 import { useClockingActions } from '@/hooks/useClockingActions';
 import { useAuthStore } from '@/store/authStore';
 import { useOptionalOfflineClockStore } from '@/store/offlineClockContext';
@@ -322,7 +323,12 @@ export function PendingClockInProvider({ children }: { children: React.ReactNode
       while (recordRef.current?.queuedSubmissions.length) {
         const payload = recordRef.current.queuedSubmissions[0];
         try {
-          await submitEmployeeForm(payload, accessToken);
+          const preparedPayload = await prepareFormSubmissionAttachments(payload, identityKey, accessToken);
+          if (JSON.stringify(preparedPayload) !== JSON.stringify(payload)) {
+            const current = recordRef.current;
+            if (current) await commit({ ...current, queuedSubmissions: [preparedPayload, ...current.queuedSubmissions.slice(1)] });
+          }
+          await submitEmployeeForm(preparedPayload, accessToken);
         } catch (submitError) {
           const code = errorCode(submitError);
           if (code === 'form_response_requirement_failed' && submitError instanceof ApiError && payload.workflowRequirementId) {
@@ -338,6 +344,7 @@ export function PendingClockInProvider({ children }: { children: React.ReactNode
           }
           if (code !== 'workflow_requirement_already_completed') return;
         }
+        await markFormAttachmentsSubmitted(identityKey, payload.clientSubmissionId);
         const current = recordRef.current;
         if (!current) return;
         await commit({

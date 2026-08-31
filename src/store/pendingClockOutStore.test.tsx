@@ -12,6 +12,8 @@ const mockLoadRecord = jest.fn();
 const mockSaveRecord = jest.fn();
 const mockClearRecord = jest.fn();
 const mockRefreshWorkContext = jest.fn();
+const mockPrepareFormSubmissionAttachments = jest.fn();
+const mockMarkFormAttachmentsSubmitted = jest.fn();
 let mockOnline = true;
 let pendingStore: any;
 let mockNetworkListener: ((state: { isConnected: boolean; isInternetReachable: boolean }) => void) | null = null;
@@ -55,6 +57,10 @@ jest.mock('@/services/pendingClockOutStorage', () => ({
 }));
 jest.mock('@/services/requestGuards', () => ({
   createFormClientSubmissionId: jest.fn(() => 'form-submission:stable-1'),
+}));
+jest.mock('@/services/formAttachmentStorage', () => ({
+  prepareFormSubmissionAttachments: (...args: unknown[]) => mockPrepareFormSubmissionAttachments(...args),
+  markFormAttachmentsSubmitted: (...args: unknown[]) => mockMarkFormAttachmentsSubmitted(...args),
 }));
 jest.mock('@/store/authStore', () => ({
   useAuthStore: () => ({
@@ -112,6 +118,8 @@ describe('PendingClockOutProvider', () => {
     mockLoadPendingClockOut.mockReset().mockResolvedValue(workflow());
     mockFinalizeClockOut.mockReset().mockResolvedValue({ ok: true, status: 'clock_out_completed' });
     mockSubmitEmployeeForm.mockReset().mockResolvedValue({ ok: true, submission: { id: 'submission-1' } });
+    mockPrepareFormSubmissionAttachments.mockReset().mockImplementation(async (payload) => payload);
+    mockMarkFormAttachmentsSubmitted.mockReset().mockResolvedValue(undefined);
   });
 
   afterEach(async () => {
@@ -260,6 +268,11 @@ describe('PendingClockOutProvider', () => {
       clientSubmissionId: 'form-submission:queued-1', formId: 'form-1', trigger: 'after_clock_out' as const,
       workflowOccurrenceId: 'occurrence-1', workflowRequirementId: 'requirement-1', responses: [],
     };
+    const preparedPayload = {
+      ...payload,
+      responses: [{ fieldId: 'photo-1', value: '', fileIds: ['file-1'] }],
+    };
+    mockPrepareFormSubmissionAttachments.mockResolvedValue(preparedPayload);
     mockLoadRecord.mockResolvedValue({
       workflow: workflow(), submissionIds: {},
       queuedSubmissions: [{
@@ -271,9 +284,50 @@ describe('PendingClockOutProvider', () => {
 
     await mount();
 
-    expect(mockSubmitEmployeeForm).toHaveBeenCalledWith(payload, 'token-1');
+    expect(mockPrepareFormSubmissionAttachments).toHaveBeenCalledWith(
+      payload, 'business-1:user-1:employee-1', 'token-1',
+    );
+    expect(mockSaveRecord).toHaveBeenCalledWith(
+      'business-1:user-1:employee-1',
+      expect.objectContaining({
+        queuedSubmissions: [expect.objectContaining({ payload: preparedPayload })],
+      }),
+    );
+    expect(mockSubmitEmployeeForm).toHaveBeenCalledWith(preparedPayload, 'token-1');
+    expect(mockMarkFormAttachmentsSubmitted).toHaveBeenCalledWith(
+      'business-1:user-1:employee-1', 'form-submission:queued-1',
+    );
+    expect(mockSubmitEmployeeForm.mock.invocationCallOrder[0]).toBeLessThan(
+      mockMarkFormAttachmentsSubmitted.mock.invocationCallOrder[0],
+    );
     expect(mockFinalizeClockOut).toHaveBeenCalledTimes(1);
     expect(mockRefreshWorkContext).toHaveBeenCalledTimes(1);
+    expect(pendingStore.workflow).toBeNull();
+  });
+
+  it('cleans up attachments when replay confirms the requirement was already completed', async () => {
+    const payload = {
+      clientSubmissionId: 'form-submission:already-completed', formId: 'form-1', trigger: 'after_clock_out' as const,
+      workflowOccurrenceId: 'occurrence-1', workflowRequirementId: 'requirement-1', responses: [],
+    };
+    mockLoadRecord.mockResolvedValue({
+      workflow: workflow(), submissionIds: {},
+      queuedSubmissions: [{
+        workflowOccurrenceId: 'occurrence-1', workflowRequirementId: 'requirement-1', payload,
+        queuedAt: '2026-08-25T20:31:00.000Z',
+      }],
+    });
+    mockLoadPendingClockOut.mockResolvedValue(workflow(true));
+    mockSubmitEmployeeForm.mockRejectedValue(new ApiError(
+      'Requirement already completed.', 409, 'workflow_requirement_already_completed',
+    ));
+
+    await mount();
+
+    expect(mockMarkFormAttachmentsSubmitted).toHaveBeenCalledWith(
+      'business-1:user-1:employee-1', 'form-submission:already-completed',
+    );
+    expect(mockFinalizeClockOut).toHaveBeenCalledTimes(1);
     expect(pendingStore.workflow).toBeNull();
   });
 
@@ -283,6 +337,11 @@ describe('PendingClockOutProvider', () => {
       workflowOccurrenceId: 'occurrence-1', workflowRequirementId: 'requirement-1',
       responses: [{ fieldId: 'fit', value: 'no' }],
     };
+    const preparedPayload = {
+      ...payload,
+      responses: [...payload.responses, { fieldId: 'photo-1', value: '', fileIds: ['file-1'] }],
+    };
+    mockPrepareFormSubmissionAttachments.mockResolvedValue(preparedPayload);
     mockLoadRecord.mockResolvedValue({
       workflow: workflow(), submissionIds: {},
       queuedSubmissions: [{
@@ -297,14 +356,15 @@ describe('PendingClockOutProvider', () => {
     await mount();
 
     expect(mockFinalizeClockOut).not.toHaveBeenCalled();
-    expect(pendingStore.queuedSubmissionFor('requirement-1')).toEqual(payload);
+    expect(mockMarkFormAttachmentsSubmitted).not.toHaveBeenCalled();
+    expect(pendingStore.queuedSubmissionFor('requirement-1')).toEqual(preparedPayload);
     expect(pendingStore.submissionFailure).toEqual({
       workflowRequirementId: 'requirement-1', code: 'form_response_requirement_failed',
       error: 'Contact your supervisor.', fieldId: 'fit',
     });
     expect(mockSaveRecord).toHaveBeenLastCalledWith(
       'business-1:user-1:employee-1',
-      expect.objectContaining({ queuedSubmissions: [expect.objectContaining({ payload })] }),
+      expect.objectContaining({ queuedSubmissions: [expect.objectContaining({ payload: preparedPayload })] }),
     );
   });
 

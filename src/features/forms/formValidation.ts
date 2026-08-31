@@ -9,7 +9,7 @@ const DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
 const TIME_PATTERN = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
 
 export const DISPLAY_FIELD_TYPES = new Set(['section_header', 'paragraph_text']);
-export const UNSUPPORTED_FIELD_TYPES = new Set(['signature', 'photo_upload', 'file_upload']);
+export const UNSUPPORTED_FIELD_TYPES = new Set(['signature', 'file_upload']);
 const ACCEPTED_RESPONSE_FIELD_TYPES = new Set(['yes_no', 'checkbox', 'multiple_choice', 'dropdown']);
 export const ACCEPTED_RESPONSE_FALLBACK = 'Your response does not meet the requirement for this question.';
 
@@ -138,7 +138,7 @@ export function validateFormValues(fields: EmployeeFormField[], values: Employee
 
 export function buildFormResponses(fields: EmployeeFormField[], values: EmployeeFormValues) {
   return fields.reduce<EmployeeFormResponse[]>((responses, field) => {
-    if (DISPLAY_FIELD_TYPES.has(field.type) || UNSUPPORTED_FIELD_TYPES.has(field.type)) return responses;
+    if (DISPLAY_FIELD_TYPES.has(field.type) || UNSUPPORTED_FIELD_TYPES.has(field.type) || field.type === 'photo_upload') return responses;
     const value = (values[field.id] ?? '').trim();
     if (value) responses.push({ fieldId: field.id, value });
     return responses;

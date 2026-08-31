@@ -77,7 +77,7 @@ describe('FormFieldRenderer', () => {
     expect(tree.root.findAllByType('pressable').length).toBeGreaterThan(0);
   });
 
-  it('renders display fields without controls and deferred fields with a clear message', async () => {
+  it('renders display fields, Photo Upload actions, and deferred fields with a clear message', async () => {
     const fields = [
       field('section', 'section_header'),
       field('paragraph', 'paragraph_text', { helpText: 'Read this first' }),
@@ -92,7 +92,9 @@ describe('FormFieldRenderer', () => {
     const text = tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ');
     expect(text).toContain('paragraph');
     expect(text).toContain('Read this first');
-    expect(text.match(/newer mobile Forms version/g)).toHaveLength(3);
+    expect(text.match(/newer mobile Forms version/g)).toHaveLength(2);
+    expect(text).toContain('Take Photo');
+    expect(text).toContain('Choose Photo');
     expect(tree.root.findAllByType('textinput')).toHaveLength(0);
   });
 

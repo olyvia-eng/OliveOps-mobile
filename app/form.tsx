@@ -20,6 +20,16 @@ import { useFormsActions } from '@/hooks/useFormsActions';
 import { useClockingActions } from '@/hooks/useClockingActions';
 import { createFormClientSubmissionId } from '@/services/requestGuards';
 import { isOnline } from '@/services/connectivity';
+import {
+  createDurableFormPhoto,
+  ensureFormPhotoUploaded,
+  loadFormAttachments,
+  markFormAttachmentsSubmitted,
+  prepareFormSubmissionAttachments,
+  rebindFormAttachments,
+  removeFormAttachment,
+} from '@/services/formAttachmentStorage';
+import { pickSinglePhoto, type PhotoSource } from '@/services/photoPicker';
 import { useAuthStore } from '@/store/authStore';
 import { useClockingStore } from '@/store/clockingStore';
 import { useFormsStore } from '@/store/formsStore';
@@ -31,7 +41,7 @@ import {
   workflowRequirements,
 } from '@/store/pendingClockOutStore';
 import { colors, spacing, typography } from '@/theme/colors';
-import type { EmployeeForm } from '@/types/forms';
+import type { EmployeeForm, LocalFormAttachment, SubmitEmployeeFormRequest } from '@/types/forms';
 import { returnToParentOrReplace, returnToParentThenPush } from '@/utils/navigation';
 
 type MandatoryFinalizationKind = 'clock_in' | 'clock_out';
@@ -50,7 +60,7 @@ function matchesParams(form: EmployeeForm, params: Record<string, string | strin
 export default function FormScreen() {
   const params = useLocalSearchParams<{ list?: string; formId?: string; trigger?: string; jobId?: string; equipmentId?: string; divisionId?: string; returnTo?: string; workflowId?: string; workflowOccurrenceId?: string; workflowRequirementId?: string }>();
   const navigation = useNavigation();
-  const { user } = useAuthStore();
+  const { user, accessToken } = useAuthStore();
   const { businessTimeZone } = useClockingStore();
   const { toDo, available } = useFormsStore();
   const { workflow, completeCurrentForm } = useFormsWorkflowStore();
@@ -147,6 +157,8 @@ export default function FormScreen() {
   const [clockInCompleted, setClockInCompleted] = useState(false);
   const [clockOutCompleted, setClockOutCompleted] = useState(false);
   const [queuedOffline, setQueuedOffline] = useState(false);
+  const [photoAttachments, setPhotoAttachments] = useState<Record<string, LocalFormAttachment>>({});
+  const [processingPhotos, setProcessingPhotos] = useState(false);
   const submittedRef = useRef(false);
   const initializedAttemptRef = useRef('');
   const clientSubmissionRef = useRef<{ identity: string; value: string } | null>(null);
@@ -155,13 +167,32 @@ export default function FormScreen() {
   const submissionIdentity = form && user
     ? `${user.businessId}:${user.id}:${user.employeeId ?? ''}:${mandatoryRouteKey ?? ''}:${form.id}:${form.trigger}:${form.context?.jobId ?? ''}:${form.context?.equipmentId ?? ''}:${form.context?.divisionId ?? ''}`
     : '';
+  const attachmentIdentityKey = user?.employeeId ? `${user.businessId}:${user.id}:${user.employeeId}` : '';
 
   if (submissionIdentity && clientSubmissionRef.current?.identity !== submissionIdentity) {
     clientSubmissionRef.current = {
       identity: submissionIdentity,
-      value: createFormClientSubmissionId(),
+      value: queuedMandatorySubmission?.clientSubmissionId ?? createFormClientSubmissionId(),
     };
   }
+
+  useEffect(() => {
+    const clientSubmissionId = clientSubmissionRef.current?.value;
+    if (!attachmentIdentityKey || !clientSubmissionId || !submissionIdentity) {
+      setPhotoAttachments({});
+      return;
+    }
+    let cancelled = false;
+    void loadFormAttachments(attachmentIdentityKey, clientSubmissionId).then((records) => {
+      if (cancelled) return;
+      setPhotoAttachments(Object.fromEntries(records.filter((record) => record.state !== 'submitted').map((record) => [record.fieldId, record])));
+      setValues((current) => ({
+        ...current,
+        ...Object.fromEntries(records.filter((record) => record.state !== 'submitted').map((record) => [record.fieldId, record.localAttachmentId])),
+      }));
+    });
+    return () => { cancelled = true; };
+  }, [attachmentIdentityKey, submissionIdentity]);
 
   useLayoutEffect(() => {
     if (!submissionIdentity || initializedAttemptRef.current === submissionIdentity) return;
@@ -282,6 +313,77 @@ export default function FormScreen() {
 
   const unsupportedRequired = hasRequiredUnsupportedField(orderedFields);
 
+  async function choosePhoto(fieldId: string, source: PhotoSource) {
+    if (!form || !attachmentIdentityKey || !clientSubmissionRef.current) return;
+    setError(null);
+    try {
+      const asset = await pickSinglePhoto(source);
+      if (!asset) return;
+      setProcessingPhotos(true);
+      const previous = photoAttachments[fieldId];
+      const next = await createDurableFormPhoto({
+        identityKey: attachmentIdentityKey,
+        clientSubmissionId: clientSubmissionRef.current.value,
+        formId: form.id,
+        fieldId,
+        sourceUri: asset.uri,
+        workflowOccurrenceId: params.workflowOccurrenceId,
+        workflowRequirementId: params.workflowRequirementId,
+        jobId: form.context?.jobId,
+        equipmentId: form.context?.equipmentId,
+        divisionId: form.context?.divisionId,
+      });
+      setPhotoAttachments((current) => ({ ...current, [fieldId]: next }));
+      setValues((current) => ({ ...current, [fieldId]: next.localAttachmentId }));
+      setFieldErrors((current) => {
+        const updated = { ...current };
+        delete updated[fieldId];
+        return updated;
+      });
+      if (previous) await removeFormAttachment(previous, accessToken);
+    } catch (photoError) {
+      setError(photoError instanceof Error ? photoError.message : 'Could not attach that photo.');
+    } finally {
+      setProcessingPhotos(false);
+    }
+  }
+
+  async function removePhoto(fieldId: string) {
+    const attachment = photoAttachments[fieldId];
+    if (!attachment) return;
+    setProcessingPhotos(true);
+    try {
+      await removeFormAttachment(attachment, accessToken);
+      setPhotoAttachments((current) => {
+        const updated = { ...current };
+        delete updated[fieldId];
+        return updated;
+      });
+      setValues((current) => ({ ...current, [fieldId]: '' }));
+    } catch (removeError) {
+      setError(removeError instanceof Error ? removeError.message : 'Could not remove that photo.');
+    } finally {
+      setProcessingPhotos(false);
+    }
+  }
+
+  async function retryPhoto(fieldId: string) {
+    const attachment = photoAttachments[fieldId];
+    if (!attachment) return;
+    setProcessingPhotos(true);
+    setError(null);
+    try {
+      const uploaded = await ensureFormPhotoUploaded(attachment, accessToken);
+      setPhotoAttachments((current) => ({ ...current, [fieldId]: uploaded }));
+    } catch (uploadError) {
+      const [failed] = await loadFormAttachments(attachmentIdentityKey, attachment.clientSubmissionId);
+      if (failed) setPhotoAttachments((current) => ({ ...current, [fieldId]: failed }));
+      setError(uploadError instanceof Error ? uploadError.message : 'Photo upload failed.');
+    } finally {
+      setProcessingPhotos(false);
+    }
+  }
+
   async function finishMandatoryWorkflow(kind: MandatoryFinalizationKind) {
     const finalizationStore = kind === 'clock_in' ? pendingClockIn : pendingClockOut;
     setError(null);
@@ -319,12 +421,18 @@ export default function FormScreen() {
       setError('This form has a required field that this mobile Forms version cannot complete.');
       return;
     }
+    const unresolvedPhoto = Object.values(photoAttachments).find((attachment) => attachment.state === 'failed');
+    if (unresolvedPhoto) {
+      setFieldErrors((current) => ({ ...current, [unresolvedPhoto.fieldId]: 'Retry or remove this photo before submitting.' }));
+      setError('A selected photo could not be uploaded. Retry or remove it before submitting.');
+      return;
+    }
 
     submissionInProgressRef.current = true;
     const clientSubmissionId = mandatoryKind && params.workflowRequirementId
       ? await mandatoryStore.submissionIdFor(params.workflowRequirementId)
       : clientSubmissionRef.current?.value ?? createFormClientSubmissionId();
-    const payload = {
+    let payload: SubmitEmployeeFormRequest = {
       clientSubmissionId,
       formId: form.id,
       trigger: form.trigger,
@@ -337,6 +445,11 @@ export default function FormScreen() {
       } : {}),
       responses: buildFormResponses(orderedFields, values),
     };
+    if (attachmentIdentityKey && clientSubmissionRef.current?.value !== clientSubmissionId) {
+      const rebound = await rebindFormAttachments(attachmentIdentityKey, clientSubmissionRef.current!.value, clientSubmissionId);
+      setPhotoAttachments(Object.fromEntries(rebound.map((record) => [record.fieldId, record])));
+      clientSubmissionRef.current = { identity: submissionIdentity, value: clientSubmissionId };
+    }
     if (mandatoryKind && !await isOnline()) {
       await mandatoryStore.queueSubmission(payload);
       submittedRef.current = true;
@@ -345,6 +458,22 @@ export default function FormScreen() {
     }
     if (mandatoryKind && queuedMandatorySubmission) {
       await mandatoryStore.queueSubmission(payload);
+    }
+    try {
+      setProcessingPhotos(true);
+      payload = await prepareFormSubmissionAttachments(payload, attachmentIdentityKey, accessToken);
+      const records = await loadFormAttachments(attachmentIdentityKey, clientSubmissionId);
+      setPhotoAttachments(Object.fromEntries(records.map((record) => [record.fieldId, record])));
+      if (mandatoryKind) await mandatoryStore.queueSubmission(payload);
+    } catch (uploadError) {
+      const records = await loadFormAttachments(attachmentIdentityKey, clientSubmissionId);
+      setPhotoAttachments(Object.fromEntries(records.map((record) => [record.fieldId, record])));
+      submissionInProgressRef.current = false;
+      setProcessingPhotos(false);
+      setError(uploadError instanceof Error ? uploadError.message : 'Photo upload failed. Retry or remove the photo.');
+      return;
+    } finally {
+      setProcessingPhotos(false);
     }
     const result = await submitForm(payload);
     if (!result.ok) {
@@ -363,6 +492,7 @@ export default function FormScreen() {
     }
 
     if (mandatoryKind) {
+      await markFormAttachmentsSubmitted(attachmentIdentityKey, clientSubmissionId);
       await mandatoryStore.completeQueuedSubmission?.(clientSubmissionId);
       submittedRef.current = true;
       setMandatorySubmissionAccepted(true);
@@ -414,6 +544,7 @@ export default function FormScreen() {
     }
 
     submittedRef.current = true;
+    await markFormAttachmentsSubmitted(attachmentIdentityKey, clientSubmissionId);
     submissionInProgressRef.current = false;
     if (workflow && workflow.id === params.workflowId) {
       completeCurrentForm(workflow.id);
@@ -440,6 +571,10 @@ export default function FormScreen() {
           value={values[field.id] ?? ''}
           error={fieldErrors[field.id]}
           disabled={submitting || mandatorySubmissionAccepted}
+          photoAttachment={photoAttachments[field.id]}
+          onChoosePhoto={(source) => { void choosePhoto(field.id, source); }}
+          onRemovePhoto={() => { void removePhoto(field.id); }}
+          onRetryPhoto={() => { void retryPhoto(field.id); }}
           onChange={(value) => {
             setValues((current) => ({ ...current, [field.id]: value }));
             if (submissionFailure?.fieldId === field.id) setError(null);
@@ -464,7 +599,7 @@ export default function FormScreen() {
             : error
               ? 'Retry Submit'
               : 'Submit Form'}
-        disabled={submitting || Boolean(mandatorySubmissionAccepted && finalizationState !== 'failed') || unsupportedRequired}
+        disabled={submitting || processingPhotos || Boolean(mandatorySubmissionAccepted && finalizationState !== 'failed') || unsupportedRequired}
         onPress={() => {
           if (finalizationState === 'failed' && finalizationKind) void finishMandatoryWorkflow(finalizationKind);
           else void onSubmit();

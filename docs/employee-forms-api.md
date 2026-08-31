@@ -97,12 +97,14 @@ Content-Type: application/json
 ```json
 {
   "formId": "form-id",
+  "clientSubmissionId": "form-submission:device-generated-id",
   "trigger": "daily",
   "jobId": "job-id",
   "equipmentId": "equipment-id",
   "divisionId": "division-id",
   "responses": [
-    { "fieldId": "field-id", "value": "Completed west trench" }
+    { "fieldId": "field-id", "value": "Completed west trench" },
+    { "fieldId": "photo-field-id", "value": "", "fileIds": ["file-id"] }
   ]
 }
 ```
@@ -131,7 +133,7 @@ The server validates all answers, creates the submission and responses in one Dy
 
 Forms may include optional `requiresApproval: true`. Those submissions return `status: "pending_review"`; forms without it retain `status: "submitted"`. Both statuses mean the employee submission succeeded and both satisfy mandatory clock workflow requirements without waiting for manager approval.
 
-Clients may send `{ "data": { ... } }` around the request body for compatibility. A submission may contain at most 99 answer-bearing responses. Required and recurring submissions use deterministic IDs to protect against retries; on-demand submissions receive a new ID.
+Clients may send `{ "data": { ... } }` around the request body for compatibility. `clientSubmissionId` is stable across attachment and Form retries. A submission may contain at most 99 answer-bearing responses. Required and recurring submissions use deterministic IDs to protect against retries; on-demand submissions receive a new ID.
 
 ## Get a completed submission
 
@@ -201,15 +203,20 @@ An accepted-response rejection is HTTP `400` with `{ "ok": false, "code": "form_
 | `checkbox`, `multiple_choice`, `dropdown` | Configured options | One exact value from `options` |
 | `signature` | Phase 1 text acknowledgement | String, maximum 500 characters |
 | `employee_selector`, `job_selector`, `customer_selector` | Authorized choices | One exact `choices[].value` ID |
-| `photo_upload`, `file_upload` | Render as unavailable in Phase 1 | Do not submit an answer |
+| `photo_upload` | Camera or photo library; zero or one image | Empty `value` and exactly one verified ID in `fileIds` when answered |
+| `file_upload` | Not available in mobile | Do not submit an answer |
 
 Optional blank answers may be omitted. Duplicate field IDs, fields from another Form, display-field answers, and values outside server-provided options are rejected.
 
 ### Attachments
 
-Phase 1 intentionally does not upload Form attachments. Base64, data URLs, raw bytes, and unverified file IDs are rejected. Optional photo/file fields can be skipped; an active Form with a required media field cannot be completed from mobile until the attachment flow is added.
+`photo_upload` uses the existing private storage API with `entityType: "form-attachment"` and `category: "photo"`. The prepare request binds the file to the authenticated business and employee, `clientSubmissionId`, Form, field, workflow occurrence/requirement, and authorized job/equipment/division context. JPEG, PNG, and WebP images up to 8 MB are accepted. Mobile normalizes a selected image to JPEG before copying it into app-owned durable storage.
 
-The future flow should upload bytes directly to object storage using a short-lived authorized upload, create a tenant-owned file entity, and submit only verified file IDs. File bytes must never be stored in DynamoDB or routed through the Form submission JSON.
+Clients upload bytes directly to the short-lived private object-storage URL, complete the upload, and submit exactly one verified file ID. The Form submission transaction atomically creates the submission and claims the staged file. Repeating the same `clientSubmissionId` and file ID is idempotent; another employee, tenant, Form, field, workflow, or submission cannot claim or read it. Base64, data URLs, raw bytes, fabricated IDs, incomplete uploads, and already-claimed files are rejected.
+
+Online and offline submissions use the same resumable pipeline. Mobile retains the app-owned file and staged metadata after upload or submission failures, resumes with the same valid file ID, and removes local bytes only after the Form response is confirmed accepted. An ambiguous response must be retried with the same `clientSubmissionId`; it must not trigger cleanup or mandatory clock-workflow finalization.
+
+Optional Photo Upload fields may be omitted. Required Photo Upload fields must contain exactly one completed photo. Generic `file_upload` remains deferred.
 
 ## Assignment rules
 
@@ -260,3 +267,5 @@ Content-Type: application/json
 ```
 
 Only `submitted → approved|rejected` is allowed. The endpoint derives the tenant from the reviewer session and cannot mutate submission ownership, context, answers, or timestamps.
+
+Photo answers are resolved through authenticated private-download requests in both web review and the employee's own submission detail. Raw file IDs and public object URLs are not presented as the review experience.

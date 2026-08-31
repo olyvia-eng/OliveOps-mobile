@@ -22,6 +22,10 @@ const mockRecoverPending = jest.fn().mockResolvedValue(null);
 const mockRefreshAfterSubmission = jest.fn().mockResolvedValue(null);
 const mockFinalize = jest.fn().mockResolvedValue({ ok: true });
 const mockInitialFormValues = jest.fn();
+const mockLoadFormAttachments = jest.fn().mockResolvedValue([]);
+const mockPrepareFormSubmissionAttachments = jest.fn(async (payload) => payload);
+const mockMarkFormAttachmentsSubmitted = jest.fn().mockResolvedValue(undefined);
+const mockPickSinglePhoto = jest.fn();
 let mockPendingClockOut: any;
 let mockPendingClockIn: any;
 let mockWorkflow: any = null;
@@ -57,7 +61,7 @@ jest.mock('@/store/formsStore', () => ({
   useFormsStore: () => ({ toDo: [mockForm], available: [] }),
 }));
 jest.mock('@/store/authStore', () => ({
-  useAuthStore: () => ({ user: { businessId: 'biz-1', id: 'user-1', employeeId: 'emp-1' } }),
+  useAuthStore: () => ({ accessToken: 'token-1', user: { businessId: 'biz-1', id: 'user-1', employeeId: 'emp-1' } }),
 }));
 jest.mock('@/store/clockingStore', () => ({
   useClockingStore: () => ({ businessTimeZone: 'America/Toronto' }),
@@ -85,6 +89,18 @@ jest.mock('@/store/pendingClockInStore', () => ({
 }));
 jest.mock('@/services/requestGuards', () => ({
   createFormClientSubmissionId: () => 'form-submission:request-1',
+}));
+jest.mock('@/services/formAttachmentStorage', () => ({
+  createDurableFormPhoto: jest.fn(),
+  ensureFormPhotoUploaded: jest.fn(),
+  loadFormAttachments: (...args: unknown[]) => mockLoadFormAttachments(...args),
+  markFormAttachmentsSubmitted: (...args: unknown[]) => mockMarkFormAttachmentsSubmitted(...args),
+  prepareFormSubmissionAttachments: (...args: unknown[]) => mockPrepareFormSubmissionAttachments(...args),
+  rebindFormAttachments: jest.fn(async () => []),
+  removeFormAttachment: jest.fn(),
+}));
+jest.mock('@/services/photoPicker', () => ({
+  pickSinglePhoto: (...args: unknown[]) => mockPickSinglePhoto(...args),
 }));
 jest.mock('@/features/forms/formValidation', () => {
   const actual = jest.requireActual('@/features/forms/formValidation') as any;
@@ -116,6 +132,8 @@ jest.mock('react-native', () => {
     Text: ({ children, ...props }: any) => ReactModule.createElement('text', props, children),
     TextInput: (props: any) => ReactModule.createElement('textinput', props),
     Pressable: ({ children, onPress, ...props }: any) => ReactModule.createElement('pressable', { onPress, ...props }, typeof children === 'function' ? children({ pressed: false }) : children),
+    Image: (props: any) => ReactModule.createElement('image', props),
+    ActivityIndicator: (props: any) => ReactModule.createElement('activity-indicator', props),
   };
 });
 
@@ -159,6 +177,10 @@ describe('FormScreen', () => {
     mockFinalize.mockReset().mockResolvedValue({ ok: true });
     mockRefreshWorkContext.mockClear();
     mockInitialFormValues.mockClear();
+    mockLoadFormAttachments.mockReset().mockResolvedValue([]);
+    mockPrepareFormSubmissionAttachments.mockReset().mockImplementation(async (payload) => payload);
+    mockMarkFormAttachmentsSubmitted.mockClear();
+    mockPickSinglePhoto.mockReset();
     mockParams = { list: 'todo', formId: 'form-1', trigger: 'daily', equipmentId: 'eq-1' };
     mockAddListener.mockClear();
     mockForm.name = 'Daily Equipment Inspection';
@@ -758,12 +780,40 @@ describe('FormScreen', () => {
   });
 
   it('disables submission when a required unsupported field exists', async () => {
-    mockForm.fields[3].required = true;
+    mockForm.fields[3] = { ...mockForm.fields[3], type: 'file_upload', required: true };
     let tree: any;
     await act(async () => { tree = create(<FormScreen />); });
     expect(tree.root.findByType('primary-button').props.disabled).toBe(true);
     const messages = tree.root.findAllByType('status-banner').map((node: any) => node.props.message);
     expect(messages.join(' ')).toContain('newer mobile Forms version');
+  });
+
+  it('requires a Photo Upload locally and submits exactly one completed file ID', async () => {
+    mockForm.fields[3] = { ...mockForm.fields[3], type: 'photo_upload', required: true };
+    const attachment = {
+      localAttachmentId: 'local-photo-1', identityKey: 'biz-1:user-1:emp-1', clientSubmissionId: 'form-submission:request-1',
+      formId: 'form-1', fieldId: 'photo', localUri: 'file:///durable/photo.jpg', fileName: 'photo.jpg', mimeType: 'image/jpeg',
+      sizeBytes: 1024, state: 'completed', fileId: 'file-1', createdAt: '2026-08-31T10:00:00.000Z', updatedAt: '2026-08-31T10:01:00.000Z',
+    };
+    let tree: any;
+    await act(async () => { tree = create(<FormScreen />); });
+    await act(async () => tree.root.findByProps({ testID: 'form-field-condition' }).props.onChangeText('Good'));
+    await act(async () => tree.root.findByType('primary-button').props.onPress());
+    expect(mockSubmitForm).not.toHaveBeenCalled();
+    expect(tree.root.findByProps({ accessibilityRole: 'alert' }).props.children).toBe('This field is required.');
+
+    mockLoadFormAttachments.mockResolvedValue([attachment]);
+    mockPrepareFormSubmissionAttachments.mockImplementation(async (payload: any) => ({
+      ...payload,
+      responses: [...payload.responses, { fieldId: 'photo', value: '', fileIds: ['file-1'] }],
+    }));
+    await act(async () => { tree.unmount(); tree = create(<FormScreen />); });
+    await act(async () => tree.root.findByProps({ testID: 'form-field-condition' }).props.onChangeText('Good'));
+    await act(async () => tree.root.findByType('primary-button').props.onPress());
+    expect(mockSubmitForm).toHaveBeenCalledWith(expect.objectContaining({
+      responses: expect.arrayContaining([{ fieldId: 'photo', value: '', fileIds: ['file-1'] }]),
+    }));
+    expect(mockMarkFormAttachmentsSubmitted).toHaveBeenCalledWith('biz-1:user-1:emp-1', 'form-submission:request-1');
   });
 
   it('warns before leaving only after answers have changed', async () => {
