@@ -37,6 +37,7 @@ export default function HomeScreen() {
   const { toDo } = useFormsStore();
   const pendingClockIn = usePendingClockInStore();
   const pendingClockOut = usePendingClockOutStore();
+  const pendingClockInReady = pendingClockIn.phase.kind === 'ready_to_finalize';
   const [loadError, setLoadError] = useState<string | null>(null);
   const [pendingFormError, setPendingFormError] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
@@ -123,9 +124,17 @@ export default function HomeScreen() {
       ) : pendingClockIn.workflow ? (
         <ActionCard>
           <StatusBadge label="Clock in pending" tone="active" />
-          <Text style={styles.idleTitle}>Complete required pre-shift form</Text>
+          <Text style={styles.idleTitle}>
+            {pendingClockInReady ? 'Required forms complete' : 'Complete required pre-shift form'}
+          </Text>
           <Text style={styles.idleText}>
-            {`Required form ${pendingClockIn.completedCount + 1} of ${pendingClockIn.totalCount}`}
+            {pendingClockInReady
+              ? pendingClockIn.error
+                ? 'Clock-in still needs to be finished.'
+                : 'Finishing clock in...'
+              : pendingClockIn.phase.kind === 'requirements_outstanding'
+                ? `Required form ${pendingClockIn.phase.current} of ${pendingClockIn.phase.total}`
+                : null}
           </Text>
         </ActionCard>
       ) : activeShift ? (
@@ -185,6 +194,21 @@ export default function HomeScreen() {
               workflowRequirementId: pendingClockOut.currentRequirement?.workflowRequirementId,
             },
           })}
+        />
+      ) : pendingClockIn.workflow && pendingClockInReady ? (
+        <PrimaryActionButton
+          label={pendingClockIn.busy
+            ? 'Finishing Clock In...'
+            : pendingClockIn.error
+              ? 'Retry Finish Clock In'
+              : 'Finish Clock In'}
+          disabled={pendingClockIn.busy}
+          onPress={() => {
+            setPendingFormError(null);
+            void pendingClockIn.finalize().then(async (result) => {
+              if (result.ok) await refreshWorkContext();
+            });
+          }}
         />
       ) : pendingClockIn.workflow && pendingClockIn.currentRequirement ? (
         <PrimaryActionButton

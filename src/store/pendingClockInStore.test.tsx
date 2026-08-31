@@ -107,7 +107,7 @@ jest.mock('react-native', () => ({
   TurboModuleRegistry: { get: () => null },
 }));
 
-import { PendingClockInProvider, usePendingClockInStore } from './pendingClockInStore';
+import { pendingClockInPhase, PendingClockInProvider, usePendingClockInStore } from './pendingClockInStore';
 
 function Probe() {
   pendingStore = usePendingClockInStore();
@@ -153,6 +153,23 @@ describe('PendingClockInProvider', () => {
       tree = create(React.createElement(PendingClockInProvider, null, React.createElement(Probe)));
     });
   }
+
+  it('normalizes requirement progress without allowing a current value above the total', () => {
+    expect(pendingClockInPhase(workflow())).toEqual({
+      kind: 'requirements_outstanding', current: 1, total: 1,
+    });
+    expect(pendingClockInPhase({
+      ...workflow(), requiredFormCount: 2, completedRequiredFormCount: 0,
+      remainingRequiredFormCount: 2,
+    })).toEqual({ kind: 'requirements_outstanding', current: 1, total: 2 });
+    expect(pendingClockInPhase({
+      ...workflow(), requiredFormCount: 2, completedRequiredFormCount: 1, remainingRequiredFormCount: 1,
+    })).toEqual({ kind: 'requirements_outstanding', current: 2, total: 2 });
+    expect(pendingClockInPhase({
+      ...workflow(true), requiredFormCount: 2, completedRequiredFormCount: 2,
+    })).toEqual({ kind: 'ready_to_finalize', total: 2 });
+    expect(pendingClockInPhase(workflow(true))).toEqual({ kind: 'ready_to_finalize', total: 1 });
+  });
 
   it('restores bootstrap workflow and persists it for app restart recovery', async () => {
     await mount();
@@ -342,7 +359,7 @@ describe('PendingClockInProvider', () => {
     expect(mockRefreshWorkContext).not.toHaveBeenCalled();
   });
 
-  it('does not auto-finalize a completed bootstrap workflow without queued submissions', async () => {
+  it('auto-finalizes a completed bootstrap workflow without requiring a queued submission', async () => {
     mockLoadBootstrap.mockResolvedValue({
       ok: true,
       capabilities: { requiredBeforeClockInForms: true },
@@ -352,8 +369,82 @@ describe('PendingClockInProvider', () => {
 
     await mount();
 
-    expect(mockFinalizeClockIn).not.toHaveBeenCalled();
-    expect(mockRefreshWorkContext).not.toHaveBeenCalled();
+    expect(mockFinalizeClockIn).toHaveBeenCalledWith({ workflowOccurrenceId: 'occurrence-1' }, 'token-1');
+    expect(mockRefreshWorkContext).toHaveBeenCalledTimes(1);
+    expect(pendingStore.workflow).toBeNull();
+  });
+
+  it('auto-finalizes the exact completed workflow restored from storage', async () => {
+    mockLoadRecord.mockResolvedValue({ workflow: workflow(true), submissionIds: {}, queuedSubmissions: [] });
+    mockLoadBootstrap.mockResolvedValue({
+      ok: true,
+      capabilities: { requiredBeforeClockInForms: true },
+      pendingClockInWorkflow: workflow(true),
+    });
+
+    await mount();
+
+    expect(mockFinalizeClockIn).toHaveBeenCalledWith({ workflowOccurrenceId: 'occurrence-1' }, 'token-1');
+    expect(mockRefreshWorkContext).toHaveBeenCalledTimes(1);
+    expect(pendingStore.workflow).toBeNull();
+  });
+
+  it('retains a completed workflow after finalization failure and succeeds on retry', async () => {
+    const completedWorkAreaWorkflow = {
+      ...workflow(true),
+      clockInIntent: {
+        ...workflow(true).clockInIntent,
+        workAreaId: 'work-area-x',
+        workAreaNameSnapshot: 'Work Area X',
+        clockingContractVersion: 2,
+      },
+    };
+    mockLoadBootstrap.mockResolvedValue({
+      ok: true,
+      capabilities: { requiredBeforeClockInForms: true },
+      pendingClockInWorkflow: completedWorkAreaWorkflow,
+    });
+    mockFinalizeClockIn.mockRejectedValueOnce(new TypeError('network failure'));
+
+    await mount();
+
+    expect(pendingStore.workflow?.clockInIntent).toEqual(completedWorkAreaWorkflow.clockInIntent);
+    expect(pendingStore.phase).toEqual({ kind: 'ready_to_finalize', total: 1 });
+    expect(pendingStore.error).toBe('Clock-in could not be finalized. Your required form progress is still saved.');
+    mockFinalizeClockIn.mockResolvedValueOnce({ ok: true, status: 'clock_in_completed' });
+
+    let result: any;
+    await act(async () => { result = await pendingStore.finalize(); });
+
+    expect(result).toEqual({ ok: true });
+    expect(mockFinalizeClockIn).toHaveBeenCalledTimes(2);
+    expect(pendingStore.workflow).toBeNull();
+  });
+
+  it('surfaces Work Area revalidation errors without clearing the saved clock-in intent', async () => {
+    const completedWorkAreaWorkflow = {
+      ...workflow(true),
+      clockInIntent: {
+        ...workflow(true).clockInIntent,
+        workAreaId: 'work-area-x',
+        workAreaNameSnapshot: 'Work Area X',
+        clockingContractVersion: 2,
+      },
+    };
+    mockLoadBootstrap.mockResolvedValue({
+      ok: true,
+      capabilities: { requiredBeforeClockInForms: true },
+      pendingClockInWorkflow: completedWorkAreaWorkflow,
+    });
+    mockFinalizeClockIn.mockRejectedValue(new ApiError(
+      'The selected Work Area is not available for this Job.', 400, 'job_work_area_invalid',
+    ));
+
+    await mount();
+
+    expect(pendingStore.error).toBe('The selected Work Area is not available for this Job.');
+    expect(pendingStore.workflow?.clockInIntent).toEqual(completedWorkAreaWorkflow.clockInIntent);
+    expect(mockClearRecord).not.toHaveBeenCalled();
   });
 
   it('does not auto-finalize from NetInfo when no queued submission was processed', async () => {

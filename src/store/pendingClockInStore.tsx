@@ -26,6 +26,26 @@ type FinalizationRecovery =
   | { status: 'missing' }
   | { status: 'unavailable' };
 
+export type PendingClockInPhase =
+  | { kind: 'no_pending_workflow' }
+  | { kind: 'requirements_outstanding'; current: number; total: number }
+  | { kind: 'ready_to_finalize'; total: number };
+
+export function pendingClockInPhase(workflow: PendingClockInWorkflow | null): PendingClockInPhase {
+  if (!workflow) return { kind: 'no_pending_workflow' };
+  const total = Math.max(
+    0,
+    workflow.requiredFormCount,
+    workflow.completedRequiredFormCount + workflow.remainingRequiredFormCount,
+  );
+  if (workflow.remainingRequiredFormCount === 0) return { kind: 'ready_to_finalize', total };
+  return {
+    kind: 'requirements_outstanding',
+    current: Math.min(total, Math.max(1, workflow.completedRequiredFormCount + 1)),
+    total,
+  };
+}
+
 type PendingClockInState = {
   hydrated: boolean;
   workflow: PendingClockInWorkflow | null;
@@ -33,6 +53,7 @@ type PendingClockInState = {
   currentForm: EmployeeForm | null;
   completedCount: number;
   totalCount: number;
+  phase: PendingClockInPhase;
   busy: boolean;
   error: string | null;
   acceptWorkflow: (workflow: PendingClockInWorkflow) => Promise<PendingClockInWorkflow>;
@@ -75,6 +96,14 @@ function identityFor(user: ReturnType<typeof useAuthStore>['user']) {
 function errorCode(error: unknown) {
   return error instanceof ApiError ? error.code?.toLowerCase() : undefined;
 }
+
+const CLOCK_IN_INTENT_ERROR_CODES = new Set([
+  'clock_in_intent_invalid',
+  'job_selection_invalid',
+  'job_work_area_invalid',
+  'job_work_area_required',
+  'job_work_area_unavailable',
+]);
 
 export function PendingClockInProvider({ children }: { children: React.ReactNode }) {
   const { accessToken, status, user } = useAuthStore();
@@ -167,13 +196,14 @@ export function PendingClockInProvider({ children }: { children: React.ReactNode
       }
       return await acceptWorkflow(response);
     } catch {
-      setError('Could not refresh the required pre-shift form. Your progress is still saved.');
+      setError('Could not refresh pending clock-in. Your progress is still saved.');
       return recordRef.current?.workflow ?? null;
     }
   }, [acceptWorkflow, accessToken, commit, identityKey, status]);
 
   const ensureCurrentForm = useCallback(async () => {
     const cachedWorkflow = recordRef.current?.workflow;
+    if (pendingClockInPhase(cachedWorkflow ?? null).kind === 'ready_to_finalize') return null;
     const cachedRequirement = cachedWorkflow?.remainingForms[0] ?? null;
     const cachedForm = pendingClockInRequirementForm(cachedRequirement);
     if (cachedForm) return cachedForm;
@@ -249,7 +279,11 @@ export function PendingClockInProvider({ children }: { children: React.ReactNode
   const finalize = useCallback((): Promise<FinalizeResult> => {
     if (finalizePromiseRef.current) return finalizePromiseRef.current;
     const run = async (): Promise<FinalizeResult> => {
-      if (!await isOnline()) return { ok: false, error: 'Reconnect to finish clocking in.' };
+      if (!await isOnline()) {
+        const message = 'Reconnect to finish clocking in.';
+        setError(message);
+        return { ok: false, error: message };
+      }
       setBusy(true);
       setError(null);
       try {
@@ -301,7 +335,9 @@ export function PendingClockInProvider({ children }: { children: React.ReactNode
         if (code === 'clock_in_workflow_not_found' || code === 'clock_in_workflow_forbidden') await recoverStaleWorkflow();
         const message = code === 'clock_in_workflow_forbidden'
           ? 'This pending clock-in is no longer available for this account.'
-          : 'Clock-in could not be finalized. Your required form progress is still saved.';
+          : code && CLOCK_IN_INTENT_ERROR_CODES.has(code) && finalizeError instanceof ApiError
+            ? finalizeError.message
+            : 'Clock-in could not be finalized. Your required form progress is still saved.';
         setError(message);
         return { ok: false, error: message };
       } finally {
@@ -315,7 +351,7 @@ export function PendingClockInProvider({ children }: { children: React.ReactNode
     return promise;
   }, [acceptWorkflow, accessToken, commit, recover, recoverForFinalization, recoverStaleWorkflow]);
 
-  const syncQueued = useCallback(() => {
+  const syncQueued = useCallback((authoritativeWorkflow?: PendingClockInWorkflow | null) => {
     if (syncPromiseRef.current || !identityKey || !accessToken) return syncPromiseRef.current;
     const run = async () => {
       if (!await isOnline()) return;
@@ -356,9 +392,10 @@ export function PendingClockInProvider({ children }: { children: React.ReactNode
         });
         processedQueuedSubmission = true;
       }
-      if (!processedQueuedSubmission) return;
-      const refreshed = await recover();
-      if (refreshed && refreshed.remainingRequiredFormCount === 0) {
+      const refreshed = processedQueuedSubmission || authoritativeWorkflow === undefined
+        ? await recover()
+        : authoritativeWorkflow;
+      if (refreshed && pendingClockInPhase(refreshed).kind === 'ready_to_finalize') {
         const finalized = await finalize();
         if (finalized.ok) await refreshWorkContext();
       }
@@ -388,9 +425,12 @@ export function PendingClockInProvider({ children }: { children: React.ReactNode
       try {
         const bootstrap = await clockingApi.loadBootstrap(accessToken);
         if (cancelled || identityRef.current !== identityKey) return;
-        if (bootstrap.pendingClockInWorkflow) await acceptWorkflow(bootstrap.pendingClockInWorkflow);
-        else if (bootstrap.capabilities?.requiredBeforeClockInForms || stored) await recover();
-        await syncQueued();
+        const authoritativeWorkflow = bootstrap.pendingClockInWorkflow
+          ? await acceptWorkflow(bootstrap.pendingClockInWorkflow)
+          : bootstrap.capabilities?.requiredBeforeClockInForms || stored
+            ? await recover()
+            : null;
+        await syncQueued(authoritativeWorkflow);
       } catch {
         // Keep the persisted workflow until authoritative recovery succeeds.
       }
@@ -447,6 +487,7 @@ export function PendingClockInProvider({ children }: { children: React.ReactNode
   }, [commit]);
 
   const currentRequirement = workflow?.remainingForms[0] ?? null;
+  const phase = pendingClockInPhase(workflow);
   const value = useMemo<PendingClockInState>(() => ({
     hydrated,
     workflow,
@@ -454,6 +495,7 @@ export function PendingClockInProvider({ children }: { children: React.ReactNode
     currentForm: pendingClockInRequirementForm(currentRequirement),
     completedCount: workflow?.completedRequiredFormCount ?? 0,
     totalCount: workflow?.requiredFormCount ?? 0,
+    phase,
     busy,
     error,
     acceptWorkflow,
@@ -466,7 +508,7 @@ export function PendingClockInProvider({ children }: { children: React.ReactNode
     submissionFailure: recordRef.current?.submissionFailure ?? null,
     refreshAfterSubmission: recover,
     finalize,
-  }), [acceptWorkflow, busy, completeQueuedSubmission, currentRequirement, ensureCurrentForm, error, finalize, hydrated, queueSubmission, queuedSubmissionFor, recover, submissionIdFor, workflow]);
+  }), [acceptWorkflow, busy, completeQueuedSubmission, currentRequirement, ensureCurrentForm, error, finalize, hydrated, phase, queueSubmission, queuedSubmissionFor, recover, submissionIdFor, workflow]);
 
   return <PendingClockInContext.Provider value={value}>{children}</PendingClockInContext.Provider>;
 }

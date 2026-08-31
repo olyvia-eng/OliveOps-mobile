@@ -158,7 +158,10 @@ describe('HomeScreen', () => {
       completedCount: 0,
       totalCount: 0,
       busy: false,
+      error: null,
+      phase: { kind: 'no_pending_workflow' },
       ensureCurrentForm: jest.fn().mockResolvedValue(null),
+      finalize: jest.fn().mockResolvedValue({ ok: true }),
     };
   });
 
@@ -263,7 +266,10 @@ describe('HomeScreen', () => {
       completedCount: 0,
       totalCount: 2,
       busy: false,
+      error: null,
+      phase: { kind: 'requirements_outstanding', current: 1, total: 2 },
       ensureCurrentForm,
+      finalize: jest.fn(),
     };
     await act(async () => { tree = create(<HomeScreen />); });
 
@@ -289,7 +295,10 @@ describe('HomeScreen', () => {
       completedCount: 0,
       totalCount: 1,
       busy: false,
+      error: null,
+      phase: { kind: 'requirements_outstanding', current: 1, total: 1 },
       ensureCurrentForm,
+      finalize: jest.fn(),
     };
     await act(async () => { tree = create(<HomeScreen />); });
 
@@ -304,5 +313,61 @@ describe('HomeScreen', () => {
         workflowRequirementId: 'clock-in-requirement-1',
       },
     });
+  });
+
+  it('shows completed requirements as clock-in finalization instead of an impossible Form count', async () => {
+    const finalize = jest.fn().mockResolvedValue({ ok: false, error: 'Reconnect to finish clocking in.' });
+    mockPendingClockIn = {
+      workflow: {
+        workflowOccurrenceId: 'clock-in-occurrence-1',
+        clockInIntent: { workType: 'job', jobIds: ['job-1'], workAreaId: 'area-1', clockingContractVersion: 2 },
+      },
+      currentRequirement: null,
+      currentForm: null,
+      completedCount: 1,
+      totalCount: 1,
+      busy: false,
+      error: 'Reconnect to finish clocking in.',
+      phase: { kind: 'ready_to_finalize', total: 1 },
+      ensureCurrentForm: jest.fn(),
+      finalize,
+    };
+    await act(async () => { tree = create(<HomeScreen />); });
+
+    const renderedText = textOf(tree.root);
+    const labels = tree.root.findAllByType('primary-button').map((node: any) => node.props.label);
+    expect(renderedText).toContain('Required forms complete');
+    expect(renderedText).toContain('Clock-in still needs to be finished.');
+    expect(renderedText).not.toContain('Required form 2 of 1');
+    expect(labels).toContain('Retry Finish Clock In');
+    expect(labels).not.toContain('Resume Required Form');
+
+    await act(async () => tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Retry Finish Clock In').props.onPress());
+    expect(finalize).toHaveBeenCalledTimes(1);
+    expect(mockPendingClockIn.ensureCurrentForm).not.toHaveBeenCalled();
+  });
+
+  it('refreshes the active shift after Finish Clock In succeeds', async () => {
+    const finalize = jest.fn().mockResolvedValue({ ok: true });
+    mockPendingClockIn = {
+      workflow: { workflowOccurrenceId: 'clock-in-occurrence-1' },
+      currentRequirement: null,
+      currentForm: null,
+      completedCount: 2,
+      totalCount: 2,
+      busy: false,
+      error: 'Clock-in could not be finalized. Your required form progress is still saved.',
+      phase: { kind: 'ready_to_finalize', total: 2 },
+      ensureCurrentForm: jest.fn(),
+      finalize,
+    };
+    await act(async () => { tree = create(<HomeScreen />); });
+
+    const retry = tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Retry Finish Clock In');
+    await act(async () => retry.props.onPress());
+
+    expect(finalize).toHaveBeenCalledTimes(1);
+    expect(mockRefresh).toHaveBeenCalled();
+    expect(mockPendingClockIn.ensureCurrentForm).not.toHaveBeenCalled();
   });
 });

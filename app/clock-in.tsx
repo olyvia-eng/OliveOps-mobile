@@ -37,7 +37,7 @@ export default function ClockInScreen() {
   const { jobs } = useClockingStore();
   const offlineClock = useOptionalOfflineClockStore();
   const effectiveClock = useEffectiveClockState();
-  const { clockIn, loading } = useClockingActions();
+  const { clockIn, loading, refreshWorkContext } = useClockingActions();
   const { getRequiredForms, refreshForms } = useFormsActions();
   const { workflow, startWorkflow, clearWorkflow } = useFormsWorkflowStore();
   const pendingClockIn = usePendingClockInStore();
@@ -300,6 +300,16 @@ export default function ClockInScreen() {
     setError(null);
 
     if (pendingClockIn.workflow) {
+      if (pendingClockIn.phase.kind === 'ready_to_finalize') {
+        const result = await pendingClockIn.finalize();
+        if (result.ok) {
+          await refreshWorkContext();
+          router.replace('/active-shift');
+        } else {
+          setError(result.error);
+        }
+        return;
+      }
       const form = await pendingClockIn.ensureCurrentForm();
       if (!form) {
         setError('The required pre-shift form is not available yet. Reconnect and try again.');
