@@ -29,7 +29,7 @@ import { formatBusinessDate, formatBusinessTime } from '@/utils/businessTime';
 
 export default function HomeScreen() {
   const { user } = useAuthStore();
-  const { activeShiftWarnings, businessTimeZone, jobs } = useClockingStore();
+  const { activeShiftWarnings, businessTimeZone, currentActiveEntryId, jobs, timeEntries } = useClockingStore();
   const offlineClock = useOptionalOfflineClockStore();
   const effectiveClock = useEffectiveClockState();
   const { refreshWorkContext } = useClockingActions();
@@ -58,7 +58,11 @@ export default function HomeScreen() {
     void refreshForms();
   }, [refreshForms]);
 
-  const activeShift = effectiveClock.activeEntry;
+  const authoritativeActiveShift = currentActiveEntryId
+    ? timeEntries.find((entry) => entry.id === currentActiveEntryId && entry.status === 'clocked_in') ?? null
+    : null;
+  const activeShift = authoritativeActiveShift ?? effectiveClock.activeEntry;
+  const showPendingClockIn = Boolean(pendingClockIn.workflow && !authoritativeActiveShift);
   const effectiveJobs = useMemo(() => jobs.length > 0
     ? jobs
     : (offlineClock?.cache?.jobs ?? []).map((job) => ({ ...job, assignedEmployeeIds: [] })),
@@ -68,6 +72,10 @@ export default function HomeScreen() {
     const timer = setInterval(() => setNow(Date.now()), 30_000);
     return () => clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (authoritativeActiveShift && pendingClockIn.workflow) void pendingClockIn.reconcileActiveShift();
+  }, [authoritativeActiveShift, pendingClockIn.reconcileActiveShift, pendingClockIn.workflow]);
 
   const currentJobLabel = useMemo(() => {
     if (!activeShift) return 'Not clocked in';
@@ -112,7 +120,7 @@ export default function HomeScreen() {
 
       {loadError && !loadError.startsWith('Offline.') ? <StatusBanner tone="error" message={loadError} /> : null}
       {pendingFormError ? <StatusBanner tone="error" message={pendingFormError} /> : null}
-      {pendingClockInReady && pendingClockIn.error
+      {showPendingClockIn && pendingClockInReady && pendingClockIn.error
         ? <StatusBanner tone="error" message={pendingClockIn.error} />
         : null}
 
@@ -124,7 +132,7 @@ export default function HomeScreen() {
             {`Required form ${pendingClockOut.completedCount + 1} of ${pendingClockOut.totalCount}`}
           </Text>
         </ActionCard>
-      ) : pendingClockIn.workflow ? (
+      ) : showPendingClockIn ? (
         <ActionCard>
           <StatusBadge label="Clock in pending" tone="active" />
           <Text style={styles.idleTitle}>
@@ -198,7 +206,7 @@ export default function HomeScreen() {
             },
           })}
         />
-      ) : pendingClockIn.workflow && pendingClockInReady ? (
+      ) : showPendingClockIn && pendingClockInReady ? (
         <PrimaryActionButton
           label={pendingClockIn.busy
             ? 'Finishing Clock In...'
@@ -213,7 +221,7 @@ export default function HomeScreen() {
             });
           }}
         />
-      ) : pendingClockIn.workflow && pendingClockIn.currentRequirement ? (
+      ) : showPendingClockIn && pendingClockIn.currentRequirement ? (
         <PrimaryActionButton
           label={pendingClockIn.busy ? 'Loading Required Form...' : 'Resume Required Form'}
           disabled={pendingClockIn.busy}
@@ -250,7 +258,7 @@ export default function HomeScreen() {
             });
           }}
         />
-      ) : pendingClockIn.workflow ? (
+      ) : showPendingClockIn ? (
         <PrimaryActionButton
           label={pendingClockIn.busy ? 'Loading Required Form...' : 'Resume Required Form'}
           disabled={pendingClockIn.busy}

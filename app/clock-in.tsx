@@ -34,7 +34,7 @@ type ActivityOption = {
 
 export default function ClockInScreen() {
   const { user } = useAuthStore();
-  const { jobs } = useClockingStore();
+  const { currentActiveEntryId, jobs, timeEntries } = useClockingStore();
   const offlineClock = useOptionalOfflineClockStore();
   const effectiveClock = useEffectiveClockState();
   const { clockIn, loading, refreshWorkContext } = useClockingActions();
@@ -64,6 +64,9 @@ export default function ClockInScreen() {
   const continuingWorkflowRef = useRef<string | null>(null);
   const openedMandatoryRequirementRef = useRef<string | null>(null);
   const redirectingActiveShiftRef = useRef(false);
+  const authoritativeActiveShift = currentActiveEntryId
+    ? timeEntries.some((entry) => entry.id === currentActiveEntryId && entry.status === 'clocked_in')
+    : false;
 
   const openMandatoryForm = useCallback((
     workflowOccurrenceId: string,
@@ -97,6 +100,13 @@ export default function ClockInScreen() {
   }, [pendingClockIn.workflow?.workflowOccurrenceId, user?.employeeId]);
 
   useFocusEffect(useCallback(() => {
+    if (authoritativeActiveShift) {
+      if (pendingClockIn.workflow) void pendingClockIn.reconcileActiveShift();
+      if (redirectingActiveShiftRef.current) return;
+      redirectingActiveShiftRef.current = true;
+      router.replace('/active-shift');
+      return;
+    }
     if (pendingClockIn.workflow) {
       redirectingActiveShiftRef.current = false;
       if (pendingClockIn.currentRequirement) {
@@ -115,7 +125,7 @@ export default function ClockInScreen() {
       return;
     }
     redirectingActiveShiftRef.current = false;
-  }, [effectiveClock.activeEntry, effectiveClock.effectiveStatus, effectiveClock.hydrated, openMandatoryForm, pendingClockIn.currentForm, pendingClockIn.currentRequirement, pendingClockIn.workflow]));
+  }, [authoritativeActiveShift, effectiveClock.activeEntry, effectiveClock.effectiveStatus, effectiveClock.hydrated, openMandatoryForm, pendingClockIn.currentForm, pendingClockIn.currentRequirement, pendingClockIn.reconcileActiveShift, pendingClockIn.workflow]));
 
   const assignedJobs = useMemo(() => {
     const employeeId = user?.employeeId;

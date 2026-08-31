@@ -63,9 +63,11 @@ const mockUseAuthStore = jest.fn(() => ({
 }));
 
 let mockJobs: any[] = [];
+let mockCurrentActiveEntryId: string | null = null;
+let mockTimeEntries: any[] = [];
 const mockUseClockingStore = jest.fn(() => ({
-  currentActiveEntryId: null,
-  timeEntries: [],
+  currentActiveEntryId: mockCurrentActiveEntryId,
+  timeEntries: mockTimeEntries,
   jobs: mockJobs,
 }));
 
@@ -173,6 +175,8 @@ describe('ClockInScreen', () => {
     mockJobs = [
       { id: 'job-1', title: 'Site A', status: 'scheduled', assignedEmployeeIds: ['emp-1'] },
     ];
+    mockCurrentActiveEntryId = null;
+    mockTimeEntries = [];
     mockRouteFocused = true;
     (router.replace as jest.Mock).mockReset();
     (router.push as jest.Mock).mockReset();
@@ -192,6 +196,7 @@ describe('ClockInScreen', () => {
       acceptWorkflow: jest.fn(async (pendingWorkflow: any) => pendingWorkflow),
       ensureCurrentForm: jest.fn().mockResolvedValue(null),
       recover: jest.fn().mockResolvedValue(null),
+      reconcileActiveShift: jest.fn().mockResolvedValue(false),
     };
     mockPendingClockOut = {
       workflow: null,
@@ -283,6 +288,26 @@ describe('ClockInScreen', () => {
     expect(router.replace).not.toHaveBeenCalled();
     expect(tree.root.findAllByProps({ testID: 'activity-option-job' })).toHaveLength(0);
     expect(tree.root.findAllByType('primary-button').some((node: any) => node.props.label === 'Clock In')).toBe(false);
+  });
+
+  it('redirects an authoritative active shift before reopening a stale pending Form', async () => {
+    const reconcileActiveShift = jest.fn().mockResolvedValue(true);
+    mockCurrentActiveEntryId = 'entry-1';
+    mockTimeEntries = [{ id: 'entry-1', status: 'clocked_in', employeeId: 'emp-1' }];
+    mockPendingClockIn = {
+      ...mockPendingClockIn,
+      workflow: { workflowOccurrenceId: 'occurrence-1' },
+      currentRequirement: { requirementId: 'requirement-1', formId: 'form-clock' },
+      reconcileActiveShift,
+    };
+
+    let tree: any;
+    await act(async () => { tree = create(<ClockInScreen />); });
+    await act(async () => tree.update(<ClockInScreen />));
+
+    expect(router.replace).toHaveBeenCalledWith('/active-shift');
+    expect(router.push).not.toHaveBeenCalled();
+    expect(reconcileActiveShift).toHaveBeenCalledTimes(1);
   });
 
   it('does not redirect a covered Clock In route while the Form route is active', async () => {

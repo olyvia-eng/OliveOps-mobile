@@ -143,6 +143,7 @@ describe('HomeScreen', () => {
     mockRefresh.mockClear();
     mockRefreshForms.mockClear();
     mockFormsState.toDo = [{ id: 'required-1' }, { id: 'required-2' }];
+    mockClockingState.currentActiveEntryId = 'entry-1';
     mockClockingState.activeShiftWarnings.possibleForgottenClockOut = false;
     mockPendingClockOut = {
       workflow: null,
@@ -161,6 +162,7 @@ describe('HomeScreen', () => {
       error: null,
       phase: { kind: 'no_pending_workflow' },
       ensureCurrentForm: jest.fn().mockResolvedValue(null),
+      reconcileActiveShift: jest.fn().mockResolvedValue(false),
       finalize: jest.fn().mockResolvedValue({ ok: true }),
     };
   });
@@ -259,6 +261,7 @@ describe('HomeScreen', () => {
 
   it('restores pending clock-in as a resume action without showing an active shift', async () => {
     const ensureCurrentForm = jest.fn();
+    mockClockingState.currentActiveEntryId = null;
     mockPendingClockIn = {
       workflow: { workflowOccurrenceId: 'clock-in-occurrence-1' },
       currentRequirement: { requirementId: 'clock-in-requirement-1' },
@@ -269,6 +272,7 @@ describe('HomeScreen', () => {
       error: null,
       phase: { kind: 'requirements_outstanding', current: 1, total: 2 },
       ensureCurrentForm,
+      reconcileActiveShift: jest.fn(),
       finalize: jest.fn(),
     };
     await act(async () => { tree = create(<HomeScreen />); });
@@ -288,6 +292,7 @@ describe('HomeScreen', () => {
 
   it('resolves an ID-only pending clock-in and opens its Form directly', async () => {
     const ensureCurrentForm = jest.fn().mockResolvedValue({ id: 'form-clock-in' });
+    mockClockingState.currentActiveEntryId = null;
     mockPendingClockIn = {
       workflow: { workflowOccurrenceId: 'clock-in-occurrence-1' },
       currentRequirement: { requirementId: 'clock-in-requirement-1', formId: 'form-clock-in' },
@@ -298,6 +303,7 @@ describe('HomeScreen', () => {
       error: null,
       phase: { kind: 'requirements_outstanding', current: 1, total: 1 },
       ensureCurrentForm,
+      reconcileActiveShift: jest.fn(),
       finalize: jest.fn(),
     };
     await act(async () => { tree = create(<HomeScreen />); });
@@ -317,6 +323,7 @@ describe('HomeScreen', () => {
 
   it('shows completed requirements as clock-in finalization instead of an impossible Form count', async () => {
     const finalize = jest.fn().mockResolvedValue({ ok: false, error: 'Reconnect to finish clocking in.' });
+    mockClockingState.currentActiveEntryId = null;
     mockPendingClockIn = {
       workflow: {
         workflowOccurrenceId: 'clock-in-occurrence-1',
@@ -330,6 +337,7 @@ describe('HomeScreen', () => {
       error: 'Reconnect to finish clocking in.',
       phase: { kind: 'ready_to_finalize', total: 1 },
       ensureCurrentForm: jest.fn(),
+      reconcileActiveShift: jest.fn(),
       finalize,
     };
     await act(async () => { tree = create(<HomeScreen />); });
@@ -352,6 +360,7 @@ describe('HomeScreen', () => {
 
   it('refreshes the active shift after Finish Clock In succeeds', async () => {
     const finalize = jest.fn().mockResolvedValue({ ok: true });
+    mockClockingState.currentActiveEntryId = null;
     mockPendingClockIn = {
       workflow: { workflowOccurrenceId: 'clock-in-occurrence-1' },
       currentRequirement: null,
@@ -362,6 +371,7 @@ describe('HomeScreen', () => {
       error: 'Clock-in could not be finalized. Your required form progress is still saved.',
       phase: { kind: 'ready_to_finalize', total: 2 },
       ensureCurrentForm: jest.fn(),
+      reconcileActiveShift: jest.fn(),
       finalize,
     };
     await act(async () => { tree = create(<HomeScreen />); });
@@ -372,5 +382,33 @@ describe('HomeScreen', () => {
     expect(finalize).toHaveBeenCalledTimes(1);
     expect(mockRefresh).toHaveBeenCalled();
     expect(mockPendingClockIn.ensureCurrentForm).not.toHaveBeenCalled();
+  });
+
+  it('shows an authoritative active shift instead of a stale completed clock-in workflow', async () => {
+    const reconcileActiveShift = jest.fn().mockResolvedValue(true);
+    mockPendingClockIn = {
+      workflow: { workflowOccurrenceId: 'clock-in-occurrence-1' },
+      currentRequirement: null,
+      currentForm: null,
+      completedCount: 1,
+      totalCount: 1,
+      busy: false,
+      error: 'Already Clocked In',
+      phase: { kind: 'ready_to_finalize', total: 1 },
+      ensureCurrentForm: jest.fn(),
+      reconcileActiveShift,
+      finalize: jest.fn(),
+    };
+
+    await act(async () => { tree = create(<HomeScreen />); });
+
+    const renderedText = textOf(tree.root);
+    const labels = tree.root.findAllByType('primary-button').map((node: any) => node.props.label);
+    expect(renderedText).toContain("You're clocked in");
+    expect(renderedText).not.toContain('Clock in pending');
+    expect(renderedText).not.toContain('Already Clocked In');
+    expect(labels).toContain('Clock Out');
+    expect(labels).not.toContain('Retry Finish Clock In');
+    expect(reconcileActiveShift).toHaveBeenCalledTimes(1);
   });
 });

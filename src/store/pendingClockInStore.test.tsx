@@ -235,6 +235,88 @@ describe('PendingClockInProvider', () => {
     expect(mockClearRecord).not.toHaveBeenCalled();
   });
 
+  it('clears a stale completed SQLite workflow when bootstrap confirms an active shift', async () => {
+    const stored: PendingClockInRecord = { workflow: workflow(true), submissionIds: {}, queuedSubmissions: [] };
+    mockLoadRecord.mockResolvedValue(stored);
+    mockLoadBootstrap.mockResolvedValue({
+      ok: true,
+      capabilities: { requiredBeforeClockInForms: true },
+      pendingClockInWorkflow: null,
+      currentActiveEntryId: 'entry-1',
+      timeEntries: [{
+        id: 'entry-1', employeeId: 'employee-1', status: 'clocked_in', workType: 'job',
+        jobIds: ['job-1'], clockIn: '2026-08-07T10:00:00.000Z', breakMinutes: 0, notes: '',
+      }],
+    });
+
+    await mount();
+
+    expect(pendingStore.workflow).toBeNull();
+    expect(pendingStore.error).toBeNull();
+    expect(mockClearRecord).toHaveBeenCalledWith('business-1:user-1:employee-1');
+    expect(mockFinalizeClockIn).not.toHaveBeenCalled();
+    expect(mockCaptureMessage).toHaveBeenCalledWith('clock_in_state_conflict', expect.objectContaining({
+      level: 'warning',
+      contexts: { clock_in_state_conflict: expect.objectContaining({
+        workflowOccurrenceId: 'occurrence-1',
+        activeShiftPresent: true,
+        serverPendingWorkflowPresent: false,
+        localPendingWorkflowPresent: true,
+      }) },
+    }));
+  });
+
+  it('reconciles a matching server workflow to an authoritative active shift without finalizing again', async () => {
+    const completed = workflow(true);
+    mockLoadBootstrap.mockResolvedValue({
+      ok: true,
+      capabilities: { requiredBeforeClockInForms: true, workAreaClockingVersion: 2 },
+      pendingClockInWorkflow: completed,
+      currentActiveEntryId: 'entry-1',
+      timeEntries: [{
+        id: 'entry-1', employeeId: 'employee-1', status: 'clocked_in', workType: 'job',
+        jobIds: ['job-1'], clockIn: '2026-08-07T10:00:00.000Z', breakMinutes: 0, notes: '',
+      }],
+    });
+
+    await mount();
+
+    expect(pendingStore.workflow).toBeNull();
+    expect(mockFinalizeClockIn).not.toHaveBeenCalled();
+    expect(mockClearRecord).toHaveBeenCalledWith('business-1:user-1:employee-1');
+    expect(mockCaptureMessage).toHaveBeenCalledWith('clock_in_state_conflict', expect.objectContaining({
+      contexts: { clock_in_state_conflict: expect.objectContaining({
+        serverPendingWorkflowPresent: true,
+        localPendingWorkflowPresent: false,
+        completedRequiredFormCount: 1,
+        remainingRequiredFormCount: 0,
+      }) },
+    }));
+  });
+
+  it('does not restore a retry path when SQLite cleanup fails after active-shift reconciliation', async () => {
+    const stored: PendingClockInRecord = { workflow: workflow(true), submissionIds: {}, queuedSubmissions: [] };
+    mockLoadRecord.mockResolvedValue(stored);
+    mockClearRecord.mockRejectedValue(new Error('SQLite unavailable'));
+    mockLoadBootstrap.mockResolvedValue({
+      ok: true,
+      capabilities: { requiredBeforeClockInForms: true },
+      pendingClockInWorkflow: null,
+      currentActiveEntryId: 'entry-1',
+      timeEntries: [{
+        id: 'entry-1', employeeId: 'employee-1', status: 'clocked_in', workType: 'job',
+        jobIds: ['job-1'], clockIn: '2026-08-07T10:00:00.000Z', breakMinutes: 0, notes: '',
+      }],
+    });
+
+    await mount();
+    await act(async () => mockAppStateListener?.('active'));
+
+    expect(pendingStore.workflow).toBeNull();
+    expect(mockFinalizeClockIn).not.toHaveBeenCalled();
+    expect(mockCaptureMessage).toHaveBeenCalledWith('clock_in_state_cleanup_failed', expect.anything());
+  });
+
   it('recovers from the dedicated pending endpoint when bootstrap has no embedded workflow', async () => {
     mockLoadBootstrap.mockResolvedValue({ ok: true, capabilities: { requiredBeforeClockInForms: true } });
 
