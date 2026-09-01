@@ -49,6 +49,7 @@ describe('offline clock effective state', () => {
       status: 'clocked_in',
     }));
     expect(state.effectiveStatus).toBe('clocked_in_pending');
+    expect(state.activeSource).toBe('offline_pending');
     expect(state.shiftStartedAt).toBe('2026-08-20T11:02:00.000Z');
     expect(state.currentSegmentStartedAt).toBe('2026-08-20T16:03:00.000Z');
     expect(state.localShiftId).toBe('shift-1');
@@ -79,6 +80,7 @@ describe('offline clock effective state', () => {
 
     const state = buildEffectiveClockState(serverEntry, [clockOut]);
     expect(state.activeEntry).toBeNull();
+    expect(state.activeSource).toBeNull();
     expect(state.effectiveActiveEntryId).toBeNull();
     expect(state.effectiveStatus).toBe('clocked_out_pending');
     expect(state.shiftStartedAt).toBe('2026-08-20T11:02:00.000Z');
@@ -100,6 +102,7 @@ describe('offline clock effective state', () => {
     expect(refreshedState.effectiveStatus).toBe('clocked_out_pending');
     expect(refreshedState.effectiveActiveEntryId).toBeNull();
     expect(refreshedState.activeEntry).toBeNull();
+    expect(refreshedState.activeSource).toBeNull();
   });
 
   it('does not remove a pending clock-in when bootstrap remains clocked out', () => {
@@ -111,6 +114,7 @@ describe('offline clock effective state', () => {
     expect(refreshedState.effectiveStatus).toBe('clocked_in_pending');
     expect(refreshedState.effectiveActiveEntryId).toContain('local-clock:shift-1');
     expect(refreshedState.activeEntry?.clockIn).toBe('2026-08-20T07:00:00.000Z');
+    expect(refreshedState.activeSource).toBe('offline_pending');
   });
 
   it('keeps historical attention separate from a newer effective shift', () => {

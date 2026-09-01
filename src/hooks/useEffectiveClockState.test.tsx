@@ -35,6 +35,7 @@ function Probe() {
   return React.createElement('effective-clock', {
     activeEntryId: state.effectiveActiveEntryId,
     activeEntry: state.activeEntry,
+    activeSource: state.activeSource,
     effectiveStatus: state.effectiveStatus,
   });
 }
@@ -85,6 +86,18 @@ describe('useEffectiveClockState', () => {
     expect(state.activeEntryId).toBeNull();
     expect(state.activeEntry).toBeNull();
     expect(state.effectiveStatus).toBe('clocked_out_pending');
+    expect(state.activeSource).toBeNull();
+  });
+
+  it('identifies an authoritative active entry as server-backed', async () => {
+    let tree: ReturnType<typeof create>;
+    await act(async () => {
+      tree = create(<Probe />);
+    });
+
+    const state = tree.root.findByType('effective-clock').props;
+    expect(state.activeEntryId).toBe('server-entry-a');
+    expect(state.activeSource).toBe('server');
   });
 
   it('overrides a clocked-out server with a pending local clock-in', async () => {
@@ -110,5 +123,6 @@ describe('useEffectiveClockState', () => {
     const state = tree.root.findByType('effective-clock').props;
     expect(state.activeEntryId).toContain('local-clock:local-shift-1');
     expect(state.effectiveStatus).toBe('clocked_in_pending');
+    expect(state.activeSource).toBe('offline_pending');
   });
 });

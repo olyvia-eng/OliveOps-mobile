@@ -69,6 +69,7 @@ export type OfflineClockCache = {
 
 export type EffectiveClockState = {
   activeEntry: TimeEntry | null;
+  activeSource: 'server' | 'offline_pending' | null;
   effectiveActiveEntryId: string | null;
   effectiveStatus: EffectiveClockStatus;
   shiftStartedAt?: string;

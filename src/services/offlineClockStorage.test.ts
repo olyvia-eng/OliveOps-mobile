@@ -59,6 +59,7 @@ jest.mock('expo-sqlite', () => ({
 
 import {
   completeOfflineCommand,
+  completeOfflineShiftCommands,
   insertOfflineCommand,
   loadOfflineCommands,
   loadShiftMapping,
@@ -113,6 +114,17 @@ describe('offline clock SQLite persistence', () => {
     for (const item of commands) await completeOfflineCommand(item);
 
     expect(Array.from(mockRows.values()).every((row) => row.status === 'synced')).toBe(true);
+    expect(await loadOfflineCommands('biz:user:employee')).toEqual([]);
+  });
+
+  it('retires every command in a provisional shift in one transaction', async () => {
+    const commands = [1, 2, 3].map((number) => command(`command-${number}`));
+    for (const item of commands) await insertOfflineCommand(item);
+    mockDatabase.withTransactionAsync.mockClear();
+
+    await completeOfflineShiftCommands(commands);
+
+    expect(mockDatabase.withTransactionAsync).toHaveBeenCalledTimes(1);
     expect(await loadOfflineCommands('biz:user:employee')).toEqual([]);
   });
 

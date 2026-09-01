@@ -62,6 +62,7 @@ export default function HomeScreen() {
     ? timeEntries.find((entry) => entry.id === currentActiveEntryId && entry.status === 'clocked_in') ?? null
     : null;
   const activeShift = authoritativeActiveShift ?? effectiveClock.activeEntry;
+  const localPendingClockIn = effectiveClock.activeSource === 'offline_pending';
   const showPendingClockIn = Boolean(pendingClockIn.workflow && !authoritativeActiveShift);
   const effectiveJobs = useMemo(() => jobs.length > 0
     ? jobs
@@ -151,10 +152,12 @@ export default function HomeScreen() {
       ) : activeShift ? (
         <View style={styles.activeCard}>
           <StatusBadge
-            label={effectiveClock.effectiveStatus === 'clocked_in_pending' ? 'Clocked in — Pending sync' : 'Active Shift'}
+            label={localPendingClockIn ? 'Clock in pending sync' : 'Active Shift'}
             tone="active"
           />
-          <Text style={styles.activeTitle}>You're clocked in</Text>
+          <Text style={styles.activeTitle}>
+            {localPendingClockIn ? 'Your clock-in is waiting to sync' : "You're clocked in"}
+          </Text>
           <Text style={styles.activeJob}>{currentJobLabel}</Text>
           <Text style={styles.activeActivity}>{currentActivityLabel}</Text>
           <View style={styles.shiftMetrics}>

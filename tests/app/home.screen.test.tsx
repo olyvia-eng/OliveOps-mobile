@@ -6,6 +6,7 @@ const mockRefresh = jest.fn().mockResolvedValue({ ok: true });
 const mockRefreshForms = jest.fn().mockResolvedValue({ ok: true });
 let mockPendingClockOut: any;
 let mockPendingClockIn: any;
+let mockOfflineClock: any;
 
 const mockUseClockingActions = jest.fn(() => ({
   refreshWorkContext: mockRefresh,
@@ -99,6 +100,10 @@ jest.mock('@/store/pendingClockInStore', () => ({
   usePendingClockInStore: () => mockPendingClockIn,
 }));
 
+jest.mock('@/store/offlineClockContext', () => ({
+  useOptionalOfflineClockStore: () => mockOfflineClock,
+}));
+
 jest.mock('@/components/Screen', () => ({
   Screen: ({ children }: any) => require('react').createElement('screen', {}, children),
 }));
@@ -144,6 +149,7 @@ describe('HomeScreen', () => {
     mockRefreshForms.mockClear();
     mockFormsState.toDo = [{ id: 'required-1' }, { id: 'required-2' }];
     mockClockingState.currentActiveEntryId = 'entry-1';
+    mockOfflineClock = undefined;
     mockClockingState.activeShiftWarnings.possibleForgottenClockOut = false;
     mockPendingClockOut = {
       workflow: null,
@@ -410,5 +416,67 @@ describe('HomeScreen', () => {
     expect(labels).toContain('Clock Out');
     expect(labels).not.toContain('Retry Finish Clock In');
     expect(reconcileActiveShift).toHaveBeenCalledTimes(1);
+  });
+
+  it('describes a synthetic offline clock-in as pending sync, not server-confirmed', async () => {
+    mockClockingState.currentActiveEntryId = null;
+    mockClockingState.timeEntries = [];
+    const localEntry = {
+      id: 'local-clock:shift-1:key-1', employeeId: 'emp-1', jobId: 'job-1', jobIds: ['job-1'],
+      workType: 'job', clockIn: '2026-08-07T10:00:00.000Z', breakMinutes: 0, notes: '', status: 'clocked_in',
+    };
+    mockOfflineClock = {
+      hydrated: true,
+      cache: null,
+      effectiveState: {
+        activeEntry: localEntry,
+        activeSource: 'offline_pending',
+        effectiveActiveEntryId: localEntry.id,
+        effectiveStatus: 'clocked_in_pending',
+        shiftStartedAt: localEntry.clockIn,
+      },
+      effectiveTimeEntries: [localEntry],
+    };
+
+    await act(async () => { tree = create(<HomeScreen />); });
+
+    const renderedText = textOf(tree.root);
+    expect(renderedText).toContain('Clock in pending sync');
+    expect(renderedText).toContain('Your clock-in is waiting to sync');
+    expect(renderedText).not.toContain("You're clocked in");
+  });
+
+  it('shows a mandatory workflow ahead of a stale local optimistic clock-in', async () => {
+    mockClockingState.currentActiveEntryId = null;
+    mockClockingState.timeEntries = [];
+    const localEntry = {
+      id: 'local-clock:shift-1:key-1', employeeId: 'emp-1', jobIds: ['job-1'], workType: 'job',
+      clockIn: '2026-08-07T10:00:00.000Z', breakMinutes: 0, notes: '', status: 'clocked_in',
+    };
+    mockOfflineClock = {
+      hydrated: true,
+      cache: null,
+      effectiveState: {
+        activeEntry: localEntry, activeSource: 'offline_pending', effectiveActiveEntryId: localEntry.id,
+        effectiveStatus: 'clocked_in_pending', shiftStartedAt: localEntry.clockIn,
+      },
+      effectiveTimeEntries: [localEntry],
+    };
+    mockPendingClockIn = {
+      ...mockPendingClockIn,
+      workflow: { workflowOccurrenceId: 'occurrence-1' },
+      currentRequirement: { requirementId: 'requirement-1', formId: 'form-1' },
+      currentForm: { id: 'form-1' },
+      totalCount: 1,
+      phase: { kind: 'requirements_outstanding', current: 1, total: 1 },
+    };
+
+    await act(async () => { tree = create(<HomeScreen />); });
+
+    const renderedText = textOf(tree.root);
+    expect(renderedText).toContain('Clock in pending');
+    expect(renderedText).toContain('Complete required pre-shift form');
+    expect(renderedText).not.toContain('Clock in pending sync');
+    expect(renderedText).not.toContain("You're clocked in");
   });
 });

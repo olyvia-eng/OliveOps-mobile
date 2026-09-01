@@ -1,6 +1,6 @@
 import type { ErrorEvent, Event, Exception, StackFrame, Thread } from '@sentry/react-native';
 
-const ALLOWED_CONTEXTS = new Set(['app', 'clock_in_finalize', 'clock_in_state_conflict', 'device', 'os', 'runtime', 'react']);
+const ALLOWED_CONTEXTS = new Set(['app', 'clock_in_finalize', 'clock_in_state_conflict', 'device', 'offline_clock_reconcile', 'os', 'runtime', 'react']);
 
 export function redactSensitiveText(value: string): string {
   return value

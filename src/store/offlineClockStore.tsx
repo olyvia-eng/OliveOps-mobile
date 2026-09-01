@@ -18,6 +18,7 @@ import { scopeJobsForSession, scopeTimeEntriesForSession } from '@/features/cloc
 import { beginRequest, endRequest } from '@/services/requestGuards';
 import {
   completeOfflineCommand,
+  completeOfflineShiftCommands,
   insertOfflineCommand,
   loadOfflineClockCache,
   loadOfflineCommands,
@@ -113,6 +114,32 @@ export function OfflineClockProvider({ children }: { children: React.ReactNode }
   const replaceCommand = useCallback((next: OfflineClockCommand) => {
     setCommands((current) => current.map((command) => command.id === next.id ? next : command));
   }, []);
+
+  const handoffPendingClockInWorkflow = useCallback(async (
+    queued: OfflineClockCommand[],
+    attempted: OfflineClockCommand,
+    workflow: PendingClockInWorkflow,
+  ) => {
+    const provisionalShiftCommands = queued
+      .filter((command) => command.localShiftId === attempted.localShiftId)
+      .map((command) => command.id === attempted.id ? attempted : command);
+    await completeOfflineShiftCommands(provisionalShiftCommands);
+    setCommands((current) => current.filter((command) => command.localShiftId !== attempted.localShiftId));
+    setPendingClockInWorkflow(workflow);
+    Sentry.captureMessage('offline_clock_mandatory_handoff', {
+      level: 'info',
+      contexts: {
+        offline_clock_reconcile: {
+          serverActiveEntryPresent: Boolean(serverActiveEntry),
+          currentActiveEntryIdPresent: Boolean(clocking.currentActiveEntryId),
+          offlineSyntheticActivePresent: true,
+          pendingOfflineClockInCount: queued.filter((command) => command.type === 'clock_in' && command.status !== 'synced').length,
+          pendingMandatoryWorkflowPresent: true,
+          effectiveActiveSource: 'offline_pending',
+        },
+      },
+    });
+  }, [clocking.currentActiveEntryId, serverActiveEntry]);
 
   const updateEligibilityCache = useCallback(async (update: {
     jobs?: typeof clocking.jobs;
@@ -257,13 +284,8 @@ export function OfflineClockProvider({ children }: { children: React.ReactNode }
               clientOccurredAt: stored.clientOccurredAt,
             } satisfies ClockInRequest, accessToken);
             if (response.status === 'clock_in_pending_required_forms') {
-              const provisionalShiftCommands = queued.filter((command) => command.localShiftId === stored.localShiftId);
-              for (const command of provisionalShiftCommands) {
-                await completeOfflineCommand(command.id === stored.id ? syncing : command);
-              }
+              await handoffPendingClockInWorkflow(queued, syncing, response);
               completedAny = true;
-              setCommands((current) => current.filter((command) => command.localShiftId !== stored.localShiftId));
-              setPendingClockInWorkflow(response);
               continue;
             }
             await completeOfflineCommand(syncing, {
@@ -311,6 +333,18 @@ export function OfflineClockProvider({ children }: { children: React.ReactNode }
           setCommands((current) => current.filter((command) => command.id !== stored.id));
         } catch (error) {
           const code = errorCode(error);
+          if (stored.type === 'clock_in' && code === 'pending_clock_in_exists') {
+            try {
+              const pendingWorkflow = await clockingApi.loadPendingClockIn(accessToken);
+              if (pendingWorkflow.status === 'clock_in_pending_required_forms') {
+                await handoffPendingClockInWorkflow(queued, attempted, pendingWorkflow);
+                completedAny = true;
+                continue;
+              }
+            } catch {
+              // Keep the command replayable until server workflow ownership can be verified.
+            }
+          }
           if (NEEDS_ATTENTION_CODES.has(code ?? '') || LOCAL_NEEDS_ATTENTION_CODES.has(code ?? '')) {
             const attention = { ...attempted, status: 'needs_attention' as const, lastErrorCategory: code ?? 'offline_clock_conflict' };
             await updateOfflineCommand(attention);
@@ -341,7 +375,7 @@ export function OfflineClockProvider({ children }: { children: React.ReactNode }
         syncPromiseRef.current = null;
       });
     return syncPromiseRef.current;
-  }, [accessToken, clocking, identityKey, replaceCommand, status, updateEligibilityCache, user]);
+  }, [accessToken, clocking, handoffPendingClockInWorkflow, identityKey, replaceCommand, status, updateEligibilityCache, user]);
 
   useEffect(() => {
     if (!hydrated || status !== 'authenticated') return;
@@ -409,10 +443,15 @@ export function OfflineClockProvider({ children }: { children: React.ReactNode }
 
   const submitClockIn = useCallback((payload: OfflineClockInPayload, meta: SubmitMeta) => {
     if (effectiveState.activeEntry) {
-      return Promise.resolve({ ok: false, error: 'You are already clocked in.' } as RecordedResult);
+      return Promise.resolve({
+        ok: false,
+        error: effectiveState.activeSource === 'offline_pending'
+          ? 'Your clock-in is still syncing.'
+          : 'You are already clocked in.',
+      } as RecordedResult);
     }
     return record('clock_in', opaqueId('local-shift'), payload, meta);
-  }, [effectiveState.activeEntry, record]);
+  }, [effectiveState.activeEntry, effectiveState.activeSource, record]);
   const submitSwitchActivity = useCallback((payload: OfflineSwitchPayload, meta: SubmitMeta) => {
     if (!effectiveState.localShiftId) return Promise.resolve({ ok: false, error: 'No active shift found.' } as RecordedResult);
     return record('switch_activity', effectiveState.localShiftId, payload, meta);

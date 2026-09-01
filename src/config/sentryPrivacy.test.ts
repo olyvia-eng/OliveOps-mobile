@@ -72,4 +72,32 @@ describe('sanitizeSentryEvent', () => {
       },
     });
   });
+
+  it('retains safe offline ownership diagnostics', () => {
+    const sanitized = sanitizeSentryEvent({
+      message: 'offline_clock_mandatory_handoff',
+      contexts: {
+        offline_clock_reconcile: {
+          serverActiveEntryPresent: false,
+          currentActiveEntryIdPresent: false,
+          offlineSyntheticActivePresent: true,
+          pendingOfflineClockInCount: 1,
+          pendingMandatoryWorkflowPresent: true,
+          effectiveActiveSource: 'offline_pending',
+        },
+        form_answers: { response: 'confidential' },
+      },
+    });
+
+    expect(sanitized.contexts).toEqual({
+      offline_clock_reconcile: {
+        serverActiveEntryPresent: false,
+        currentActiveEntryIdPresent: false,
+        offlineSyntheticActivePresent: true,
+        pendingOfflineClockInCount: 1,
+        pendingMandatoryWorkflowPresent: true,
+        effectiveActiveSource: 'offline_pending',
+      },
+    });
+  });
 });

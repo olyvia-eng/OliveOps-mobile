@@ -75,6 +75,7 @@ export function buildEffectiveClockState(
   const pending = dependencies.replayable;
   const needsAttention = dependencies.actionable;
   let activeEntry = serverActiveEntry;
+  let activeSource: EffectiveClockState['activeSource'] = serverActiveEntry ? 'server' : null;
   const mappedAttention = serverActiveEntry
     ? needsAttention.find((command) => command.resolvedServerEntryId === serverActiveEntry.id)
     : undefined;
@@ -101,6 +102,7 @@ export function buildEffectiveClockState(
         notes: '',
         status: 'clocked_in',
       };
+      activeSource = 'offline_pending';
       localShiftId = command.localShiftId;
       shiftStartedAt = command.clientOccurredAt;
       currentSegmentStartedAt = command.clientOccurredAt;
@@ -118,6 +120,7 @@ export function buildEffectiveClockState(
 
     const payload = command.logicalPayload as OfflineClockOutPayload;
     activeEntry = null;
+    activeSource = null;
     localShiftId = command.localShiftId;
     currentSegmentStartedAt = undefined;
     lastClockOutAt = command.clientOccurredAt;
@@ -139,6 +142,7 @@ export function buildEffectiveClockState(
 
   return {
     activeEntry,
+    activeSource,
     effectiveActiveEntryId: activeEntry?.id ?? null,
     effectiveStatus,
     shiftStartedAt,

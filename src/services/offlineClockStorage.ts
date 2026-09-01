@@ -124,6 +124,24 @@ export async function completeOfflineCommand(
   });
 }
 
+export async function completeOfflineShiftCommands(commands: OfflineClockCommand[]) {
+  if (commands.length === 0) return;
+  const db = await database();
+  await db.withTransactionAsync(async () => {
+    for (const command of commands) {
+      const synced = { ...command, status: 'synced' as const };
+      await db.runAsync(
+        `UPDATE offline_clock_commands SET status = 'synced', command_json = ?
+         WHERE id IN (?, ?) AND identity_key = ?`,
+        JSON.stringify(synced),
+        storageCommandId(command.identityKey, command.id),
+        command.id,
+        command.identityKey,
+      );
+    }
+  });
+}
+
 export async function loadShiftMapping(identityKey: string, localShiftId: string) {
   const db = await database();
   const row = await db.getFirstAsync<{ server_entry_id: string }>(

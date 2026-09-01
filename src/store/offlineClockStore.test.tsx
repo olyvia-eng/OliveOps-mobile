@@ -5,6 +5,7 @@ import { ApiError } from '@/types/errors';
 import type { OfflineClockCommand, OfflineShiftMapping } from '@/features/offlineClocking/types';
 
 const mockClockIn = jest.fn();
+const mockLoadPendingClockIn = jest.fn();
 const mockClockOut = jest.fn();
 const mockSwitchActivity = jest.fn();
 const mockLoadBootstrap = jest.fn();
@@ -46,6 +47,7 @@ const mockClockingState = {
 
 jest.mock('@/api/clockingApi', () => ({
   clockIn: (...args: unknown[]) => mockClockIn(...args),
+  loadPendingClockIn: (...args: unknown[]) => mockLoadPendingClockIn(...args),
   clockOut: (...args: unknown[]) => mockClockOut(...args),
   switchActivity: (...args: unknown[]) => mockSwitchActivity(...args),
   loadBootstrap: (...args: unknown[]) => mockLoadBootstrap(...args),
@@ -86,6 +88,12 @@ jest.mock('@/services/offlineClockStorage', () => ({
     const index = mockStoredCommands.findIndex((item) => item.identityKey === command.identityKey && item.id === command.id);
     if (index >= 0) mockStoredCommands[index] = { ...command, status: 'synced' };
     if (mapping) mockShiftMappings.set(`${mapping.identityKey}:${mapping.localShiftId}`, mapping.serverEntryId);
+  },
+  completeOfflineShiftCommands: async (commands: OfflineClockCommand[]) => {
+    for (const command of commands) {
+      const index = mockStoredCommands.findIndex((item) => item.identityKey === command.identityKey && item.id === command.id);
+      if (index >= 0) mockStoredCommands[index] = { ...command, status: 'synced' };
+    }
   },
   loadShiftMapping: async (identityKey: string, localShiftId: string) => (
     mockShiftMappings.get(`${identityKey}:${localShiftId}`)
@@ -165,6 +173,7 @@ describe('OfflineClockProvider', () => {
       user: { ...mockAuthState.user, id: 'user-1', employeeId: 'employee-1' },
     };
     mockClockIn.mockReset();
+    mockLoadPendingClockIn.mockReset();
     mockClockOut.mockReset();
     mockSwitchActivity.mockReset();
     mockLoadBootstrap.mockReset().mockResolvedValue({
@@ -254,6 +263,58 @@ describe('OfflineClockProvider', () => {
     expect(mockLoadBootstrap).toHaveBeenCalledWith('token-1', { force: true });
 
     await act(async () => offlineClock.acknowledgePendingClockInWorkflow());
+    expect(offlineClock.pendingClockInWorkflow).toBeNull();
+  });
+
+  it('supersedes a provisional shift when replay finds an existing mandatory workflow', async () => {
+    const pendingWorkflow = {
+      ok: true,
+      blocked: true,
+      status: 'clock_in_pending_required_forms',
+      workflowOccurrenceId: 'occurrence-existing',
+      requiredFormCount: 1,
+      completedRequiredFormCount: 0,
+      remainingRequiredFormCount: 1,
+      requiredForms: [],
+      remainingForms: [],
+      reminderForms: [],
+      clockInIntent: {
+        employeeId: 'employee-1', workType: 'job', jobIds: ['job-1'],
+        workAreaId: 'work-area-1', clockingContractVersion: 2,
+      },
+    } as const;
+    mockStoredCommands.push(command({
+      schemaVersion: 2,
+      logicalPayload: {
+        employeeId: 'employee-1', workType: 'job', jobIds: ['job-1'],
+        workAreaId: 'work-area-1', workAreaNameSnapshot: 'North Wing', clockingContractVersion: 2,
+      },
+    }));
+    mockClockIn.mockRejectedValue(new ApiError('Existing clock-in workflow', 409, 'pending_clock_in_exists'));
+    mockLoadPendingClockIn.mockResolvedValue(pendingWorkflow);
+
+    tree = await renderProvider();
+
+    expect(mockLoadPendingClockIn).toHaveBeenCalledWith('token-1');
+    expect(mockStoredCommands.every((item) => item.status === 'synced')).toBe(true);
+    expect(offlineClock.commands).toHaveLength(0);
+    expect(offlineClock.effectiveState.activeEntry).toBeNull();
+    expect(offlineClock.pendingClockInWorkflow).toBe(pendingWorkflow);
+    expect(mockClockIn).toHaveBeenCalledTimes(1);
+  });
+
+  it('retains a provisional shift when existing workflow ownership cannot be verified', async () => {
+    mockStoredCommands.push(command());
+    mockClockIn.mockRejectedValue(new ApiError('Existing clock-in workflow', 409, 'pending_clock_in_exists'));
+    mockLoadPendingClockIn.mockRejectedValue(new TypeError('network unavailable'));
+
+    tree = await renderProvider();
+
+    expect(mockStoredCommands).toEqual([expect.objectContaining({
+      id: 'key-1', status: 'pending', lastErrorCategory: 'pending_clock_in_exists',
+    })]);
+    expect(offlineClock.effectiveState.activeSource).toBe('offline_pending');
+    expect(offlineClock.effectiveState.activeEntry?.id).toContain('local-clock:');
     expect(offlineClock.pendingClockInWorkflow).toBeNull();
   });
 
@@ -578,8 +639,26 @@ describe('OfflineClockProvider', () => {
       );
     });
 
-    expect(result).toEqual({ ok: false, error: 'You are already clocked in.' });
+    expect(result).toEqual({ ok: false, error: 'Your clock-in is still syncing.' });
     expect(mockStoredCommands).toHaveLength(1);
+  });
+
+  it('retains the normal duplicate warning for a server-confirmed active shift', async () => {
+    mockClockingState.timeEntries = [commandEntry('server-entry-1')];
+    mockClockingState.currentActiveEntryId = 'server-entry-1';
+
+    tree = await renderProvider();
+
+    let result: unknown;
+    await act(async () => {
+      result = await offlineClock.submitClockIn(
+        { employeeId: 'employee-1', workType: 'job', jobIds: ['job-1'] },
+        { requestId: 'request-new', idempotencyKey: 'key-new', clientOccurredAt: '2026-08-20T10:01:00.000Z' },
+      );
+    });
+
+    expect(result).toEqual({ ok: false, error: 'You are already clocked in.' });
+    expect(mockStoredCommands).toHaveLength(0);
   });
 
   it('persists one command when the same logical action is submitted twice concurrently', async () => {
