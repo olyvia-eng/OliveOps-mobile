@@ -5,6 +5,7 @@ import * as Sentry from '@sentry/react-native';
 import * as clockingApi from '@/api/clockingApi';
 import { loadRequiredForms, submitEmployeeForm } from '@/api/formsApi';
 import { isOnline } from '@/services/connectivity';
+import { captureClockInFinalizeTrace, captureClockingBootstrapTrace } from '@/services/clockingDiagnostics';
 import {
   clearPendingClockInRecord,
   loadPendingClockInRecord,
@@ -130,7 +131,7 @@ function activeEntryMatchesIntent(bootstrap: BootstrapResponse, workflow: Pendin
 export function PendingClockInProvider({ children }: { children: React.ReactNode }) {
   const { accessToken, status, user } = useAuthStore();
   const { refreshWorkContext } = useClockingActions();
-  const { setCurrentActiveEntryId, upsertTimeEntry } = useClockingStore();
+  const { currentActiveEntryId, setCurrentActiveEntryId, timeEntries, upsertTimeEntry } = useClockingStore();
   const offlineClock = useOptionalOfflineClockStore();
   const outboxWorkflow = offlineClock?.pendingClockInWorkflow;
   const acknowledgeOutboxWorkflow = offlineClock?.acknowledgePendingClockInWorkflow;
@@ -145,10 +146,18 @@ export function PendingClockInProvider({ children }: { children: React.ReactNode
   const lastFinalizeResultCodeRef = useRef<string | null>(null);
   const activeShiftReconcilePromiseRef = useRef<Promise<boolean> | null>(null);
   const activeShiftReconciledRef = useRef(false);
+  const latestBootstrapRef = useRef<BootstrapResponse | undefined>(undefined);
   const [hydrated, setHydrated] = useState(false);
   const [workflow, setWorkflow] = useState<PendingClockInWorkflow | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const loadTracedBootstrap = useCallback(async (force = false) => {
+    const bootstrap = await clockingApi.loadBootstrap(accessToken, { force });
+    latestBootstrapRef.current = bootstrap;
+    captureClockingBootstrapTrace(bootstrap, user?.employeeId);
+    return bootstrap;
+  }, [accessToken, user?.employeeId]);
 
   const commit = useCallback(async (next: PendingClockInRecord | null) => {
     if (!identityKey) return;
@@ -373,7 +382,7 @@ export function PendingClockInProvider({ children }: { children: React.ReactNode
     if (activeShiftReconcilePromiseRef.current) return activeShiftReconcilePromiseRef.current;
     const run = async () => {
       if (!identityKey || status !== 'authenticated' || !await isOnline()) return false;
-      const bootstrap = await clockingApi.loadBootstrap(accessToken, { force: true });
+      const bootstrap = await loadTracedBootstrap(true);
       if (identityRef.current !== identityKey) return false;
       return reconcileBootstrapActiveShift(bootstrap, Boolean(recordRef.current));
     };
@@ -382,12 +391,12 @@ export function PendingClockInProvider({ children }: { children: React.ReactNode
     });
     activeShiftReconcilePromiseRef.current = promise;
     return promise;
-  }, [accessToken, identityKey, reconcileBootstrapActiveShift, status]);
+  }, [identityKey, loadTracedBootstrap, reconcileBootstrapActiveShift, status]);
 
   const recoverForFinalization = useCallback(async (): Promise<FinalizationRecovery> => {
     let bootstrapConfirmedNotActive = false;
     try {
-      const bootstrap = await clockingApi.loadBootstrap(accessToken, { force: true });
+      const bootstrap = await loadTracedBootstrap(true);
       if (await reconcileBootstrapActiveShift(bootstrap, Boolean(recordRef.current))) {
         return { status: 'completed' };
       }
@@ -416,7 +425,7 @@ export function PendingClockInProvider({ children }: { children: React.ReactNode
     } catch {
       return { status: 'unavailable' };
     }
-  }, [acceptWorkflow, accessToken, clearResolvedWorkflow, reconcileBootstrapActiveShift]);
+  }, [acceptWorkflow, accessToken, clearResolvedWorkflow, loadTracedBootstrap, reconcileBootstrapActiveShift]);
 
   const failFinalization = useCallback((message: string, code?: string, httpStatus?: number): FinalizeResult => {
     const current = recordRef.current?.workflow ?? null;
@@ -475,6 +484,12 @@ export function PendingClockInProvider({ children }: { children: React.ReactNode
   const finalize = useCallback((): Promise<FinalizeResult> => {
     if (finalizePromiseRef.current) return finalizePromiseRef.current;
     const run = async (): Promise<FinalizeResult> => {
+      let traceWorkflow: PendingClockInWorkflow | undefined;
+      let traceResponseTimeEntry: import('@/types/domain').TimeEntry | undefined;
+      let traceHttpStatus = 0;
+      let traceResultStatus = 'request_not_attempted';
+      let traceBackendErrorCode: string | undefined;
+      let finalizePostAttempted = false;
       if (!await isOnline()) {
         const message = 'Reconnect to finish clocking in.';
         finalizationErrorRef.current = message;
@@ -501,7 +516,12 @@ export function PendingClockInProvider({ children }: { children: React.ReactNode
           }
           current = recovered.workflow;
         }
+        traceWorkflow = current;
+        finalizePostAttempted = true;
         const response = await clockingApi.finalizeClockIn({ workflowOccurrenceId: current.workflowOccurrenceId }, accessToken);
+        traceHttpStatus = 200;
+        traceResultStatus = response.status;
+        traceResponseTimeEntry = response.timeEntry;
         if (response.status === 'clock_in_pending_required_forms') {
           const recovered = await acceptWorkflow(response);
           return reconcileFinalizationFailure({
@@ -546,7 +566,7 @@ export function PendingClockInProvider({ children }: { children: React.ReactNode
             await clearResolvedWorkflow();
             let bootstrap: BootstrapResponse | undefined;
             try {
-              const bootstrapResponse = await clockingApi.loadBootstrap(accessToken, { force: true });
+              const bootstrapResponse = await loadTracedBootstrap(true);
               bootstrap = bootstrapResponse;
               const activeEntry = bootstrapResponse.timeEntries?.find(
                 (entry) => entry.id === bootstrapResponse.currentActiveEntryId,
@@ -570,7 +590,7 @@ export function PendingClockInProvider({ children }: { children: React.ReactNode
           if (response.status === 'clock_in_already_finalized') {
             let bootstrap: BootstrapResponse | undefined;
             try {
-              bootstrap = await clockingApi.loadBootstrap(accessToken, { force: true });
+              bootstrap = await loadTracedBootstrap(true);
             } catch {
               captureFinalizeResult({ status: 'clock_in_reconciliation_failed', workflowOccurrenceId: current.workflowOccurrenceId });
               return failFinalization(
@@ -603,6 +623,9 @@ export function PendingClockInProvider({ children }: { children: React.ReactNode
         );
       } catch (finalizeError) {
         const code = errorCode(finalizeError);
+        traceHttpStatus = finalizeError instanceof ApiError ? finalizeError.status : 0;
+        traceResultStatus = 'request_failed';
+        traceBackendErrorCode = code;
         if (code === 'required_forms_outstanding') {
           return reconcileFinalizationFailure({
             message: 'Clock-in could not be finalized yet. Your required form progress is saved.',
@@ -637,6 +660,27 @@ export function PendingClockInProvider({ children }: { children: React.ReactNode
             : 'Clock-in could not be finalized. Your required form progress is still saved.';
         return failFinalization(message, code, finalizeError instanceof ApiError ? finalizeError.status : undefined);
       } finally {
+        if (finalizePostAttempted && traceWorkflow) {
+          const pendingClockInCommands = offlineClock?.commands?.filter(
+            (command) => command.type === 'clock_in' && command.status !== 'synced',
+          ) ?? [];
+          captureClockInFinalizeTrace({
+            workflow: traceWorkflow,
+            httpStatus: traceHttpStatus,
+            resultStatus: traceResultStatus,
+            backendErrorCode: traceBackendErrorCode,
+            responseTimeEntry: traceResponseTimeEntry,
+            currentActiveEntryId,
+            timeEntries,
+            recoveryBootstrap: latestBootstrapRef.current,
+            offline: {
+              pendingClockInCount: pendingClockInCommands.length,
+              syntheticActivePresent: offlineClock?.effectiveState?.activeSource === 'offline_pending',
+              effectiveActiveSource: offlineClock?.effectiveState?.activeSource ?? 'none',
+            },
+            networkState: 'online',
+          });
+        }
         setBusy(false);
       }
     };
@@ -645,7 +689,7 @@ export function PendingClockInProvider({ children }: { children: React.ReactNode
     });
     finalizePromiseRef.current = promise;
     return promise;
-  }, [acceptFinalizedTimeEntry, acceptWorkflow, accessToken, captureFinalizeResult, clearResolvedWorkflow, failFinalization, reconcileFinalizationFailure, recoverForFinalization, setCurrentActiveEntryId, upsertTimeEntry, user?.employeeId]);
+  }, [acceptFinalizedTimeEntry, acceptWorkflow, accessToken, captureFinalizeResult, clearResolvedWorkflow, currentActiveEntryId, failFinalization, loadTracedBootstrap, offlineClock?.commands, offlineClock?.effectiveState?.activeSource, reconcileFinalizationFailure, recoverForFinalization, setCurrentActiveEntryId, timeEntries, upsertTimeEntry, user?.employeeId]);
 
   const syncQueued = useCallback((authoritativeWorkflow?: PendingClockInWorkflow | null) => {
     if (syncPromiseRef.current || !identityKey || !accessToken) return syncPromiseRef.current;
@@ -729,7 +773,7 @@ export function PendingClockInProvider({ children }: { children: React.ReactNode
       setHydrated(true);
       if (!await isOnline()) return;
       try {
-        const bootstrap = await clockingApi.loadBootstrap(accessToken);
+        const bootstrap = await loadTracedBootstrap();
         if (cancelled || identityRef.current !== identityKey) return;
         if (await reconcileBootstrapActiveShift(bootstrap, Boolean(stored))) return;
         const authoritativeWorkflow = bootstrap.pendingClockInWorkflow
@@ -743,7 +787,7 @@ export function PendingClockInProvider({ children }: { children: React.ReactNode
       }
     }).catch(() => setHydrated(true));
     return () => { cancelled = true; };
-  }, [acceptWorkflow, accessToken, identityKey, reconcileBootstrapActiveShift, recover, status, syncQueued]);
+  }, [acceptWorkflow, identityKey, loadTracedBootstrap, reconcileBootstrapActiveShift, recover, status, syncQueued]);
 
   useEffect(() => {
     if (!hydrated || status !== 'authenticated') return;
