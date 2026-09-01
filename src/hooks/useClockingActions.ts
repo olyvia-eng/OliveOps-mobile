@@ -3,7 +3,6 @@ import * as clockingApi from '@/api/clockingApi';
 import { scopeJobsForSession, scopeTimeEntriesForSession } from '@/features/clocking/scoping';
 import { beginRequest, createRequestMeta, endRequest } from '@/services/requestGuards';
 import { isOnline } from '@/services/connectivity';
-import { captureClockingBootstrapTrace } from '@/services/clockingDiagnostics';
 import { useAuthStore } from '@/store/authStore';
 import { useClockingStore } from '@/store/clockingStore';
 import { useOptionalOfflineClockStore } from '@/store/offlineClockContext';
@@ -45,7 +44,6 @@ export function useClockingActions() {
     const generation = latestBootstrapGenerationRef.current + 1;
     latestBootstrapGenerationRef.current = generation;
     const payload = await clockingApi.loadBootstrap(accessToken, { force });
-    captureClockingBootstrapTrace(payload, user.employeeId);
     if (
       currentAuthIdentityRef.current !== requestAuthIdentity
       || latestBootstrapGenerationRef.current !== generation
