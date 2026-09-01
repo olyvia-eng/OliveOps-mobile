@@ -445,32 +445,38 @@ export default function FormScreen() {
       } : {}),
       responses: buildFormResponses(orderedFields, values),
     };
-    if (attachmentIdentityKey && clientSubmissionRef.current?.value !== clientSubmissionId) {
-      const rebound = await rebindFormAttachments(attachmentIdentityKey, clientSubmissionRef.current!.value, clientSubmissionId);
-      setPhotoAttachments(Object.fromEntries(rebound.map((record) => [record.fieldId, record])));
-      clientSubmissionRef.current = { identity: submissionIdentity, value: clientSubmissionId };
-    }
-    if (mandatoryKind && !await isOnline()) {
-      await mandatoryStore.queueSubmission(payload);
-      submittedRef.current = true;
-      setQueuedOffline(true);
-      return;
-    }
-    if (mandatoryKind && queuedMandatorySubmission) {
-      await mandatoryStore.queueSubmission(payload);
-    }
     try {
       setProcessingPhotos(true);
+      if (attachmentIdentityKey && clientSubmissionRef.current?.value !== clientSubmissionId) {
+        const rebound = await rebindFormAttachments(
+          attachmentIdentityKey,
+          clientSubmissionRef.current!.value,
+          clientSubmissionId,
+          accessToken,
+        );
+        setPhotoAttachments(Object.fromEntries(rebound.map((record) => [record.fieldId, record])));
+        clientSubmissionRef.current = { identity: submissionIdentity, value: clientSubmissionId };
+      }
+      if (mandatoryKind && !await isOnline()) {
+        await mandatoryStore.queueSubmission(payload);
+        submittedRef.current = true;
+        setQueuedOffline(true);
+        return;
+      }
+      if (mandatoryKind && queuedMandatorySubmission) {
+        await mandatoryStore.queueSubmission(payload);
+      }
       payload = await prepareFormSubmissionAttachments(payload, attachmentIdentityKey, accessToken);
       const records = await loadFormAttachments(attachmentIdentityKey, clientSubmissionId);
       setPhotoAttachments(Object.fromEntries(records.map((record) => [record.fieldId, record])));
       if (mandatoryKind) await mandatoryStore.queueSubmission(payload);
     } catch (uploadError) {
-      const records = await loadFormAttachments(attachmentIdentityKey, clientSubmissionId);
+      const activeSubmissionId = clientSubmissionRef.current?.value ?? clientSubmissionId;
+      const records = await loadFormAttachments(attachmentIdentityKey, activeSubmissionId);
       setPhotoAttachments(Object.fromEntries(records.map((record) => [record.fieldId, record])));
       submissionInProgressRef.current = false;
       setProcessingPhotos(false);
-      setError(uploadError instanceof Error ? uploadError.message : 'Photo upload failed. Retry or remove the photo.');
+      setError(uploadError instanceof Error ? uploadError.message : 'Could not prepare the selected photo. Try submitting again.');
       return;
     } finally {
       setProcessingPhotos(false);

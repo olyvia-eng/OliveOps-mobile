@@ -50,6 +50,13 @@ jest.mock('expo-sqlite', () => ({
       [...mockRows.values()]
         .filter((record) => record.identityKey === identityKey && record.clientSubmissionId === clientSubmissionId)
         .map((record) => ({ record_json: JSON.stringify(record) }))),
+    getFirstAsync: jest.fn(async (_sql: string, identityKey: string, clientSubmissionId: string, fieldId: string) => {
+      const record = [...mockRows.values()].find((value) =>
+        value.identityKey === identityKey
+        && value.clientSubmissionId === clientSubmissionId
+        && value.fieldId === fieldId);
+      return record ? { record_json: JSON.stringify(record) } : null;
+    }),
     runAsync: jest.fn(async (sql: string, ...args: any[]) => {
       if (sql.includes('INSERT INTO form_attachments')) {
         const record = JSON.parse(args[5]);
@@ -57,10 +64,33 @@ jest.mock('expo-sqlite', () => ({
           value.identityKey === record.identityKey
           && value.clientSubmissionId === record.clientSubmissionId
           && value.fieldId === record.fieldId);
+        if (mockRows.has(record.localAttachmentId) && existing?.localAttachmentId !== record.localAttachmentId) {
+          throw new Error('UNIQUE constraint failed: form_attachments.local_attachment_id');
+        }
         if (existing) mockRows.delete(existing.localAttachmentId);
         mockRows.set(record.localAttachmentId, record);
+      } else if (sql.includes('UPDATE form_attachments')) {
+        const [clientSubmissionId, updatedAt, recordJson, localAttachmentId] = args;
+        const record = JSON.parse(recordJson);
+        const collision = [...mockRows.values()].find((value) =>
+          value.localAttachmentId !== localAttachmentId
+          && value.identityKey === record.identityKey
+          && value.clientSubmissionId === clientSubmissionId
+          && value.fieldId === record.fieldId);
+        if (collision) throw new Error('UNIQUE constraint failed: form_attachments_submission_field');
+        mockRows.set(localAttachmentId, { ...record, clientSubmissionId, updatedAt });
       } else if (sql.includes('DELETE FROM form_attachments')) {
         mockRows.delete(args[0]);
+      }
+    }),
+    withTransactionAsync: jest.fn(async (callback: () => Promise<void>) => {
+      const snapshot = new Map(mockRows);
+      try {
+        await callback();
+      } catch (error) {
+        mockRows.clear();
+        for (const [key, value] of snapshot) mockRows.set(key, value);
+        throw error;
       }
     }),
   })),
@@ -72,6 +102,7 @@ import {
   loadFormAttachments,
   markFormAttachmentsSubmitted,
   prepareFormSubmissionAttachments,
+  rebindFormAttachments,
   resetFormAttachmentStorageForTests,
 } from './formAttachmentStorage';
 
@@ -121,6 +152,85 @@ describe('formAttachmentStorage', () => {
     expect(mockUploadUriToS3).toHaveBeenLastCalledWith(
       'https://upload.example/file', record.localUri, 'image/jpeg', { 'Content-Type': 'image/jpeg' },
     );
+  });
+
+  it('rebinds a durable photo by primary key without creating a second row', async () => {
+    const created = await createDurableFormPhoto({
+      identityKey: 'identity-1', clientSubmissionId: 'temporary-submission', formId: 'form-1',
+      fieldId: 'photo-1', sourceUri: 'content://photo',
+    });
+    expect(await loadFormAttachments('identity-1', 'temporary-submission')).toHaveLength(1);
+
+    const rebound = await rebindFormAttachments('identity-1', 'temporary-submission', 'mandatory-submission');
+
+    expect(rebound).toEqual([expect.objectContaining({
+      localAttachmentId: created.localAttachmentId,
+      clientSubmissionId: 'mandatory-submission',
+      fieldId: 'photo-1',
+    })]);
+    expect(mockFiles.get(created.localUri)?.exists).toBe(true);
+    expect(await loadFormAttachments('identity-1', 'temporary-submission')).toHaveLength(0);
+    expect(await loadFormAttachments('identity-1', 'mandatory-submission')).toEqual(rebound);
+  });
+
+  it('treats a repeated rebind as idempotent', async () => {
+    const created = await createDurableFormPhoto({
+      identityKey: 'identity-1', clientSubmissionId: 'temporary-submission', formId: 'form-1',
+      fieldId: 'photo-1', sourceUri: 'content://photo',
+    });
+    await rebindFormAttachments('identity-1', 'temporary-submission', 'mandatory-submission');
+
+    const repeated = await rebindFormAttachments('identity-1', 'temporary-submission', 'mandatory-submission');
+    const sameTarget = await rebindFormAttachments('identity-1', 'mandatory-submission', 'mandatory-submission');
+
+    expect(repeated).toEqual([expect.objectContaining({ localAttachmentId: created.localAttachmentId })]);
+    expect(sameTarget).toEqual(repeated);
+    expect(await loadFormAttachments('identity-1', 'mandatory-submission')).toHaveLength(1);
+  });
+
+  it('keeps the latest target-field attachment and cleans up the superseded local file', async () => {
+    const source = await createDurableFormPhoto({
+      identityKey: 'identity-1', clientSubmissionId: 'temporary-submission', formId: 'form-1',
+      fieldId: 'photo-1', sourceUri: 'content://source',
+    });
+    mockRows.set(source.localAttachmentId, {
+      ...mockRows.get(source.localAttachmentId),
+      updatedAt: '2026-08-31T10:00:00.000Z',
+    });
+    const target = await createDurableFormPhoto({
+      identityKey: 'identity-1', clientSubmissionId: 'mandatory-submission', formId: 'form-1',
+      fieldId: 'photo-1', sourceUri: 'content://target',
+    });
+
+    const rebound = await rebindFormAttachments('identity-1', 'temporary-submission', 'mandatory-submission');
+
+    expect(rebound).toEqual([expect.objectContaining({ localAttachmentId: target.localAttachmentId })]);
+    expect(await loadFormAttachments('identity-1', 'temporary-submission')).toHaveLength(0);
+    expect(await loadFormAttachments('identity-1', 'mandatory-submission')).toHaveLength(1);
+    expect(mockFiles.get(source.localUri)?.exists).toBe(false);
+    expect(mockFiles.get(target.localUri)?.exists).toBe(true);
+  });
+
+  it('never deletes submitted attachments during a target-field collision', async () => {
+    const source = await createDurableFormPhoto({
+      identityKey: 'identity-1', clientSubmissionId: 'temporary-submission', formId: 'form-1',
+      fieldId: 'photo-1', sourceUri: 'content://source',
+    });
+    const target = await createDurableFormPhoto({
+      identityKey: 'identity-1', clientSubmissionId: 'mandatory-submission', formId: 'form-1',
+      fieldId: 'photo-1', sourceUri: 'content://target',
+    });
+    await markFormAttachmentsSubmitted('identity-1', 'temporary-submission');
+    await markFormAttachmentsSubmitted('identity-1', 'mandatory-submission');
+
+    const rebound = await rebindFormAttachments('identity-1', 'temporary-submission', 'mandatory-submission', 'token');
+
+    expect(rebound).toEqual([expect.objectContaining({ localAttachmentId: target.localAttachmentId, state: 'submitted' })]);
+    expect(await loadFormAttachments('identity-1', 'temporary-submission')).toEqual([
+      expect.objectContaining({ localAttachmentId: source.localAttachmentId, state: 'submitted' }),
+    ]);
+    expect(await loadFormAttachments('identity-1', 'mandatory-submission')).toEqual(rebound);
+    expect(mockDeleteUploadedFile).not.toHaveBeenCalled();
   });
 
   it('keeps the durable file through payload preparation and deletes it only after acceptance', async () => {

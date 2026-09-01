@@ -113,14 +113,90 @@ export async function createDurableFormPhoto(input: {
   });
 }
 
-export async function rebindFormAttachments(identityKey: string, fromSubmissionId: string, toSubmissionId: string) {
+export async function rebindFormAttachments(identityKey: string, fromSubmissionId: string, toSubmissionId: string, accessToken?: string) {
   if (fromSubmissionId === toSubmissionId) return loadFormAttachments(identityKey, toSubmissionId);
-  const records = await loadFormAttachments(identityKey, fromSubmissionId);
-  return Promise.all(records.map((record) => save({
-    ...record,
-    clientSubmissionId: toSubmissionId,
-    updatedAt: new Date().toISOString(),
-  })));
+  const db = await database();
+  const superseded: LocalFormAttachment[] = [];
+  const rebound: LocalFormAttachment[] = [];
+  await db.withTransactionAsync(async () => {
+    const sourceRows = await db.getAllAsync<{ record_json: string }>(
+      `SELECT record_json FROM form_attachments
+       WHERE identity_key = ? AND client_submission_id = ?
+       ORDER BY updated_at ASC`,
+      identityKey,
+      fromSubmissionId,
+    );
+    if (sourceRows.length === 0) {
+      const existing = await db.getAllAsync<{ record_json: string }>(
+        `SELECT record_json FROM form_attachments
+         WHERE identity_key = ? AND client_submission_id = ?
+         ORDER BY updated_at ASC`,
+        identityKey,
+        toSubmissionId,
+      );
+      rebound.push(...existing.map((row) => JSON.parse(row.record_json) as LocalFormAttachment));
+      return;
+    }
+
+    for (const row of sourceRows) {
+      const source = JSON.parse(row.record_json) as LocalFormAttachment;
+      const targetRow = await db.getFirstAsync<{ record_json: string }>(
+        `SELECT record_json FROM form_attachments
+         WHERE identity_key = ? AND client_submission_id = ? AND field_id = ?`,
+        identityKey,
+        toSubmissionId,
+        source.fieldId,
+      );
+      const target = targetRow ? JSON.parse(targetRow.record_json) as LocalFormAttachment : null;
+      if (target?.localAttachmentId === source.localAttachmentId) {
+        rebound.push(target);
+        continue;
+      }
+
+      if (source.state === 'submitted' && target?.state === 'submitted') {
+        rebound.push(target);
+        continue;
+      }
+
+      const targetWins = source.state !== 'submitted' && (target?.state === 'submitted'
+        || Boolean(target && (
+          target.updatedAt > source.updatedAt
+          || (target.updatedAt === source.updatedAt && target.localAttachmentId > source.localAttachmentId)
+        )));
+      if (target && targetWins) {
+        await db.runAsync('DELETE FROM form_attachments WHERE local_attachment_id = ?', source.localAttachmentId);
+        superseded.push(source);
+        rebound.push(target);
+        continue;
+      }
+
+      if (target) {
+        await db.runAsync('DELETE FROM form_attachments WHERE local_attachment_id = ?', target.localAttachmentId);
+        superseded.push(target);
+      }
+      const updated = { ...source, clientSubmissionId: toSubmissionId, updatedAt: new Date().toISOString() };
+      await db.runAsync(
+        `UPDATE form_attachments
+         SET client_submission_id = ?, updated_at = ?, record_json = ?
+         WHERE local_attachment_id = ?`,
+        toSubmissionId,
+        updated.updatedAt,
+        JSON.stringify(updated),
+        source.localAttachmentId,
+      );
+      rebound.push(updated);
+    }
+  });
+
+  for (const record of superseded) {
+    if (record.state === 'submitted') continue;
+    if (record.fileId) {
+      try { await deleteUploadedFile(record.fileId, accessToken); } catch { /* Pending metadata expires server-side. */ }
+    }
+    const file = new File(record.localUri);
+    if (file.exists) file.delete();
+  }
+  return rebound;
 }
 
 export async function ensureFormPhotoUploaded(record: LocalFormAttachment, accessToken?: string) {

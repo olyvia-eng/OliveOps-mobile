@@ -25,6 +25,7 @@ const mockInitialFormValues = jest.fn();
 const mockLoadFormAttachments = jest.fn().mockResolvedValue([]);
 const mockPrepareFormSubmissionAttachments = jest.fn(async (payload) => payload);
 const mockMarkFormAttachmentsSubmitted = jest.fn().mockResolvedValue(undefined);
+const mockRebindFormAttachments = jest.fn().mockResolvedValue([]);
 const mockPickSinglePhoto = jest.fn();
 let mockPendingClockOut: any;
 let mockPendingClockIn: any;
@@ -96,7 +97,7 @@ jest.mock('@/services/formAttachmentStorage', () => ({
   loadFormAttachments: (...args: unknown[]) => mockLoadFormAttachments(...args),
   markFormAttachmentsSubmitted: (...args: unknown[]) => mockMarkFormAttachmentsSubmitted(...args),
   prepareFormSubmissionAttachments: (...args: unknown[]) => mockPrepareFormSubmissionAttachments(...args),
-  rebindFormAttachments: jest.fn(async () => []),
+  rebindFormAttachments: (...args: unknown[]) => mockRebindFormAttachments(...args),
   removeFormAttachment: jest.fn(),
 }));
 jest.mock('@/services/photoPicker', () => ({
@@ -180,6 +181,7 @@ describe('FormScreen', () => {
     mockLoadFormAttachments.mockReset().mockResolvedValue([]);
     mockPrepareFormSubmissionAttachments.mockReset().mockImplementation(async (payload) => payload);
     mockMarkFormAttachmentsSubmitted.mockClear();
+    mockRebindFormAttachments.mockReset().mockResolvedValue([]);
     mockPickSinglePhoto.mockReset();
     mockParams = { list: 'todo', formId: 'form-1', trigger: 'daily', equipmentId: 'eq-1' };
     mockAddListener.mockClear();
@@ -814,6 +816,85 @@ describe('FormScreen', () => {
       responses: expect.arrayContaining([{ fieldId: 'photo', value: '', fileIds: ['file-1'] }]),
     }));
     expect(mockMarkFormAttachmentsSubmitted).toHaveBeenCalledWith('biz-1:user-1:emp-1', 'form-submission:request-1');
+  });
+
+  it('rebinds a selected mandatory photo before upload preparation and submission', async () => {
+    const requiredForm = { ...mockForm, trigger: 'before_clock_in', context: { jobId: 'job-1' } };
+    requiredForm.fields = requiredForm.fields.map((field: any) => field.id === 'photo'
+      ? { ...field, type: 'photo_upload', required: true }
+      : field);
+    const requirement = { requirementId: 'requirement-1', formId: 'form-1', form: requiredForm };
+    const temporaryAttachment = {
+      localAttachmentId: 'local-photo-1', identityKey: 'biz-1:user-1:emp-1', clientSubmissionId: 'form-submission:request-1',
+      formId: 'form-1', fieldId: 'photo', localUri: 'file:///durable/photo.jpg', fileName: 'photo.jpg', mimeType: 'image/jpeg',
+      sizeBytes: 1024, state: 'local', createdAt: '2026-09-01T10:00:00.000Z', updatedAt: '2026-09-01T10:00:00.000Z',
+    };
+    const mandatoryAttachment = { ...temporaryAttachment, clientSubmissionId: 'form-submission:required-1' };
+    mockParams = {
+      formId: 'form-1', trigger: 'before_clock_in', workflowOccurrenceId: 'occurrence-1',
+      workflowRequirementId: 'requirement-1',
+    };
+    mockPendingClockIn = {
+      ...mockPendingClockIn,
+      workflow: { workflowOccurrenceId: 'occurrence-1', remainingForms: [requirement] },
+      currentRequirement: requirement,
+    };
+    mockLoadFormAttachments.mockResolvedValueOnce([temporaryAttachment]).mockResolvedValue([mandatoryAttachment]);
+    mockRebindFormAttachments.mockResolvedValue([mandatoryAttachment]);
+    mockPrepareFormSubmissionAttachments.mockImplementation(async (payload: any) => ({
+      ...payload,
+      responses: [...payload.responses.filter((response: any) => response.fieldId !== 'photo'), {
+        fieldId: 'photo', value: '', fileIds: ['file-1'],
+      }],
+    }));
+    let tree: any;
+    await act(async () => { tree = create(<FormScreen />); });
+    await act(async () => tree.root.findByProps({ testID: 'form-field-condition' }).props.onChangeText('Good'));
+    await act(async () => tree.root.findByType('primary-button').props.onPress());
+
+    expect(mockSubmissionIdFor).toHaveBeenCalledWith('requirement-1');
+    expect(mockRebindFormAttachments).toHaveBeenCalledWith(
+      'biz-1:user-1:emp-1', 'form-submission:request-1', 'form-submission:required-1', 'token-1',
+    );
+    expect(mockPrepareFormSubmissionAttachments).toHaveBeenCalledWith(
+      expect.objectContaining({ clientSubmissionId: 'form-submission:required-1' }),
+      'biz-1:user-1:emp-1',
+      'token-1',
+    );
+    expect(mockSubmitForm).toHaveBeenCalledWith(expect.objectContaining({
+      clientSubmissionId: 'form-submission:required-1',
+      responses: expect.arrayContaining([{ fieldId: 'photo', value: '', fileIds: ['file-1'] }]),
+    }));
+  });
+
+  it('keeps a selected photo retryable when mandatory attachment rebinding fails', async () => {
+    const requiredForm = { ...mockForm, trigger: 'before_clock_in' };
+    const requirement = { requirementId: 'requirement-1', formId: 'form-1', form: requiredForm };
+    const attachment = {
+      localAttachmentId: 'local-photo-1', identityKey: 'biz-1:user-1:emp-1', clientSubmissionId: 'form-submission:request-1',
+      formId: 'form-1', fieldId: 'photo', localUri: 'file:///durable/photo.jpg', fileName: 'photo.jpg', mimeType: 'image/jpeg',
+      sizeBytes: 1024, state: 'local', createdAt: '2026-09-01T10:00:00.000Z', updatedAt: '2026-09-01T10:00:00.000Z',
+    };
+    mockParams = {
+      formId: 'form-1', trigger: 'before_clock_in', workflowOccurrenceId: 'occurrence-1',
+      workflowRequirementId: 'requirement-1',
+    };
+    mockPendingClockIn = {
+      ...mockPendingClockIn,
+      workflow: { workflowOccurrenceId: 'occurrence-1', remainingForms: [requirement] },
+      currentRequirement: requirement,
+    };
+    mockLoadFormAttachments.mockResolvedValue([attachment]);
+    mockRebindFormAttachments.mockRejectedValue(new Error('Could not update the saved photo. Try again.'));
+    let tree: any;
+    await act(async () => { tree = create(<FormScreen />); });
+    await act(async () => tree.root.findByProps({ testID: 'form-field-condition' }).props.onChangeText('Good'));
+    await act(async () => tree.root.findByType('primary-button').props.onPress());
+
+    expect(mockSubmitForm).not.toHaveBeenCalled();
+    expect(mockPrepareFormSubmissionAttachments).not.toHaveBeenCalled();
+    expect(tree.root.findByType('status-banner').props.message).toBe('Could not update the saved photo. Try again.');
+    expect(tree.root.findByType('primary-button').props.disabled).toBe(false);
   });
 
   it('warns before leaving only after answers have changed', async () => {
