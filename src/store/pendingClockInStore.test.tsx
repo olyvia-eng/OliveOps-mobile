@@ -17,6 +17,8 @@ const mockAcknowledgePendingClockInWorkflow = jest.fn();
 const mockPrepareFormSubmissionAttachments = jest.fn();
 const mockMarkFormAttachmentsSubmitted = jest.fn();
 const mockCaptureMessage = jest.fn();
+const mockUpsertTimeEntry = jest.fn();
+const mockSetCurrentActiveEntryId = jest.fn();
 let mockOutboxWorkflow: ReturnType<typeof workflow> | null = null;
 let mockOnline = true;
 let pendingStore: any;
@@ -43,6 +45,13 @@ function workflow(completed = false) {
     remainingForms: completed ? [] : [requirement],
     reminderForms: [],
     clockInIntent: { employeeId: 'employee-1', workType: 'job' as const, jobIds: ['job-1'] },
+  };
+}
+
+function finalizedTimeEntry(id = 'entry-real') {
+  return {
+    id, employeeId: 'employee-1', status: 'clocked_in' as const, workType: 'job' as const, jobIds: ['job-1'],
+    clockIn: '2026-08-31T10:00:00.000Z', breakMinutes: 0, notes: '',
   };
 }
 
@@ -83,6 +92,12 @@ jest.mock('@/store/authStore', () => ({
   useAuthStore: () => ({
     accessToken: 'token-1', status: 'authenticated',
     user: { businessId: 'business-1', id: 'user-1', employeeId: 'employee-1' },
+  }),
+}));
+jest.mock('@/store/clockingStore', () => ({
+  useClockingStore: () => ({
+    upsertTimeEntry: mockUpsertTimeEntry,
+    setCurrentActiveEntryId: mockSetCurrentActiveEntryId,
   }),
 }));
 jest.mock('@/hooks/useClockingActions', () => ({
@@ -139,13 +154,17 @@ describe('PendingClockInProvider', () => {
       pendingClockInWorkflow: workflow(),
     });
     mockLoadPendingClockIn.mockReset().mockResolvedValue(workflow());
-    mockFinalizeClockIn.mockReset().mockResolvedValue({ ok: true, status: 'clock_in_completed' });
+    mockFinalizeClockIn.mockReset().mockResolvedValue({
+      ok: true, status: 'clock_in_completed', timeEntry: finalizedTimeEntry(),
+    });
     mockLoadRequiredForms.mockReset().mockResolvedValue({ ok: true, forms: [requiredForm] });
     mockSubmitEmployeeForm.mockReset().mockResolvedValue({ ok: true, submission: { id: 'submission-1' } });
     mockRefreshWorkContext.mockReset().mockResolvedValue({ ok: true });
     mockPrepareFormSubmissionAttachments.mockReset().mockImplementation(async (payload) => payload);
     mockMarkFormAttachmentsSubmitted.mockReset().mockResolvedValue(undefined);
     mockCaptureMessage.mockReset();
+    mockUpsertTimeEntry.mockReset();
+    mockSetCurrentActiveEntryId.mockReset();
   });
 
   afterEach(async () => {
@@ -431,19 +450,100 @@ describe('PendingClockInProvider', () => {
     );
   });
 
-  it('treats clock_in_already_finalized as idempotent success and clears local state', async () => {
-    mockFinalizeClockIn.mockResolvedValue({ ok: true, status: 'clock_in_already_finalized' });
+  it('consumes the completed TimeEntry before clearing and remains active when bootstrap fails', async () => {
+    const timeEntry = {
+      id: 'entry-real', employeeId: 'employee-1', status: 'clocked_in', workType: 'job', jobIds: ['job-1'],
+      clockIn: '2026-08-31T10:00:00.000Z', breakMinutes: 0, notes: '',
+    };
+    mockFinalizeClockIn.mockResolvedValue({ ok: true, status: 'clock_in_completed', timeEntry });
+    mockLoadBootstrap.mockResolvedValueOnce({
+      ok: true, capabilities: { requiredBeforeClockInForms: true }, pendingClockInWorkflow: workflow(),
+    }).mockRejectedValueOnce(new TypeError('bootstrap unavailable'));
     await mount();
 
     let result: any;
-    await act(async () => {
-      result = await pendingStore.finalize();
-    });
+    await act(async () => { result = await pendingStore.finalize(); });
 
     expect(result).toEqual({ ok: true });
-    expect(mockFinalizeClockIn).toHaveBeenCalledWith({ workflowOccurrenceId: 'occurrence-1' }, 'token-1');
+    expect(mockUpsertTimeEntry).toHaveBeenCalledWith(timeEntry);
+    expect(mockSetCurrentActiveEntryId).toHaveBeenCalledWith('entry-real');
     expect(pendingStore.workflow).toBeNull();
-    expect(mockRefreshWorkContext).not.toHaveBeenCalled();
+  });
+
+  it('consumes an HTTP-200 already-finalized TimeEntry before clearing', async () => {
+    const timeEntry = {
+      id: 'entry-existing', employeeId: 'employee-1', status: 'clocked_in', workType: 'job', jobIds: ['job-1'],
+      clockIn: '2026-08-31T10:00:00.000Z', breakMinutes: 0, notes: '',
+    };
+    mockFinalizeClockIn.mockResolvedValue({ ok: true, status: 'clock_in_already_finalized', timeEntry });
+    await mount();
+
+    let result: any;
+    await act(async () => { result = await pendingStore.finalize(); });
+
+    expect(result).toEqual({ ok: true });
+    expect(mockUpsertTimeEntry).toHaveBeenCalledWith(timeEntry);
+    expect(mockSetCurrentActiveEntryId).toHaveBeenCalledWith('entry-existing');
+    expect(pendingStore.workflow).toBeNull();
+  });
+
+  it('proves HTTP-200 already-finalized without a TimeEntry before clearing', async () => {
+    const activeEntry = {
+      id: 'entry-bootstrap', employeeId: 'employee-1', status: 'clocked_in', workType: 'job', jobIds: ['job-1'],
+      clockIn: '2026-08-31T10:00:00.000Z', breakMinutes: 0, notes: '',
+    };
+    mockFinalizeClockIn.mockResolvedValue({ ok: true, status: 'clock_in_already_finalized' });
+    mockLoadBootstrap.mockResolvedValueOnce({
+      ok: true, capabilities: { requiredBeforeClockInForms: true }, pendingClockInWorkflow: workflow(),
+    }).mockResolvedValueOnce({
+      ok: true, currentActiveEntryId: activeEntry.id, timeEntries: [activeEntry], pendingClockInWorkflow: null,
+    });
+    await mount();
+
+    let result: any;
+    await act(async () => { result = await pendingStore.finalize(); });
+
+    expect(result).toEqual({ ok: true });
+    expect(mockUpsertTimeEntry).toHaveBeenCalledWith(activeEntry);
+    expect(mockSetCurrentActiveEntryId).toHaveBeenCalledWith(activeEntry.id);
+    expect(pendingStore.workflow).toBeNull();
+  });
+
+  it('retains HTTP-200 already-finalized when bootstrap proves no active TimeEntry', async () => {
+    mockFinalizeClockIn.mockResolvedValue({ ok: true, status: 'clock_in_already_finalized' });
+    mockLoadBootstrap.mockResolvedValueOnce({
+      ok: true, capabilities: { requiredBeforeClockInForms: true }, pendingClockInWorkflow: workflow(),
+    }).mockResolvedValueOnce({
+      ok: true, currentActiveEntryId: null, timeEntries: [], pendingClockInWorkflow: workflow(true),
+    });
+    await mount();
+
+    let result: any;
+    await act(async () => { result = await pendingStore.finalize(); });
+
+    expect(result).toEqual({ ok: false, error: 'Clock-in completion could not be verified. Your required form progress is still saved.' });
+    expect(mockUpsertTimeEntry).not.toHaveBeenCalled();
+    expect(mockSetCurrentActiveEntryId).not.toHaveBeenCalled();
+    expect(pendingStore.workflow?.workflowOccurrenceId).toBe('occurrence-1');
+    expect(mockClearRecord).not.toHaveBeenCalled();
+    expect(mockCaptureMessage).toHaveBeenCalledWith('clock_in_finalize_result', expect.anything());
+  });
+
+  it('treats thrown clock_in_already_finalized only after authoritative recovery', async () => {
+    mockFinalizeClockIn.mockRejectedValue(new ApiError('Already finalized', 409, 'clock_in_already_finalized'));
+    mockLoadBootstrap.mockResolvedValueOnce({
+      ok: true, capabilities: { requiredBeforeClockInForms: true }, pendingClockInWorkflow: workflow(true),
+    }).mockResolvedValueOnce({
+      ok: true, currentActiveEntryId: null, timeEntries: [], pendingClockInWorkflow: workflow(true),
+    });
+    await mount();
+
+    let result: any;
+    await act(async () => { result = await pendingStore.finalize(); });
+
+    expect(result.ok).toBe(false);
+    expect(mockFinalizeClockIn).toHaveBeenCalledWith({ workflowOccurrenceId: 'occurrence-1' }, 'token-1');
+    expect(pendingStore.workflow?.workflowOccurrenceId).toBe('occurrence-1');
   });
 
   it('auto-finalizes a completed bootstrap workflow without requiring a queued submission', async () => {
@@ -498,7 +598,9 @@ describe('PendingClockInProvider', () => {
     expect(pendingStore.workflow?.clockInIntent).toEqual(completedWorkAreaWorkflow.clockInIntent);
     expect(pendingStore.phase).toEqual({ kind: 'ready_to_finalize', total: 1 });
     expect(pendingStore.error).toBe('Clock-in could not be finalized. Your required form progress is still saved.');
-    mockFinalizeClockIn.mockResolvedValueOnce({ ok: true, status: 'clock_in_completed' });
+    mockFinalizeClockIn.mockResolvedValueOnce({
+      ok: true, status: 'clock_in_completed', timeEntry: finalizedTimeEntry(),
+    });
 
     let result: any;
     await act(async () => { result = await pendingStore.finalize(); });
@@ -639,7 +741,7 @@ describe('PendingClockInProvider', () => {
 
   it('shares one successful clock-in finalization across simultaneous callers', async () => {
     await mount();
-    let resolveFinalize!: (result: { ok: true; status: 'clock_in_completed' }) => void;
+    let resolveFinalize!: (result: { ok: true; status: 'clock_in_completed'; timeEntry: ReturnType<typeof finalizedTimeEntry> }) => void;
     mockFinalizeClockIn.mockClear().mockImplementationOnce(() => new Promise((resolve) => { resolveFinalize = resolve; }));
 
     let first!: Promise<unknown>;
@@ -653,7 +755,7 @@ describe('PendingClockInProvider', () => {
     expect(first).toBe(second);
     expect(mockFinalizeClockIn).toHaveBeenCalledTimes(1);
     await act(async () => {
-      resolveFinalize({ ok: true, status: 'clock_in_completed' });
+      resolveFinalize({ ok: true, status: 'clock_in_completed', timeEntry: finalizedTimeEntry() });
       await Promise.all([first, second]);
     });
     await expect(first).resolves.toEqual({ ok: true });

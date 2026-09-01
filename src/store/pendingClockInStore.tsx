@@ -15,6 +15,7 @@ import { createFormClientSubmissionId } from '@/services/requestGuards';
 import { markFormAttachmentsSubmitted, prepareFormSubmissionAttachments } from '@/services/formAttachmentStorage';
 import { useClockingActions } from '@/hooks/useClockingActions';
 import { useAuthStore } from '@/store/authStore';
+import { useClockingStore } from '@/store/clockingStore';
 import { useOptionalOfflineClockStore } from '@/store/offlineClockContext';
 import type { BootstrapResponse, PendingClockInRequirement, PendingClockInWorkflow } from '@/types/api';
 import { ApiError } from '@/types/errors';
@@ -129,6 +130,7 @@ function activeEntryMatchesIntent(bootstrap: BootstrapResponse, workflow: Pendin
 export function PendingClockInProvider({ children }: { children: React.ReactNode }) {
   const { accessToken, status, user } = useAuthStore();
   const { refreshWorkContext } = useClockingActions();
+  const { setCurrentActiveEntryId, upsertTimeEntry } = useClockingStore();
   const offlineClock = useOptionalOfflineClockStore();
   const outboxWorkflow = offlineClock?.pendingClockInWorkflow;
   const acknowledgeOutboxWorkflow = offlineClock?.acknowledgePendingClockInWorkflow;
@@ -194,6 +196,44 @@ export function PendingClockInProvider({ children }: { children: React.ReactNode
       },
     });
   }, []);
+
+  const captureFinalizeResult = useCallback((input: {
+    status: string;
+    workflowOccurrenceId: string;
+    responseTimeEntry?: import('@/types/domain').TimeEntry;
+    bootstrap?: BootstrapResponse;
+  }) => {
+    const bootstrapActiveEntry = input.bootstrap?.timeEntries?.find(
+      (entry) => entry.id === input.bootstrap?.currentActiveEntryId,
+    );
+    Sentry.captureMessage('clock_in_finalize_result', {
+      level: input.status === 'clock_in_reconciliation_failed' ? 'warning' : 'info',
+      contexts: {
+        clock_in_finalize_result: {
+          status: input.status,
+          httpSuccess: true,
+          workflowOccurrenceId: input.workflowOccurrenceId,
+          responseTimeEntryPresent: Boolean(input.responseTimeEntry),
+          responseTimeEntryIdPresent: Boolean(input.responseTimeEntry?.id),
+          responseTimeEntryStatus: input.responseTimeEntry?.status ?? 'unavailable',
+          bootstrapActiveEntryPresent: Boolean(bootstrapActiveEntry),
+          bootstrapCurrentActiveEntryIdPresent: Boolean(input.bootstrap?.currentActiveEntryId),
+          matchingResponseEntryInBootstrap: Boolean(
+            input.responseTimeEntry?.id && bootstrapActiveEntry?.id === input.responseTimeEntry.id,
+          ),
+          pendingWorkflowStillPresent: Boolean(input.bootstrap?.pendingClockInWorkflow),
+          effectiveActiveSource: offlineClock?.effectiveState?.activeSource ?? 'unavailable',
+        },
+      },
+    });
+  }, [offlineClock?.effectiveState?.activeSource]);
+
+  const acceptFinalizedTimeEntry = useCallback((timeEntry: import('@/types/domain').TimeEntry) => {
+    if (!user?.employeeId || timeEntry.employeeId !== user.employeeId || timeEntry.status !== 'clocked_in') return false;
+    upsertTimeEntry(timeEntry);
+    setCurrentActiveEntryId(timeEntry.id);
+    return true;
+  }, [setCurrentActiveEntryId, upsertTimeEntry, user?.employeeId]);
 
   const acceptWorkflow = useCallback(async (nextWorkflow: PendingClockInWorkflow) => {
     activeShiftReconciledRef.current = false;
@@ -490,8 +530,77 @@ export function PendingClockInProvider({ children }: { children: React.ReactNode
             verifyActiveShift: true,
           });
         }
-        await clearResolvedWorkflow();
-        return { ok: true };
+        if (response.status === 'clock_in_completed' || response.status === 'clock_in_already_finalized') {
+          if (response.timeEntry) {
+            if (!acceptFinalizedTimeEntry(response.timeEntry)) {
+              captureFinalizeResult({
+                status: 'clock_in_reconciliation_failed',
+                workflowOccurrenceId: current.workflowOccurrenceId,
+                responseTimeEntry: response.timeEntry,
+              });
+              return failFinalization(
+                'Clock-in completion returned invalid employee or shift data. Your required form progress is still saved.',
+                'clock_in_finalize_invalid_time_entry',
+              );
+            }
+            await clearResolvedWorkflow();
+            let bootstrap: BootstrapResponse | undefined;
+            try {
+              const bootstrapResponse = await clockingApi.loadBootstrap(accessToken, { force: true });
+              bootstrap = bootstrapResponse;
+              const activeEntry = bootstrapResponse.timeEntries?.find(
+                (entry) => entry.id === bootstrapResponse.currentActiveEntryId,
+              );
+              if (activeEntry && activeEntry.employeeId === user?.employeeId && activeEntry.status === 'clocked_in') {
+                upsertTimeEntry(activeEntry);
+                setCurrentActiveEntryId(activeEntry.id);
+              }
+            } catch {
+              // The successful mutation response remains authoritative when reconciliation is unavailable.
+            }
+            captureFinalizeResult({
+              status: response.status,
+              workflowOccurrenceId: current.workflowOccurrenceId,
+              responseTimeEntry: response.timeEntry,
+              bootstrap,
+            });
+            return { ok: true };
+          }
+
+          if (response.status === 'clock_in_already_finalized') {
+            let bootstrap: BootstrapResponse | undefined;
+            try {
+              bootstrap = await clockingApi.loadBootstrap(accessToken, { force: true });
+            } catch {
+              captureFinalizeResult({ status: 'clock_in_reconciliation_failed', workflowOccurrenceId: current.workflowOccurrenceId });
+              return failFinalization(
+                'Clock-in completion could not be verified. Your required form progress is still saved.',
+                'clock_in_already_finalized_unverified',
+              );
+            }
+            const activeEntry = bootstrap.timeEntries?.find((entry) => entry.id === bootstrap.currentActiveEntryId);
+            if (!activeEntry || !acceptFinalizedTimeEntry(activeEntry) || !activeEntryMatchesIntent(bootstrap, current)) {
+              captureFinalizeResult({ status: 'clock_in_reconciliation_failed', workflowOccurrenceId: current.workflowOccurrenceId, bootstrap });
+              return failFinalization(
+                'Clock-in completion could not be verified. Your required form progress is still saved.',
+                'clock_in_already_finalized_unverified',
+              );
+            }
+            await clearResolvedWorkflow();
+            captureFinalizeResult({ status: response.status, workflowOccurrenceId: current.workflowOccurrenceId, bootstrap });
+            return { ok: true };
+          }
+
+          captureFinalizeResult({ status: 'clock_in_reconciliation_failed', workflowOccurrenceId: current.workflowOccurrenceId });
+          return failFinalization(
+            'Clock-in completion did not include the created shift. Your required form progress is still saved.',
+            'clock_in_completed_missing_time_entry',
+          );
+        }
+        return failFinalization(
+          'Clock-in returned an unsupported completion state. Your required form progress is still saved.',
+          response.status,
+        );
       } catch (finalizeError) {
         const code = errorCode(finalizeError);
         if (code === 'required_forms_outstanding') {
@@ -502,9 +611,12 @@ export function PendingClockInProvider({ children }: { children: React.ReactNode
           });
         }
         if (code === 'clock_in_already_finalized') {
-          await clearResolvedWorkflow();
-          await refreshWorkContext();
-          return { ok: true };
+          return reconcileFinalizationFailure({
+            message: 'Clock-in completion could not be verified. Your required form progress is still saved.',
+            code,
+            httpStatus: finalizeError instanceof ApiError ? finalizeError.status : undefined,
+            verifyActiveShift: true,
+          });
         }
         if (code === 'clock_in_workflow_not_found' || code === 'clock_in_workflow_forbidden' || code === 'offline_shift_state_conflict') {
           return reconcileFinalizationFailure({
@@ -533,7 +645,7 @@ export function PendingClockInProvider({ children }: { children: React.ReactNode
     });
     finalizePromiseRef.current = promise;
     return promise;
-  }, [acceptWorkflow, accessToken, clearResolvedWorkflow, failFinalization, reconcileFinalizationFailure, recoverForFinalization, refreshWorkContext]);
+  }, [acceptFinalizedTimeEntry, acceptWorkflow, accessToken, captureFinalizeResult, clearResolvedWorkflow, failFinalization, reconcileFinalizationFailure, recoverForFinalization, setCurrentActiveEntryId, upsertTimeEntry, user?.employeeId]);
 
   const syncQueued = useCallback((authoritativeWorkflow?: PendingClockInWorkflow | null) => {
     if (syncPromiseRef.current || !identityKey || !accessToken) return syncPromiseRef.current;

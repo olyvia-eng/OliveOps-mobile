@@ -1,6 +1,44 @@
 import { sanitizeSentryEvent } from './sentryPrivacy';
 
 describe('sanitizeSentryEvent', () => {
+  it('retains safe finalization-result facts and drops form answers', () => {
+    const sanitized = sanitizeSentryEvent({
+      message: 'clock_in_finalize_result',
+      contexts: {
+        clock_in_finalize_result: {
+          status: 'clock_in_completed',
+          httpSuccess: true,
+          workflowOccurrenceId: 'occurrence-1',
+          responseTimeEntryPresent: true,
+          responseTimeEntryIdPresent: true,
+          responseTimeEntryStatus: 'clocked_in',
+          bootstrapActiveEntryPresent: true,
+          bootstrapCurrentActiveEntryIdPresent: true,
+          matchingResponseEntryInBootstrap: true,
+          pendingWorkflowStillPresent: false,
+          effectiveActiveSource: 'server',
+        },
+        form_answers: { response: 'confidential' },
+      },
+    });
+
+    expect(sanitized.contexts).toEqual({
+      clock_in_finalize_result: {
+        status: 'clock_in_completed',
+        httpSuccess: true,
+        workflowOccurrenceId: 'occurrence-1',
+        responseTimeEntryPresent: true,
+        responseTimeEntryIdPresent: true,
+        responseTimeEntryStatus: 'clocked_in',
+        bootstrapActiveEntryPresent: true,
+        bootstrapCurrentActiveEntryIdPresent: true,
+        matchingResponseEntryInBootstrap: true,
+        pendingWorkflowStillPresent: false,
+        effectiveActiveSource: 'server',
+      },
+    });
+  });
+
   it('retains safe clock-in finalization diagnostics and drops unrelated custom context', () => {
     const sanitized = sanitizeSentryEvent({
       message: 'clock_in_finalize_failed',

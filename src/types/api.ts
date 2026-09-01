@@ -153,7 +153,8 @@ export interface FinalizeClockInRequest {
 }
 
 export type FinalizeClockInResponse =
-  | { ok: boolean; status: 'clock_in_completed' | 'clock_in_already_finalized'; timeEntry?: TimeEntry }
+  | { ok: boolean; status: 'clock_in_completed'; timeEntry: TimeEntry }
+  | { ok: boolean; status: 'clock_in_already_finalized'; timeEntry?: TimeEntry }
   | { ok: boolean; status: 'required_forms_outstanding' | 'clock_in_workflow_not_found' | 'clock_in_workflow_forbidden' }
   | ({ ok: boolean } & PendingClockInWorkflow);
 
