@@ -13,6 +13,7 @@ const mockLoadRecord = jest.fn();
 const mockSaveRecord = jest.fn();
 const mockClearRecord = jest.fn();
 const mockRefreshWorkContext = jest.fn();
+let mockRefreshWorkContextAction = mockRefreshWorkContext;
 const mockAcknowledgePendingClockInWorkflow = jest.fn();
 const mockPrepareFormSubmissionAttachments = jest.fn();
 const mockMarkFormAttachmentsSubmitted = jest.fn();
@@ -101,7 +102,7 @@ jest.mock('@/store/clockingStore', () => ({
   }),
 }));
 jest.mock('@/hooks/useClockingActions', () => ({
-  useClockingActions: () => ({ refreshWorkContext: mockRefreshWorkContext }),
+  useClockingActions: () => ({ refreshWorkContext: mockRefreshWorkContextAction }),
 }));
 jest.mock('@/store/offlineClockContext', () => ({
   useOptionalOfflineClockStore: () => ({
@@ -160,6 +161,7 @@ describe('PendingClockInProvider', () => {
     mockLoadRequiredForms.mockReset().mockResolvedValue({ ok: true, forms: [requiredForm] });
     mockSubmitEmployeeForm.mockReset().mockResolvedValue({ ok: true, submission: { id: 'submission-1' } });
     mockRefreshWorkContext.mockReset().mockResolvedValue({ ok: true });
+    mockRefreshWorkContextAction = mockRefreshWorkContext;
     mockPrepareFormSubmissionAttachments.mockReset().mockImplementation(async (payload) => payload);
     mockMarkFormAttachmentsSubmitted.mockReset().mockResolvedValue(undefined);
     mockCaptureMessage.mockReset();
@@ -762,6 +764,130 @@ describe('PendingClockInProvider', () => {
     await expect(second).resolves.toEqual({ ok: true });
     expect(mockFinalizeClockIn).toHaveBeenCalledTimes(1);
     expect(pendingStore.error).toBeNull();
+  });
+
+  it('shares one pending clock-in recovery across simultaneous callers', async () => {
+    await mount();
+    let resolveRecovery!: (value: ReturnType<typeof workflow>) => void;
+    mockLoadPendingClockIn.mockClear().mockImplementationOnce(() => new Promise((resolve) => {
+      resolveRecovery = resolve;
+    }));
+
+    const first = pendingStore.recover();
+    const second = pendingStore.recover();
+    expect(first).toBe(second);
+    await act(async () => { await Promise.resolve(); });
+    expect(mockLoadPendingClockIn).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveRecovery(workflow());
+      await Promise.all([first, second]);
+    });
+    expect(mockLoadPendingClockIn).toHaveBeenCalledTimes(1);
+  });
+
+  it('shares form refresh recovery with NetInfo synchronization', async () => {
+    await mount();
+    let resolveRecovery!: (value: ReturnType<typeof workflow>) => void;
+    mockLoadPendingClockIn.mockClear().mockImplementationOnce(() => new Promise((resolve) => {
+      resolveRecovery = resolve;
+    }));
+
+    const foregroundRefresh = pendingStore.refreshAfterSubmission();
+    await act(async () => { await Promise.resolve(); });
+    await act(async () => mockNetworkListener?.({ isConnected: true, isInternetReachable: true }));
+    expect(mockLoadPendingClockIn).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveRecovery(workflow());
+      await foregroundRefresh;
+    });
+    expect(mockLoadPendingClockIn).toHaveBeenCalledTimes(1);
+  });
+
+  it('shares form refresh recovery with AppState synchronization', async () => {
+    await mount();
+    let resolveRecovery!: (value: ReturnType<typeof workflow>) => void;
+    mockLoadPendingClockIn.mockClear().mockImplementationOnce(() => new Promise((resolve) => {
+      resolveRecovery = resolve;
+    }));
+
+    const foregroundRefresh = pendingStore.refreshAfterSubmission();
+    await act(async () => { await Promise.resolve(); });
+    await act(async () => mockAppStateListener?.('active'));
+    expect(mockLoadPendingClockIn).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveRecovery(workflow());
+      await foregroundRefresh;
+    });
+    expect(mockLoadPendingClockIn).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not restart initialization or recovery during ordinary provider renders', async () => {
+    mockLoadBootstrap.mockResolvedValue({ ok: true, capabilities: { requiredBeforeClockInForms: true } });
+    await mount();
+    expect(mockLoadBootstrap).toHaveBeenCalledTimes(1);
+    expect(mockLoadPendingClockIn).toHaveBeenCalledTimes(1);
+
+    mockRefreshWorkContextAction = jest.fn().mockResolvedValue({ ok: true });
+    await act(async () => {
+      tree?.update(React.createElement(PendingClockInProvider, null, React.createElement(Probe)));
+    });
+
+    expect(mockLoadBootstrap).toHaveBeenCalledTimes(1);
+    expect(mockLoadPendingClockIn).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores a late pending response after successful finalization', async () => {
+    await mount();
+    let resolveRecovery!: (value: ReturnType<typeof workflow>) => void;
+    mockLoadPendingClockIn.mockClear().mockImplementationOnce(() => new Promise((resolve) => {
+      resolveRecovery = resolve;
+    }));
+    const recovery = pendingStore.recover();
+    await act(async () => { await Promise.resolve(); });
+
+    let finalizeResult: unknown;
+    await act(async () => { finalizeResult = await pendingStore.finalize(); });
+    expect(finalizeResult).toEqual({ ok: true });
+    expect(pendingStore.workflow).toBeNull();
+
+    await act(async () => {
+      resolveRecovery(workflow(true));
+      await recovery;
+    });
+    expect(mockLoadPendingClockIn).toHaveBeenCalledTimes(1);
+    expect(pendingStore.workflow).toBeNull();
+  });
+
+  it('shares one finalization between foreground completion and background sync', async () => {
+    await mount();
+    let resolveRecovery!: (value: ReturnType<typeof workflow>) => void;
+    let resolveFinalize!: (value: { ok: true; status: 'clock_in_completed'; timeEntry: ReturnType<typeof finalizedTimeEntry> }) => void;
+    mockLoadPendingClockIn.mockClear().mockImplementationOnce(() => new Promise((resolve) => {
+      resolveRecovery = resolve;
+    }));
+    mockFinalizeClockIn.mockClear().mockImplementationOnce(() => new Promise((resolve) => {
+      resolveFinalize = resolve;
+    }));
+
+    const foregroundRefresh = pendingStore.refreshAfterSubmission();
+    const foregroundFinalize = foregroundRefresh.then(() => pendingStore.finalize());
+    await act(async () => mockNetworkListener?.({ isConnected: true, isInternetReachable: true }));
+    await act(async () => {
+      resolveRecovery(workflow(true));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(mockLoadPendingClockIn).toHaveBeenCalledTimes(1);
+    expect(mockFinalizeClockIn).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveFinalize({ ok: true, status: 'clock_in_completed', timeEntry: finalizedTimeEntry() });
+      await foregroundFinalize;
+    });
+    expect(mockFinalizeClockIn).toHaveBeenCalledTimes(1);
   });
 
   it('recovers a temporarily missing local workflow and finalizes its exact occurrence', async () => {

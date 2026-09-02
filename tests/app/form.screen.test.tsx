@@ -374,6 +374,8 @@ describe('FormScreen', () => {
       workflowRequirementId: 'clock-in-requirement-1',
       formId: 'form-1',
     }));
+    expect(mockSubmitForm).toHaveBeenCalledTimes(1);
+    expect(mockRefreshAfterSubmission).toHaveBeenCalledTimes(1);
     expect(mockFinalize).toHaveBeenCalledTimes(1);
     expect(mockRefreshWorkContext).not.toHaveBeenCalled();
     expect(mockDismissTo).toHaveBeenCalledTimes(1);

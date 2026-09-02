@@ -138,8 +138,11 @@ export function PendingClockInProvider({ children }: { children: React.ReactNode
   const identityRef = useRef(identityKey);
   identityRef.current = identityKey;
   const recordRef = useRef<PendingClockInRecord | null>(null);
+  const recoveryPromiseRef = useRef<Promise<PendingClockInWorkflow | null> | null>(null);
   const syncPromiseRef = useRef<Promise<void> | null>(null);
   const finalizePromiseRef = useRef<Promise<FinalizeResult> | null>(null);
+  const workflowGenerationRef = useRef(0);
+  const resolvedOccurrencesRef = useRef<Set<string>>(new Set());
   const automaticFinalizeAttemptedRef = useRef<Set<string>>(new Set());
   const finalizationErrorRef = useRef<string | null>(null);
   const lastFinalizeResultCodeRef = useRef<string | null>(null);
@@ -159,6 +162,9 @@ export function PendingClockInProvider({ children }: { children: React.ReactNode
   }, [identityKey]);
 
   const clearResolvedWorkflow = useCallback(async () => {
+    const resolvedOccurrenceId = recordRef.current?.workflow.workflowOccurrenceId;
+    if (resolvedOccurrenceId) resolvedOccurrencesRef.current.add(resolvedOccurrenceId);
+    workflowGenerationRef.current += 1;
     automaticFinalizeAttemptedRef.current.clear();
     finalizationErrorRef.current = null;
     lastFinalizeResultCodeRef.current = null;
@@ -235,7 +241,10 @@ export function PendingClockInProvider({ children }: { children: React.ReactNode
     return true;
   }, [setCurrentActiveEntryId, upsertTimeEntry, user?.employeeId]);
 
-  const acceptWorkflow = useCallback(async (nextWorkflow: PendingClockInWorkflow) => {
+  const acceptWorkflow = useCallback(async (
+    nextWorkflow: PendingClockInWorkflow,
+    recoveryGeneration?: number,
+  ) => {
     activeShiftReconciledRef.current = false;
     const current = recordRef.current;
     const sameOccurrence = current?.workflow.workflowOccurrenceId === nextWorkflow.workflowOccurrenceId;
@@ -271,6 +280,9 @@ export function PendingClockInProvider({ children }: { children: React.ReactNode
         // Persist the authoritative workflow even when its render package cannot be refreshed yet.
       }
     }
+    if (resolvedOccurrencesRef.current.has(nextWorkflow.workflowOccurrenceId)) return enrichedWorkflow;
+    if (recoveryGeneration !== undefined && workflowGenerationRef.current !== recoveryGeneration) return enrichedWorkflow;
+    if (recoveryGeneration === undefined) workflowGenerationRef.current += 1;
     await commit({
       workflow: enrichedWorkflow,
       submissionIds: sameOccurrence ? current.submissionIds : {},
@@ -299,22 +311,41 @@ export function PendingClockInProvider({ children }: { children: React.ReactNode
     return () => { cancelled = true; };
   }, [acceptWorkflow, acknowledgeOutboxWorkflow, hydrated, identityKey, outboxWorkflow, status, user?.employeeId]);
 
-  const recover = useCallback(async () => {
-    if (!identityKey || status !== 'authenticated') return null;
-    if (activeShiftReconciledRef.current) return null;
-    if (!await isOnline()) return recordRef.current?.workflow ?? null;
-    try {
-      const response = await clockingApi.loadPendingClockIn(accessToken);
-      if (identityRef.current !== identityKey) return null;
-      if (response.status === 'no_pending_clock_in') {
-        await commit(null);
-        return null;
+  const recover = useCallback((): Promise<PendingClockInWorkflow | null> => {
+    if (recoveryPromiseRef.current) return recoveryPromiseRef.current;
+    const recoveryIdentity = identityKey;
+    const recoveryOccurrenceId = recordRef.current?.workflow.workflowOccurrenceId ?? null;
+    const recoveryGeneration = workflowGenerationRef.current;
+    const run = async () => {
+      if (!recoveryIdentity || status !== 'authenticated') return null;
+      if (activeShiftReconciledRef.current) return null;
+      if (!await isOnline()) return recordRef.current?.workflow ?? null;
+      try {
+        const response = await clockingApi.loadPendingClockIn(accessToken);
+        if (identityRef.current !== recoveryIdentity) return null;
+        if (workflowGenerationRef.current !== recoveryGeneration) return recordRef.current?.workflow ?? null;
+        if (response.status === 'no_pending_clock_in') {
+          if (!recoveryOccurrenceId || recordRef.current?.workflow.workflowOccurrenceId === recoveryOccurrenceId) {
+            await commit(null);
+          }
+          return null;
+        }
+        if (resolvedOccurrencesRef.current.has(response.workflowOccurrenceId)) return null;
+        const accepted = await acceptWorkflow(response, recoveryGeneration);
+        if (identityRef.current !== recoveryIdentity || workflowGenerationRef.current !== recoveryGeneration) {
+          return recordRef.current?.workflow ?? null;
+        }
+        return accepted;
+      } catch {
+        setError('Could not refresh pending clock-in. Your progress is still saved.');
+        return recordRef.current?.workflow ?? null;
       }
-      return await acceptWorkflow(response);
-    } catch {
-      setError('Could not refresh pending clock-in. Your progress is still saved.');
-      return recordRef.current?.workflow ?? null;
-    }
+    };
+    const promise = run().finally(() => {
+      if (recoveryPromiseRef.current === promise) recoveryPromiseRef.current = null;
+    });
+    recoveryPromiseRef.current = promise;
+    return promise;
   }, [acceptWorkflow, accessToken, commit, identityKey, status]);
 
   const ensureCurrentForm = useCallback(async () => {
@@ -712,8 +743,20 @@ export function PendingClockInProvider({ children }: { children: React.ReactNode
     return promise;
   }, [accessToken, commit, finalize, identityKey, recover, refreshWorkContext]);
 
+  const acceptWorkflowRef = useRef(acceptWorkflow);
+  const reconcileBootstrapActiveShiftRef = useRef(reconcileBootstrapActiveShift);
+  const recoverRef = useRef(recover);
+  const syncQueuedRef = useRef(syncQueued);
+  acceptWorkflowRef.current = acceptWorkflow;
+  reconcileBootstrapActiveShiftRef.current = reconcileBootstrapActiveShift;
+  recoverRef.current = recover;
+  syncQueuedRef.current = syncQueued;
+
   useEffect(() => {
     let cancelled = false;
+    workflowGenerationRef.current += 1;
+    resolvedOccurrencesRef.current.clear();
+    recoveryPromiseRef.current = null;
     setHydrated(false);
     setWorkflow(null);
     recordRef.current = null;
@@ -731,30 +774,30 @@ export function PendingClockInProvider({ children }: { children: React.ReactNode
       try {
         const bootstrap = await clockingApi.loadBootstrap(accessToken);
         if (cancelled || identityRef.current !== identityKey) return;
-        if (await reconcileBootstrapActiveShift(bootstrap, Boolean(stored))) return;
+        if (await reconcileBootstrapActiveShiftRef.current(bootstrap, Boolean(stored))) return;
         const authoritativeWorkflow = bootstrap.pendingClockInWorkflow
-          ? await acceptWorkflow(bootstrap.pendingClockInWorkflow)
+          ? await acceptWorkflowRef.current(bootstrap.pendingClockInWorkflow)
           : bootstrap.capabilities?.requiredBeforeClockInForms || stored
-            ? await recover()
+            ? await recoverRef.current()
             : null;
-        await syncQueued(authoritativeWorkflow);
+        await syncQueuedRef.current(authoritativeWorkflow);
       } catch {
         // Keep the persisted workflow until authoritative recovery succeeds.
       }
     }).catch(() => setHydrated(true));
     return () => { cancelled = true; };
-  }, [acceptWorkflow, accessToken, identityKey, reconcileBootstrapActiveShift, recover, status, syncQueued]);
+  }, [accessToken, identityKey, status]);
 
   useEffect(() => {
     if (!hydrated || status !== 'authenticated') return;
     const networkSubscription = NetInfo.addEventListener((state) => {
-      if (state.isConnected && state.isInternetReachable !== false) void syncQueued();
+      if (state.isConnected && state.isInternetReachable !== false) void syncQueuedRef.current();
     });
     const appSubscription = AppState.addEventListener('change', (next) => {
-      if (next === 'active') void syncQueued();
+      if (next === 'active') void syncQueuedRef.current();
     });
     return () => { networkSubscription(); appSubscription.remove(); };
-  }, [hydrated, status, syncQueued]);
+  }, [hydrated, status]);
 
   const submissionIdFor = useCallback(async (requirementId: string) => {
     const current = recordRef.current;
