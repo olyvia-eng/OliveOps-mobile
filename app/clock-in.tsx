@@ -9,6 +9,7 @@ import { StatusBanner } from '@/components/StatusBanner';
 import { UnbillableCategorySelector } from '@/components/UnbillableCategorySelector';
 import { WorkAreaSelector } from '@/components/WorkAreaSelector';
 import { ActivitySelector } from '@/components/ActivitySelector';
+import { StartTimeField } from '@/components/StartTimeField';
 import { ListRow, ScreenHeader, SectionHeader } from '@/components/MobilePrimitives';
 import { scopeJobsForSession } from '@/features/clocking/scoping';
 import { useClockingActions } from '@/hooks/useClockingActions';
@@ -24,6 +25,7 @@ import { pendingClockInRequirementForm, usePendingClockInStore } from '@/store/p
 import { usePendingClockOutStore } from '@/store/pendingClockOutStore';
 import { colors } from '@/theme/colors';
 import type { TimeEntryWorkType } from '@/types/domain';
+import { businessDateKey, businessLocalDateTimeToIso } from '@/utils/businessTime';
 
 type ActivityOption = {
   type: TimeEntryWorkType;
@@ -34,7 +36,7 @@ type ActivityOption = {
 
 export default function ClockInScreen() {
   const { user } = useAuthStore();
-  const { currentActiveEntryId, jobs, timeEntries } = useClockingStore();
+  const { businessTimeZone, clockingCapabilities, currentActiveEntryId, jobs, timeEntries } = useClockingStore();
   const offlineClock = useOptionalOfflineClockStore();
   const effectiveClock = useEffectiveClockState();
   const { clockIn, loading, refreshWorkContext } = useClockingActions();
@@ -54,6 +56,7 @@ export default function ClockInScreen() {
   const [selectedJobId, setSelectedJobId] = useState('');
   const [selectedWorkAreaId, setSelectedWorkAreaId] = useState('');
   const [selectedUnbillableCategoryId, setSelectedUnbillableCategoryId] = useState('');
+  const [selectedStartTime, setSelectedStartTime] = useState<string | null>(null);
   const [retryMeta, setRetryMeta] = useState<{ requestId: string; idempotencyKey: string; fingerprint: string } | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -262,6 +265,9 @@ export default function ClockInScreen() {
       : (selectedJobId ? [selectedJobId] : []));
     const unbillableCategoryId = intentOverride?.unbillableCategoryId ?? selectedUnbillableCategoryId;
     const workAreaId = intentOverride?.workAreaId ?? selectedWorkAreaId;
+    const requestedClockInAt = intentOverride?.requestedClockInAt ?? (clockingCapabilities.adjustClockInTime && selectedStartTime
+      ? businessLocalDateTimeToIso(businessDateKey(new Date(), businessTimeZone), selectedStartTime, businessTimeZone)
+      : undefined);
     const targetJob = assignedJobs.find((job) => job.id === jobIds[0]);
     const selectedWorkArea = targetJob?.eligibleOperationalWorkAreas?.find((workArea) => workArea.id === workAreaId);
 
@@ -354,6 +360,7 @@ export default function ClockInScreen() {
             jobIds,
             workAreaId: workType === 'job' ? selectedWorkArea?.id : undefined,
             unbillableCategoryId: workType === 'non_billable' ? unbillableCategoryId : undefined,
+            requestedClockInAt,
           },
           forms,
         });
@@ -363,7 +370,7 @@ export default function ClockInScreen() {
       advisoryAcceptedRef.current = true;
     }
 
-    const fingerprint = JSON.stringify({ employeeId, workType, jobIds, workAreaId: workType === 'job' ? selectedWorkArea?.id : undefined, unbillableCategoryId: workType === 'non_billable' ? unbillableCategoryId : undefined });
+    const fingerprint = JSON.stringify({ employeeId, workType, jobIds, workAreaId: workType === 'job' ? selectedWorkArea?.id : undefined, unbillableCategoryId: workType === 'non_billable' ? unbillableCategoryId : undefined, requestedClockInAt });
     const reusableMeta = metaOverride?.fingerprint === fingerprint
       ? metaOverride
       : retryMeta?.fingerprint === fingerprint
@@ -373,7 +380,17 @@ export default function ClockInScreen() {
     setRetryMeta({ ...meta, fingerprint });
 
     const result = selectedWorkArea
-      ? await clockIn(
+      ? requestedClockInAt
+        ? await clockIn(
+          employeeId,
+          workType,
+          jobIds,
+          undefined,
+          meta,
+          { id: selectedWorkArea.id, name: selectedWorkArea.name },
+          requestedClockInAt,
+        )
+        : await clockIn(
           employeeId,
           workType,
           jobIds,
@@ -381,7 +398,17 @@ export default function ClockInScreen() {
           meta,
           { id: selectedWorkArea.id, name: selectedWorkArea.name },
         )
-      : await clockIn(
+      : requestedClockInAt
+        ? await clockIn(
+          employeeId,
+          workType,
+          jobIds,
+          workType === 'non_billable' ? unbillableCategoryId : undefined,
+          meta,
+          undefined,
+          requestedClockInAt,
+        )
+        : await clockIn(
           employeeId,
           workType,
           jobIds,
@@ -495,6 +522,14 @@ export default function ClockInScreen() {
               onRetry={() => { void retryUnbillableCategories(); }}
             />
           </View>
+        ) : null}
+        {canSubmit && clockingCapabilities.adjustClockInTime ? (
+          <StartTimeField
+            value={selectedStartTime}
+            businessTimeZone={businessTimeZone}
+            disabled={loading || checkingForms}
+            onChange={setSelectedStartTime}
+          />
         ) : null}
         </>
       ) : null}

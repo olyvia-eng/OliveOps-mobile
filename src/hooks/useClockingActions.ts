@@ -81,9 +81,16 @@ export function useClockingActions() {
       unbillableCategoryId?: string,
       requestMeta?: { requestId: string; idempotencyKey: string },
       workArea?: { id: string; name: string },
+      requestedClockInAt?: string,
     ) {
       const meta = requestMeta ?? createRequestMeta(employeeId);
       const online = await isOnline();
+      if (!online && requestedClockInAt) {
+        return {
+          ok: false as const,
+          error: 'A custom Start Time requires a connection. Reset to Now or reconnect to continue.',
+        };
+      }
       if (!online && submitOfflineClockIn) {
         if (requiredBeforeClockInForms !== false) {
           return {
@@ -128,6 +135,7 @@ export function useClockingActions() {
           unbillableCategoryId: typeof unbillableCategoryId === 'string' && unbillableCategoryId.trim()
             ? unbillableCategoryId.trim()
             : undefined,
+          requestedClockInAt,
           ...meta,
         }, accessToken);
 

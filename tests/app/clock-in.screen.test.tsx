@@ -65,7 +65,10 @@ const mockUseAuthStore = jest.fn(() => ({
 let mockJobs: any[] = [];
 let mockCurrentActiveEntryId: string | null = null;
 let mockTimeEntries: any[] = [];
+let mockAdjustClockInTime = false;
 const mockUseClockingStore = jest.fn(() => ({
+  businessTimeZone: 'America/Toronto',
+  clockingCapabilities: { adjustClockInTime: mockAdjustClockInTime, editShiftWorkAreas: false },
   currentActiveEntryId: mockCurrentActiveEntryId,
   timeEntries: mockTimeEntries,
   jobs: mockJobs,
@@ -144,6 +147,10 @@ jest.mock('@/components/PrimaryActionButton', () => ({
     require('react').createElement('primary-button', { label, disabled: !!disabled, onPress }),
 }));
 
+jest.mock('@/components/StartTimeField', () => ({
+  StartTimeField: ({ value, businessTimeZone, onChange }: any) => require('react').createElement('start-time-field', { value, businessTimeZone, onChange }),
+}));
+
 jest.mock('@/components/SecondaryButton', () => ({
   SecondaryButton: ({ label, onPress }: any) => require('react').createElement('secondary-button', { label, onPress }),
 }));
@@ -177,6 +184,7 @@ describe('ClockInScreen', () => {
     ];
     mockCurrentActiveEntryId = null;
     mockTimeEntries = [];
+    mockAdjustClockInTime = false;
     mockRouteFocused = true;
     (router.replace as jest.Mock).mockReset();
     (router.push as jest.Mock).mockReset();
@@ -381,6 +389,30 @@ describe('ClockInScreen', () => {
 
     expect(mockClockIn).toHaveBeenCalledWith('emp-1', 'job', ['job-1'], undefined, { requestId: 'req-1', idempotencyKey: 'key-1' });
     expect(router.replace).toHaveBeenCalledWith('/active-shift');
+  });
+
+  it('shows Start Time only with permission and submits the selected business-time intent', async () => {
+    mockAdjustClockInTime = true;
+    let tree: any;
+    await act(async () => { tree = create(<ClockInScreen />); });
+    await act(async () => tree.root.findByProps({ testID: 'activity-option-job' }).props.onPress());
+    expect(tree.root.findAllByType('start-time-field')).toHaveLength(0);
+    await act(async () => tree.root.findByProps({ testID: 'job-option-job-1' }).props.onPress());
+    const startTime = tree.root.findByType('start-time-field');
+    expect(startTime.props.value).toBeNull();
+    expect(startTime.props.businessTimeZone).toBe('America/Toronto');
+    await act(async () => startTime.props.onChange('07:00'));
+    await act(async () => tree.root.findByProps({ label: 'Clock In' }).props.onPress());
+
+    expect(mockClockIn).toHaveBeenCalledWith(
+      'emp-1',
+      'job',
+      ['job-1'],
+      undefined,
+      { requestId: 'req-1', idempotencyKey: 'key-1' },
+      undefined,
+      expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:00:00\.000Z$/),
+    );
   });
 
   it('requires an explicit Work Area when a Job has multiple eligible areas', async () => {
@@ -601,6 +633,35 @@ describe('ClockInScreen', () => {
     expect(mockClockIn).toHaveBeenCalledWith('emp-1', 'job', ['job-1'], undefined, expect.any(Object));
     expect(mockClearWorkflow).toHaveBeenCalledTimes(1);
     expect(router.replace).toHaveBeenCalledWith('/active-shift');
+  });
+
+  it('preserves the selected start time through an advisory Form workflow', async () => {
+    mockAdjustClockInTime = true;
+    mockGetRequiredForms.mockResolvedValueOnce({ ok: true, forms: [] }).mockResolvedValueOnce({
+      ok: true,
+      forms: [{ id: 'form-job', name: 'Job Start Check', trigger: 'before_starting_job', context: { jobId: 'job-1' }, fields: [] }],
+    });
+    let tree: any;
+    await act(async () => { tree = create(<ClockInScreen />); });
+    await act(async () => tree.root.findByProps({ testID: 'activity-option-job' }).props.onPress());
+    await act(async () => tree.root.findByProps({ testID: 'job-option-job-1' }).props.onPress());
+    await act(async () => tree.root.findByType('start-time-field').props.onChange('07:00'));
+    await act(async () => tree.root.findByProps({ label: 'Clock In' }).props.onPress());
+
+    const storedIntent = mockStartWorkflow.mock.calls[0][0].intent;
+    expect(storedIntent.requestedClockInAt).toEqual(expect.any(String));
+    expect(mockClockIn).not.toHaveBeenCalled();
+
+    mockWorkflow = {
+      id: 'workflow-1', originRoute: '/clock-in', destination: '/active-shift', phase: 'pre_action', completedCount: 1,
+      intent: storedIntent,
+      forms: [{ id: 'form-job', name: 'Job Start Check', trigger: 'before_starting_job', context: { jobId: 'job-1' }, fields: [] }],
+    };
+    await act(async () => tree.update(<ClockInScreen />));
+
+    expect(mockClockIn).toHaveBeenCalledWith(
+      'emp-1', 'job', ['job-1'], undefined, expect.any(Object), undefined, storedIntent.requestedClockInAt,
+    );
   });
 
   it('shows the next pre-action Form and waits for the final completion before clocking in', async () => {

@@ -11,6 +11,7 @@ export type FormsWorkflowIntent =
     jobIds: string[];
     workAreaId?: string;
     unbillableCategoryId?: string;
+    requestedClockInAt?: string;
   }
   | {
     kind: 'switch_activity';

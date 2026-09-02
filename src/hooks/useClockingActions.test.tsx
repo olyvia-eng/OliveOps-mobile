@@ -52,7 +52,7 @@ let currentActions: ReturnType<typeof useClockingActions>;
 
 function ActionsProbe({ refreshOnMount = false }: { refreshOnMount?: boolean }) {
   currentActions = useClockingActions();
-  const { currentActiveEntryId, jobs } = useClockingStore();
+  const { currentActiveEntryId, jobs, timeEntries } = useClockingStore();
 
   useEffect(() => {
     if (refreshOnMount) {
@@ -62,6 +62,7 @@ function ActionsProbe({ refreshOnMount = false }: { refreshOnMount?: boolean }) 
 
   return React.createElement('actions-probe', {
     currentActiveEntryId,
+    activeClockIn: timeEntries.find((entry) => entry.id === currentActiveEntryId)?.clockIn,
     jobIds: jobs.map((job) => job.id),
     jobStatuses: jobs.map((job) => job.status),
   });
@@ -260,6 +261,24 @@ describe('useClockingActions bootstrap behavior', () => {
     expect(tree.root.findByType('actions-probe').props.currentActiveEntryId).toBe('entry-1');
   });
 
+  it('keeps the authoritative server clock-in time instead of the requested time', async () => {
+    const requestedClockInAt = '2026-08-17T09:55:00.000Z';
+    const authoritative = { ...activeEntry(), clockIn: '2026-08-17T10:00:00.000Z' };
+    mockClockIn.mockResolvedValue({ ok: true, timeEntry: authoritative });
+    mockLoadBootstrap.mockResolvedValue(bootstrapPayload(authoritative));
+    await act(async () => {
+      tree = create(React.createElement(ClockingProvider, null, React.createElement(ActionsProbe)));
+    });
+
+    await act(async () => {
+      await currentActions.clockIn('emp-1', 'job', ['job-1'], undefined, undefined, undefined, requestedClockInAt);
+    });
+
+    expect(mockClockIn).toHaveBeenCalledWith(expect.objectContaining({ requestedClockInAt }), 'token-1');
+    expect(tree.root.findByType('actions-probe').props.activeClockIn).toBe(authoritative.clockIn);
+    expect(tree.root.findByType('actions-probe').props.activeClockIn).not.toBe(requestedClockInAt);
+  });
+
   it('returns a pending required clock-in workflow without requiring a time entry', async () => {
     const pendingWorkflow = {
       ok: true,
@@ -329,6 +348,29 @@ describe('useClockingActions bootstrap behavior', () => {
       }),
       expect.objectContaining({ requestId: expect.any(String), idempotencyKey: expect.any(String) }),
     );
+    expect(mockClockIn).not.toHaveBeenCalled();
+  });
+
+  it('keeps custom-time clock-in online-only without writing an offline command', async () => {
+    const submitClockIn = jest.fn();
+    mockOfflineClock = { cache: { requiredBeforeClockInForms: false }, submitClockIn };
+    mockIsOnline.mockResolvedValue(false);
+    await act(async () => {
+      tree = create(React.createElement(ClockingProvider, null, React.createElement(ActionsProbe)));
+    });
+
+    let result: any;
+    await act(async () => {
+      result = await currentActions.clockIn(
+        'emp-1', 'job', ['job-1'], undefined, undefined, undefined, '2026-09-02T11:00:00.000Z',
+      );
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      error: 'A custom Start Time requires a connection. Reset to Now or reconnect to continue.',
+    });
+    expect(submitClockIn).not.toHaveBeenCalled();
     expect(mockClockIn).not.toHaveBeenCalled();
   });
 

@@ -45,6 +45,11 @@ export function businessDateKey(date = new Date(), timeZone?: string | null) {
   return `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`;
 }
 
+export function businessTimeValue(date = new Date(), timeZone?: string | null) {
+  const parts = zonedParts(date, timeZone);
+  return `${String(parts.hour).padStart(2, '0')}:${String(parts.minute).padStart(2, '0')}`;
+}
+
 export function formatBusinessDate(date: Date, timeZone?: string | null, options: Intl.DateTimeFormatOptions = {}) {
   return date.toLocaleDateString(undefined, {
     ...options,

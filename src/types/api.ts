@@ -103,6 +103,7 @@ export interface ClockInRequest {
   requestId: string;
   idempotencyKey: string;
   clientOccurredAt?: string;
+  requestedClockInAt?: string;
 }
 
 export interface PendingClockInRequirement {
@@ -127,6 +128,9 @@ export interface ClockInIntent {
   workAreaNameSnapshot?: string | null;
   clockingContractVersion?: number;
   unbillableCategoryId?: string;
+  requestedClockInAt?: string;
+  effectiveClockInAt?: string;
+  clockInTimeSource?: 'server_now' | 'employee_adjusted';
 }
 
 export interface PendingClockInWorkflow {
