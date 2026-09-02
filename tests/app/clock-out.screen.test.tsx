@@ -9,6 +9,8 @@ const mockRefreshForms = jest.fn().mockResolvedValue({ ok: true });
 const mockStartWorkflow = jest.fn(() => 'workflow-clock-out');
 const mockClearWorkflow = jest.fn();
 const mockCreateRequestMeta = jest.fn();
+const mockLoadCurrentShiftWorkAreaTimeline = jest.fn();
+const mockIsOnline = jest.fn().mockResolvedValue(true);
 let mockWorkflow: any = null;
 const mockAcceptPendingWorkflow = jest.fn().mockResolvedValue(undefined);
 let mockPendingClockOut: any;
@@ -16,6 +18,7 @@ const mockOpenSettings = jest.fn().mockResolvedValue(undefined);
 let activeShiftClosed = false;
 let mockEffectiveClockOverride: any = null;
 let mockRouteFocused = true;
+let mockEditShiftWorkAreas = false;
 
 const mockUseClockingActions = jest.fn(() => ({
   clockOut: mockClockOut,
@@ -37,6 +40,8 @@ const mockUseAuthStore = jest.fn(() => ({
 }));
 
 const mockUseClockingStore = jest.fn(() => ({
+  businessTimeZone: 'America/Toronto',
+  clockingCapabilities: { adjustClockInTime: false, editShiftWorkAreas: mockEditShiftWorkAreas },
   currentActiveEntryId: activeShiftClosed ? null : 'entry-1',
   timeEntries: activeShiftClosed ? [] : [
     {
@@ -133,7 +138,11 @@ jest.mock('@/services/requestGuards', () => ({
 }));
 
 jest.mock('@/services/connectivity', () => ({
-  isOnline: jest.fn().mockResolvedValue(true),
+  isOnline: (...args: unknown[]) => mockIsOnline(...args),
+}));
+
+jest.mock('@/api/clockingApi', () => ({
+  loadCurrentShiftWorkAreaTimeline: (...args: unknown[]) => mockLoadCurrentShiftWorkAreaTimeline(...args),
 }));
 
 jest.mock('@/api/storageApi', () => ({
@@ -194,6 +203,9 @@ describe('ClockOutScreen', () => {
     mockRouteFocused = true;
     activeShiftClosed = false;
     mockEffectiveClockOverride = null;
+    mockEditShiftWorkAreas = false;
+    mockIsOnline.mockReset().mockResolvedValue(true);
+    mockLoadCurrentShiftWorkAreaTimeline.mockReset();
     (Alert.alert as jest.Mock).mockReset();
     (router.replace as jest.Mock).mockReset();
     (router.dismissTo as jest.Mock).mockReset();
@@ -250,6 +262,49 @@ describe('ClockOutScreen', () => {
 
     const total = tree.root.findByProps({ testID: 'total-shift-time-value' });
     expect(total.props.children).toBe('1h 48m');
+  });
+
+  it('keeps Clock Out unchanged when Work Area editing permission is false', async () => {
+    let tree: any;
+    await act(async () => { tree = create(<ClockOutScreen />); });
+    expect(tree.root.findAllByProps({ testID: 'edit-work-areas' })).toHaveLength(0);
+    expect(mockLoadCurrentShiftWorkAreaTimeline).not.toHaveBeenCalled();
+  });
+
+  it('shows editable Today work only when the backend also allows editing', async () => {
+    mockEditShiftWorkAreas = true;
+    mockLoadCurrentShiftWorkAreaTimeline.mockResolvedValue({
+      ok: true,
+      timeline: mockUseClockingStore().timeEntries,
+      activeEntryId: 'entry-1',
+      timelineRevision: 'rev-1',
+      canEdit: true,
+    });
+    let tree: any;
+    await act(async () => { tree = create(<ClockOutScreen />); });
+    await act(async () => Promise.resolve());
+
+    const edit = tree.root.findByProps({ testID: 'edit-work-areas' });
+    expect(edit.props.disabled).toBe(false);
+    await act(async () => edit.props.onPress());
+    expect(router.push).toHaveBeenCalledWith('/edit-work-areas');
+  });
+
+  it('disables editing when backend canEdit is false or the device is offline', async () => {
+    mockEditShiftWorkAreas = true;
+    mockLoadCurrentShiftWorkAreaTimeline.mockResolvedValue({
+      ok: true, timeline: mockUseClockingStore().timeEntries, activeEntryId: 'entry-1', timelineRevision: 'rev-1', canEdit: false,
+    });
+    let tree: any;
+    await act(async () => { tree = create(<ClockOutScreen />); });
+    await act(async () => Promise.resolve());
+    expect(tree.root.findByProps({ testID: 'edit-work-areas' }).props.disabled).toBe(true);
+
+    mockIsOnline.mockResolvedValue(false);
+    await act(async () => { tree = create(<ClockOutScreen />); });
+    await act(async () => Promise.resolve());
+    expect(tree.root.findByProps({ testID: 'edit-work-areas' }).props.disabled).toBe(true);
+    expect(tree.root.findAllByType('primary-button').some((node: any) => node.props.label === 'Clock Out')).toBe(true);
   });
 
   it('does not flash the no-active-shift banner after successful clock-out', async () => {

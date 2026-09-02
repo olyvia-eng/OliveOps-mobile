@@ -15,6 +15,7 @@ const mockUseAuthStore = jest.fn(() => ({
 }));
 
 const mockClockingState = {
+  businessTimeZone: 'America/Toronto',
   currentActiveEntryId: null as string | null,
   activeShiftWarnings: {
     possibleForgottenClockOut: false,
@@ -164,6 +165,30 @@ describe('ActiveShiftScreen', () => {
     expect(labels).toContain('Clock Out');
     expect(renderedText).toContain('Switch Activity');
     expect(labels).not.toContain('Clock In');
+  });
+
+  it('shows the authoritative reconciled active segment and Work Area', async () => {
+    mockClockingState.currentActiveEntryId = 'server-reconciled-active';
+    mockClockingState.timeEntries = [
+      {
+        id: 'server-reconciled-old', employeeId: 'emp-1', jobId: 'job-1', jobIds: ['job-1'], workType: 'job',
+        workAreaId: 'area-base', workAreaNameSnapshot: 'Base Prep', clockIn: '2026-08-07T10:00:00.000Z',
+        clockOut: '2026-08-07T12:00:00.000Z', breakMinutes: 0, notes: '', status: 'clocked_out',
+      },
+      {
+        id: 'server-reconciled-active', employeeId: 'emp-1', jobId: 'job-1', jobIds: ['job-1'], workType: 'job',
+        workAreaId: 'area-grading', workAreaNameSnapshot: 'Grading', clockIn: '2026-08-07T12:00:00.000Z',
+        breakMinutes: 0, notes: '', status: 'clocked_in',
+      },
+    ];
+
+    let tree: any;
+    await act(async () => { tree = create(<ActiveShiftScreen />); });
+    const renderedText = tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ');
+    expect(renderedText).toContain('Grading');
+    expect(renderedText).toContain('Base Prep');
+    expect(renderedText).toContain('Work Area:');
+    expect(renderedText).not.toContain('server-reconciled-active');
   });
 
   it('shows long-shift warning actions when backend warning flag is true', async () => {

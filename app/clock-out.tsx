@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Image, Linking, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
+import { loadCurrentShiftWorkAreaTimeline } from '@/api/clockingApi';
 import { OfflineNotice } from '@/components/OfflineNotice';
 import { AdvisoryFormsPrompt } from '@/components/AdvisoryFormsPrompt';
 import { PrimaryActionButton } from '@/components/PrimaryActionButton';
@@ -32,6 +33,7 @@ import { colors } from '@/theme/colors';
 import { toUserFacingError } from '@/utils/userFacingError';
 import { returnToParentOrReplace } from '@/utils/navigation';
 import type { EmployeeForm } from '@/types/forms';
+import type { CurrentShiftWorkAreaTimelineResponse } from '@/types/api';
 
 type PhotoAttachmentStatus = 'uploading' | 'uploaded' | 'failed';
 
@@ -68,7 +70,7 @@ function extensionForMimeType(mimeType: string) {
 
 export default function ClockOutScreen() {
   const { user, accessToken } = useAuthStore();
-  const { jobs, businessTimeZone } = useClockingStore();
+  const { jobs, businessTimeZone, clockingCapabilities } = useClockingStore();
   const effectiveClock = useEffectiveClockState();
   const { clockOut, loading, refreshWorkContext } = useClockingActions();
   const { getRequiredForms, refreshForms } = useFormsActions();
@@ -84,6 +86,7 @@ export default function ClockOutScreen() {
   const [navigatingAfterSuccess, setNavigatingAfterSuccess] = useState(false);
   const [postActionForms, setPostActionForms] = useState<EmployeeForm[]>([]);
   const [offline, setOffline] = useState(false);
+  const [workAreaTimeline, setWorkAreaTimeline] = useState<CurrentShiftWorkAreaTimelineResponse | null>(null);
   const attachmentsRef = useRef<PhotoAttachment[]>([]);
   const submittedRef = useRef(false);
   const cleanedFileIdsRef = useRef<Set<string>>(new Set());
@@ -140,12 +143,33 @@ export default function ClockOutScreen() {
     const endedAt = segment.clockOut ? Date.parse(segment.clockOut) : Date.now();
     return total + Math.max(0, (endedAt - startedAt) / 60000 - (segment.breakMinutes || 0));
   }, 0), [shiftSegments]);
+  const summaryTimeline = workAreaTimeline?.timeline ?? shiftSegments;
+  const editableJobSegments = summaryTimeline.filter((segment) => segment.workType === 'job');
+  const workAreaCount = new Set(editableJobSegments.map((segment) => segment.workAreaId).filter(Boolean)).size;
   const clockOutWorkflow = workflow?.originRoute === '/clock-out' && workflow.intent.kind === 'clock_out_follow_up'
     ? { ...workflow, intent: workflow.intent }
     : null;
   const remainingPostActionForms = clockOutWorkflow
     ? clockOutWorkflow.forms.slice(clockOutWorkflow.completedCount)
     : postActionForms;
+
+  useEffect(() => {
+    if (!clockingCapabilities.editShiftWorkAreas || !activeEntry || !shiftSegments.some((segment) => segment.workType === 'job')) {
+      setWorkAreaTimeline(null);
+      return;
+    }
+    let cancelled = false;
+    void isOnline().then(async (online) => {
+      if (!online || cancelled) return;
+      try {
+        const response = await loadCurrentShiftWorkAreaTimeline(accessToken);
+        if (!cancelled) setWorkAreaTimeline(response);
+      } catch {
+        // The local authoritative shift summary remains available; editing stays unavailable until refreshed.
+      }
+    });
+    return () => { cancelled = true; };
+  }, [accessToken, activeEntry?.id, clockingCapabilities.editShiftWorkAreas]);
 
   function updateAttachment(localId: string, updater: (previous: PhotoAttachment) => PhotoAttachment) {
     setAttachments((previous) => previous.map((attachment) => {
@@ -596,6 +620,35 @@ export default function ClockOutScreen() {
         ) : null}
       </View>
 
+      {clockingCapabilities.editShiftWorkAreas && editableJobSegments.length > 0 ? (
+        <View style={styles.workAreaSummary}>
+          <Text style={styles.sectionLabel}>TODAY'S WORK</Text>
+          {workAreaCount > 1 ? (
+            <>
+              <Text style={styles.workAreaSummaryTitle}>{workAreaCount} Work Areas · {formatDurationMinutes(totalShiftMinutes)}</Text>
+              <Text style={styles.workAreaSummaryMeta}>{editableJobSegments.map((segment) => segment.workAreaNameSnapshot).filter(Boolean).join(' · ')}</Text>
+            </>
+          ) : (
+            <>
+              <Text style={styles.workAreaSummaryTitle}>{resolveJobTitle(editableJobSegments[0], jobs)}</Text>
+              <Text style={styles.workAreaSummaryMeta}>{formatEntryTimeRange(editableJobSegments[0], !editableJobSegments[0].clockOut, businessTimeZone)}</Text>
+              {editableJobSegments[0].workAreaNameSnapshot ? <Text style={styles.workAreaSummaryArea}>{editableJobSegments[0].workAreaNameSnapshot}</Text> : null}
+            </>
+          )}
+          <Pressable
+            testID="edit-work-areas"
+            accessibilityRole="button"
+            accessibilityState={{ disabled: offline || workAreaTimeline?.canEdit !== true }}
+            disabled={offline || workAreaTimeline?.canEdit !== true}
+            style={({ pressed }) => [styles.editWorkAreasButton, pressed && styles.editWorkAreasPressed]}
+            onPress={() => router.push('/edit-work-areas')}
+          >
+            <Text style={[styles.editWorkAreasText, (offline || workAreaTimeline?.canEdit !== true) && styles.editWorkAreasDisabled]}>Edit Work Areas ›</Text>
+          </Pressable>
+          {offline ? <Text style={styles.workAreaSummaryMeta}>Reconnect to edit Work Area times.</Text> : workAreaTimeline && !workAreaTimeline.canEdit ? <Text style={styles.workAreaSummaryMeta}>Work Area editing is not available for this shift.</Text> : null}
+        </View>
+      ) : null}
+
       <View style={styles.formSection}>
         <Text style={styles.label}>Notes <Text style={styles.optional}>(optional)</Text></Text>
         <TextInput
@@ -723,6 +776,15 @@ export default function ClockOutScreen() {
 const styles = StyleSheet.create({
   completionMessage: { color: colors.textSecondary, fontSize: 15, lineHeight: 21 },
   summarySection: { gap: 8 },
+  sectionLabel: { color: colors.textSecondary, fontSize: 13, fontWeight: '700' },
+  workAreaSummary: { borderTopWidth: 1, borderBottomWidth: 1, borderColor: colors.divider, paddingVertical: 12, gap: 4 },
+  workAreaSummaryTitle: { color: colors.textPrimary, fontSize: 17, fontWeight: '700' },
+  workAreaSummaryMeta: { color: colors.textSecondary, fontSize: 14 },
+  workAreaSummaryArea: { color: colors.textPrimary, fontSize: 15, fontWeight: '600', marginTop: 3 },
+  editWorkAreasButton: { minHeight: 48, justifyContent: 'center', marginTop: 4 },
+  editWorkAreasPressed: { opacity: 0.7 },
+  editWorkAreasText: { color: colors.primary, fontSize: 16, fontWeight: '700' },
+  editWorkAreasDisabled: { color: colors.textMuted },
   timeline: { borderTopWidth: 1, borderTopColor: colors.divider, paddingTop: 8 },
   segmentRow: { flexDirection: 'row', minHeight: 76 },
   timelineRail: { width: 24, alignItems: 'center' },

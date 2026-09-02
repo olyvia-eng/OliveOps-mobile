@@ -278,6 +278,26 @@ describe('TimeHistoryScreen', () => {
     expect(renderedText).not.toContain('No time history');
   });
 
+  it('shows authoritative reconciled Work Area segments for the current day', async () => {
+    const now = Date.now();
+    mockClockingState.currentActiveEntryId = 'server-grading';
+    mockClockingState.timeCorrections = [];
+    mockClockingState.timeEntries = [
+      { id: 'server-excavation', employeeId: 'emp-1', jobId: 'job-1', workType: 'job', workAreaNameSnapshot: 'Excavation', clockIn: new Date(now - 5 * 3600000).toISOString(), clockOut: new Date(now - 3 * 3600000).toISOString(), breakMinutes: 0, notes: '', status: 'clocked_out' },
+      { id: 'server-base', employeeId: 'emp-1', jobId: 'job-1', workType: 'job', workAreaNameSnapshot: 'Base Prep', clockIn: new Date(now - 3 * 3600000).toISOString(), clockOut: new Date(now - 3600000).toISOString(), breakMinutes: 0, notes: '', status: 'clocked_out' },
+      { id: 'server-grading', employeeId: 'emp-1', jobId: 'job-1', workType: 'job', workAreaNameSnapshot: 'Grading', clockIn: new Date(now - 3600000).toISOString(), breakMinutes: 0, notes: '', status: 'clocked_in' },
+    ];
+
+    let tree: any;
+    await act(async () => { tree = create(<TimeHistoryScreen />); });
+    const renderedText = tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ');
+    expect(renderedText).toContain('Excavation');
+    expect(renderedText).toContain('Base Prep');
+    expect(renderedText).toContain('Grading');
+    expect(renderedText.match(/Work Area:/g)).toHaveLength(3);
+    expect(renderedText).not.toContain('server-grading');
+  });
+
   it('omits the meaningless General work fallback for Drive Time', async () => {
     let tree: any;
     await act(async () => {

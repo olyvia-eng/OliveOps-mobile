@@ -12,6 +12,9 @@ import type {
   FinalizeClockOutRequest,
   PendingClockInResponse,
   PendingClockOutResponse,
+  CurrentShiftWorkAreaTimelineResponse,
+  ReconcileCurrentShiftWorkAreasRequest,
+  ReconcileCurrentShiftWorkAreasResponse,
   SwitchActivityRequest,
 } from '@/types/api';
 import type { TimeEntry } from '@/types/domain';
@@ -104,6 +107,24 @@ export async function finalizeClockOut(
 
 export async function switchActivity(payload: SwitchActivityRequest, accessToken?: string): Promise<{ ok: boolean; timeEntry: TimeEntry }> {
   return apiRequest<{ ok: boolean; timeEntry: TimeEntry }>(ENDPOINTS.switchActivity, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+    accessToken,
+  });
+}
+
+export async function loadCurrentShiftWorkAreaTimeline(accessToken?: string): Promise<CurrentShiftWorkAreaTimelineResponse> {
+  return apiRequest<CurrentShiftWorkAreaTimelineResponse>(ENDPOINTS.currentShiftWorkAreaTimeline, {
+    method: 'GET',
+    accessToken,
+  });
+}
+
+export async function reconcileCurrentShiftWorkAreas(
+  payload: ReconcileCurrentShiftWorkAreasRequest,
+  accessToken?: string,
+): Promise<ReconcileCurrentShiftWorkAreasResponse> {
+  return apiRequest<ReconcileCurrentShiftWorkAreasResponse>(ENDPOINTS.reconcileCurrentShiftWorkAreas, {
     method: 'POST',
     body: JSON.stringify(payload),
     accessToken,

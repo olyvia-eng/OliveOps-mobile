@@ -10,6 +10,8 @@ export const ENDPOINTS = {
   pendingClockOut: '/api/clocking?action=pending-clock-out',
   finalizeClockOut: '/api/clocking?action=clock-out-finalize',
   switchActivity: '/api/clocking?action=switch-activity',
+  currentShiftWorkAreaTimeline: '/api/clocking?action=current-shift-work-area-timeline',
+  reconcileCurrentShiftWorkAreas: '/api/clocking?action=reconcile-current-shift-work-areas',
   activeUnbillableCategories: '/api/clocking?action=active-unbillable-categories',
   timeCorrectionsCreate: '/api/time-corrections?action=create',
   timeCorrectionsList: '/api/time-corrections?action=list&mine=true',

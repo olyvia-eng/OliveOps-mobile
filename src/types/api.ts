@@ -234,6 +234,34 @@ export interface SwitchActivityRequest {
   clientOccurredAt?: string;
 }
 
+export interface CurrentShiftWorkAreaTimelineResponse {
+  ok: boolean;
+  timeline: TimeEntry[];
+  activeEntryId: string;
+  timelineRevision: string;
+  canEdit: boolean;
+}
+
+export interface ReconcileCurrentShiftWorkAreaSegment {
+  jobId: string;
+  workAreaId: string;
+  startAt: string;
+  endAt: string | null;
+}
+
+export interface ReconcileCurrentShiftWorkAreasRequest {
+  clientRequestId: string;
+  timelineRevision: string;
+  segments: ReconcileCurrentShiftWorkAreaSegment[];
+}
+
+export interface ReconcileCurrentShiftWorkAreasResponse {
+  ok: boolean;
+  timeline: TimeEntry[];
+  activeEntryId: string;
+  timelineRevision: string;
+}
+
 export interface ActiveUnbillableCategoriesResponse {
   ok: boolean;
   items: UnbillableCategory[];

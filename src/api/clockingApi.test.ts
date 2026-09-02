@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
-import { clockIn, clockOut, finalizeClockIn, loadActiveUnbillableCategories, loadBootstrap, loadPendingClockIn } from '@/api/clockingApi';
+import { clockIn, clockOut, finalizeClockIn, loadActiveUnbillableCategories, loadBootstrap, loadCurrentShiftWorkAreaTimeline, loadPendingClockIn, reconcileCurrentShiftWorkAreas } from '@/api/clockingApi';
 import { ApiError } from '@/types/errors';
 
 jest.mock('@/config/env', () => ({
@@ -237,6 +237,31 @@ describe('clockingApi', () => {
 
     expect(payload.ok).toBe(true);
     expect(payload.timeEntry?.status).toBe('clocked_out');
+  });
+
+  it('loads and reconciles the authoritative current-shift Work Area timeline', async () => {
+    const timeline = [{
+      id: 'entry-1', employeeId: 'emp-1', workType: 'job', jobId: 'job-1', jobIds: ['job-1'],
+      workAreaId: 'area-1', workAreaNameSnapshot: 'Excavation', clockIn: '2026-09-02T11:00:00.000Z',
+      breakMinutes: 0, notes: '', status: 'clocked_in',
+    }];
+    (global as any).fetch = jest.fn()
+      .mockResolvedValueOnce(mockResponse(200, { ok: true, timeline, activeEntryId: 'entry-1', timelineRevision: 'rev-1', canEdit: true }))
+      .mockResolvedValueOnce(mockResponse(200, { ok: true, timeline, activeEntryId: 'entry-1', timelineRevision: 'rev-2' }));
+
+    const loaded = await loadCurrentShiftWorkAreaTimeline('token-1');
+    const request = {
+      clientRequestId: 'request-1', timelineRevision: loaded.timelineRevision,
+      segments: [{ jobId: 'job-1', workAreaId: 'area-1', startAt: timeline[0].clockIn, endAt: null }],
+    };
+    const reconciled = await reconcileCurrentShiftWorkAreas(request, 'token-1');
+
+    expect(loaded.canEdit).toBe(true);
+    expect(reconciled.timelineRevision).toBe('rev-2');
+    expect(global.fetch).toHaveBeenNthCalledWith(1, expect.stringContaining('action=current-shift-work-area-timeline'), expect.objectContaining({ method: 'GET' }));
+    expect(global.fetch).toHaveBeenNthCalledWith(2, expect.stringContaining('action=reconcile-current-shift-work-areas'), expect.objectContaining({
+      method: 'POST', body: JSON.stringify(request),
+    }));
   });
 
   it('throws unauthorized/forbidden API errors', async () => {

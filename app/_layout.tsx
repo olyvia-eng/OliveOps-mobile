@@ -90,6 +90,7 @@ function RootLayout() {
             <Stack.Screen name="switch-activity" options={secondaryScreenOptions('Switch Activity')} />
             <Stack.Screen name="active-shift" options={secondaryScreenOptions('Active Shift')} />
             <Stack.Screen name="clock-out" options={secondaryScreenOptions('Clock Out')} />
+            <Stack.Screen name="edit-work-areas" options={secondaryScreenOptions('Edit Work Areas')} />
             <Stack.Screen name="time-history" options={secondaryScreenOptions('Time History')} />
             <Stack.Screen name="request-time-correction" options={secondaryScreenOptions('Request Time Correction')} />
             <Stack.Screen name="offline-time-change" options={secondaryScreenOptions('Time Change Needs Attention')} />
