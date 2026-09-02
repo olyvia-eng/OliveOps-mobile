@@ -18,8 +18,13 @@ import {
 import { useEffectiveClockState } from '@/hooks/useEffectiveClockState';
 import { useAuthStore } from '@/store/authStore';
 import { useClockingStore } from '@/store/clockingStore';
-import { getTodayEntries, getWeekTotalHours } from '@/api/timeEntriesApi';
+import { getWeekTotalHours } from '@/api/timeEntriesApi';
+import { groupTimeHistoryEntries } from '@/features/clocking/timeHistory';
 import { colors, spacing } from '@/theme/colors';
+
+type HistoryListItem =
+  | { kind: 'header'; key: string; label: string }
+  | { kind: 'entry'; key: string; entry: ReturnType<typeof buildEffectiveTimeEntries>[number] };
 
 export default function TimeHistoryScreen() {
   const { user } = useAuthStore();
@@ -29,30 +34,32 @@ export default function TimeHistoryScreen() {
     () => buildEffectiveTimeEntries(effectiveClock.timeEntries, timeCorrections),
     [effectiveClock.timeEntries, timeCorrections],
   );
-  const todayEntries = useMemo(
-    () => getTodayEntries(effectiveTimeEntries, businessTimeZone),
-    [businessTimeZone, effectiveTimeEntries],
-  );
-  const orderedEntries = useMemo(
-    () => [...todayEntries].sort((a, b) => new Date(b.clockIn).getTime() - new Date(a.clockIn).getTime()),
-    [todayEntries]
-  );
+  const authoritativeActiveEntryId = effectiveClock.effectiveActiveEntryId;
+  const historyItems = useMemo<HistoryListItem[]>(() => (
+    groupTimeHistoryEntries(
+      effectiveTimeEntries,
+      businessTimeZone,
+      new Date(),
+      authoritativeActiveEntryId,
+    ).flatMap((group) => [
+      { kind: 'header' as const, key: `date-${group.dateKey}`, label: group.label },
+      ...group.entries.map((entry) => ({ kind: 'entry' as const, key: entry.id, entry })),
+    ])
+  ), [authoritativeActiveEntryId, businessTimeZone, effectiveTimeEntries]);
   const weekTotal = useMemo(
     () => getWeekTotalHours(effectiveTimeEntries, businessTimeZone),
     [businessTimeZone, effectiveTimeEntries],
   );
   const weekTotalLabel = useMemo(() => formatDurationMinutes(weekTotal * 60), [weekTotal]);
-  const authoritativeActiveEntryId = effectiveClock.effectiveActiveEntryId;
-
   return (
     <SafeAreaView style={styles.safe} edges={['left', 'right']}>
       <FlatList
-        data={orderedEntries}
-        keyExtractor={(item) => item.id}
+        data={historyItems}
+        keyExtractor={(item) => item.key}
         contentContainerStyle={styles.listContent}
         ListHeaderComponent={(
           <View style={styles.headerBlock}>
-            <ScreenHeader title="Time History" subtitle={`${todayEntries.length} entries today · This week total: ${weekTotalLabel}`} />
+            <ScreenHeader title="Time History" subtitle={`This week · ${weekTotalLabel}`} />
             <View style={styles.headerActionsRow}>
               <Pressable
                 style={styles.headerAction}
@@ -66,45 +73,47 @@ export default function TimeHistoryScreen() {
             </View>
           </View>
         )}
-        renderItem={({ item }) => (
+        renderItem={({ item }) => item.kind === 'header' ? (
+          <Text style={styles.dateHeader}>{item.label}</Text>
+        ) : (
           <View style={styles.entryRow}>
             <View style={styles.entryTopRow}>
               <View style={styles.entryHeading}>
-                <Text style={styles.entryActivity}>{getWorkTypeLabel(item.workType)}</Text>
-                {item.workType !== 'drive_time' ? <Text style={styles.entryJob}>{resolveEntryPrimaryLabel(item, jobs)}</Text> : null}
+                <Text style={styles.entryActivity}>{getWorkTypeLabel(item.entry.workType)}</Text>
+                {item.entry.workType !== 'drive_time' ? <Text style={styles.entryJob}>{resolveEntryPrimaryLabel(item.entry, jobs)}</Text> : null}
               </View>
-              {item.clockOut ? (
-                <Text style={styles.entryDuration}>{formatDurationForEntry(item)}</Text>
-              ) : isAuthoritativeActiveEntry(item.id, authoritativeActiveEntryId) ? (
+              {item.entry.clockOut ? (
+                <Text style={styles.entryDuration}>{formatDurationForEntry(item.entry)}</Text>
+              ) : isAuthoritativeActiveEntry(item.entry.id, authoritativeActiveEntryId) ? (
                 <StatusBadge label="Active" tone="active" />
               ) : (
                 <StatusBadge label="Incomplete record" />
               )}
             </View>
             <View style={styles.badgeRow}>
-              {hasPendingCorrectionForEntry(item.id, timeCorrections) ? (
+              {hasPendingCorrectionForEntry(item.entry.id, timeCorrections) ? (
                 <View style={styles.pendingBadge}>
                   <Text style={styles.pendingLabel}>Correction pending</Text>
                 </View>
               ) : null}
-              {hasApprovedCorrectionForEntry(item.id, timeCorrections) ? (
+              {hasApprovedCorrectionForEntry(item.entry.id, timeCorrections) ? (
                 <View style={styles.correctedBadge}>
                   <Text style={styles.correctedLabel}>Corrected</Text>
                 </View>
               ) : null}
             </View>
-            <Text style={styles.entryRange}>Today · {formatEntryTimeRange(item, isAuthoritativeActiveEntry(item.id, authoritativeActiveEntryId), businessTimeZone)}</Text>
-            {resolveWorkAreaName(item) ? <Text style={styles.entryRange}>Work Area: {resolveWorkAreaName(item)}</Text> : null}
+            <Text style={styles.entryRange}>{formatEntryTimeRange(item.entry, isAuthoritativeActiveEntry(item.entry.id, authoritativeActiveEntryId), businessTimeZone)}</Text>
+            {resolveWorkAreaName(item.entry) ? <Text style={styles.entryRange}>Work Area: {resolveWorkAreaName(item.entry)}</Text> : null}
             <Pressable
-              testID={`request-correction-${item.id}`}
+              testID={`request-correction-${item.entry.id}`}
               accessibilityRole="button"
-              accessibilityLabel={`Request correction for ${getWorkTypeLabel(item.workType)}`}
+              accessibilityLabel={`Request correction for ${getWorkTypeLabel(item.entry.workType)}`}
               style={styles.requestAction}
               onPress={() => router.push({
                 pathname: '/request-time-correction',
                 params: {
-                  timeEntryId: item.id,
-                  requestType: item.clockOut ? 'wrong_time' : 'forgot_clock_out',
+                  timeEntryId: item.entry.id,
+                  requestType: item.entry.clockOut ? 'wrong_time' : 'forgot_clock_out',
                 },
               })}
             >
@@ -112,7 +121,7 @@ export default function TimeHistoryScreen() {
             </Pressable>
           </View>
         )}
-        ListEmptyComponent={<EmptyState title="No time entries today" message="Your completed and active work will appear here." />}
+        ListEmptyComponent={<EmptyState title="No time history" message="Your completed and active work will appear here." />}
       />
     </SafeAreaView>
   );
@@ -131,6 +140,14 @@ const styles = StyleSheet.create({
     gap: 0,
   },
   headerBlock: { gap: 10, paddingBottom: 12 },
+  dateHeader: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    paddingTop: 16,
+    paddingBottom: 4,
+  },
   headerCard: {
     borderRadius: 14,
     borderWidth: 1,

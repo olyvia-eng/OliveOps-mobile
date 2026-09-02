@@ -240,6 +240,7 @@ export function OfflineClockProvider({ children }: { children: React.ReactNode }
               if (identityRef.current !== identityKey) return;
               clocking.setJobs(scopeJobsForSession(payload.jobs ?? [], user));
               clocking.setBusinessTimeZone(payload.timezone);
+              clocking.setClockingCapabilities(payload.capabilities);
               clocking.setTimeEntries(scopeTimeEntriesForSession(payload.timeEntries ?? [], user));
               clocking.setTimeCorrections(payload.timeCorrections ?? []);
               clocking.setCurrentActiveEntryId(payload.currentActiveEntryId ?? null);

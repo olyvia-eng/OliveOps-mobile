@@ -122,6 +122,7 @@ describe('TimeHistoryScreen', () => {
         employeeId: 'emp-1',
         jobId: 'job-1',
         workType: 'job',
+        workAreaNameSnapshot: 'Excavation',
         clockIn: authoritativeActiveClockIn,
         breakMinutes: 0,
         notes: '',
@@ -142,8 +143,21 @@ describe('TimeHistoryScreen', () => {
         employeeId: 'emp-1',
         jobId: 'job-1',
         workType: 'job',
+        workAreaNameSnapshot: 'Excavation',
         clockIn: completedClockIn,
         clockOut: completedClockOut,
+        breakMinutes: 0,
+        notes: '',
+        status: 'clocked_out',
+      },
+      {
+        id: 'entry-yesterday',
+        employeeId: 'emp-1',
+        jobId: 'job-1',
+        workType: 'job',
+        workAreaNameSnapshot: 'Grading',
+        clockIn: new Date(now.getTime() - 26 * 60 * 60 * 1000).toISOString(),
+        clockOut: new Date(now.getTime() - 18 * 60 * 60 * 1000).toISOString(),
         breakMinutes: 0,
         notes: '',
         status: 'clocked_out',
@@ -234,6 +248,36 @@ describe('TimeHistoryScreen', () => {
     expect(renderedText).not.toContain('cat-archived');
   });
 
+  it('shows yesterday history with Work Areas and no row-level Today prefix', async () => {
+    let tree: any;
+    await act(async () => {
+      tree = create(React.createElement(TimeHistoryScreen));
+    });
+
+    const textNodes = tree.root.findAllByType('text').map((node: any) => String(node.props.children));
+    const renderedText = textNodes.join(' ');
+    expect(textNodes).toContain('Today');
+    expect(textNodes).toContain('Yesterday');
+    expect(renderedText).toContain('Work Area:');
+    expect(renderedText).toContain('Excavation');
+    expect(renderedText).toContain('Grading');
+    expect(textNodes.filter((text: string) => text.includes('Today')).length).toBe(1);
+  });
+
+  it('shows yesterday instead of an empty state when today has no entries', async () => {
+    mockClockingState.currentActiveEntryId = null;
+    mockClockingState.timeEntries = mockClockingState.timeEntries.filter((entry) => entry.id === 'entry-yesterday');
+
+    let tree: any;
+    await act(async () => {
+      tree = create(React.createElement(TimeHistoryScreen));
+    });
+
+    const renderedText = tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ');
+    expect(renderedText).toContain('Yesterday');
+    expect(renderedText).not.toContain('No time history');
+  });
+
   it('omits the meaningless General work fallback for Drive Time', async () => {
     let tree: any;
     await act(async () => {
@@ -271,7 +315,7 @@ describe('TimeHistoryScreen', () => {
     });
 
     const renderedText = tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ');
-    expect(renderedText).toContain('This week total:');
+    expect(renderedText).toContain('This week ·');
     expect(renderedText).toMatch(/\d+h\s*\d+m/);
     expect(renderedText).not.toContain('hours');
   });

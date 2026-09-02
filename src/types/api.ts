@@ -52,6 +52,8 @@ export interface BootstrapResponse {
     requiredBeforeClockInForms?: boolean;
     requiredAfterClockOutForms?: boolean;
     workAreaClockingVersion?: number;
+    adjustClockInTime?: boolean;
+    editShiftWorkAreas?: boolean;
     [key: string]: unknown;
   };
   pendingClockInWorkflow?: PendingClockInWorkflow | null;

@@ -3,6 +3,11 @@ import { useAuthStore } from '@/store/authStore';
 import type { ActivityConfig } from '@/types/api';
 import type { Job, TimeCorrectionRequest, TimeEntry, UnbillableCategory } from '@/types/domain';
 import { DEFAULT_BUSINESS_TIME_ZONE, normalizeBusinessTimeZone } from '@/utils/businessTime';
+import {
+  DEFAULT_CLOCKING_CAPABILITIES,
+  type ClockingCapabilities,
+  normalizeClockingCapabilities,
+} from '@/features/clocking/capabilities';
 
 export type ActiveShiftWarnings = {
   possibleForgottenClockOut: boolean;
@@ -11,6 +16,7 @@ export type ActiveShiftWarnings = {
 
 type ClockingState = {
   businessTimeZone: string;
+  clockingCapabilities: ClockingCapabilities;
   jobs: Job[];
   timeEntries: TimeEntry[];
   timeCorrections: TimeCorrectionRequest[];
@@ -23,6 +29,7 @@ type ClockingState = {
   activeShiftWarnings: ActiveShiftWarnings;
   activityConfigs?: ActivityConfig[];
   setBusinessTimeZone: (timeZone?: string | null) => void;
+  setClockingCapabilities: (capabilities?: Partial<ClockingCapabilities> | null) => void;
   setJobs: (jobs: Job[]) => void;
   setTimeEntries: (entries: TimeEntry[]) => void;
   setTimeCorrections: (items: TimeCorrectionRequest[]) => void;
@@ -42,6 +49,7 @@ const ClockingContext = createContext<ClockingState | undefined>(undefined);
 export function ClockingProvider({ children }: { children: React.ReactNode }) {
   const { status, user } = useAuthStore();
   const [businessTimeZone, setBusinessTimeZoneState] = useState(DEFAULT_BUSINESS_TIME_ZONE);
+  const [clockingCapabilities, setClockingCapabilitiesState] = useState(DEFAULT_CLOCKING_CAPABILITIES);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [timeEntries, setTimeEntries] = useState<TimeEntry[]>([]);
   const [timeCorrections, setTimeCorrections] = useState<TimeCorrectionRequest[]>([]);
@@ -67,6 +75,10 @@ export function ClockingProvider({ children }: { children: React.ReactNode }) {
 
   const setBusinessTimeZone = useCallback((timeZone?: string | null) => {
     setBusinessTimeZoneState(normalizeBusinessTimeZone(timeZone));
+  }, []);
+
+  const setClockingCapabilities = useCallback((capabilities?: Partial<ClockingCapabilities> | null) => {
+    setClockingCapabilitiesState(normalizeClockingCapabilities(capabilities));
   }, []);
 
   const upsertTimeEntry = useCallback((entry: TimeEntry) => {
@@ -96,6 +108,7 @@ export function ClockingProvider({ children }: { children: React.ReactNode }) {
 
   const resetClockingState = useCallback(() => {
     setBusinessTimeZoneState(DEFAULT_BUSINESS_TIME_ZONE);
+    setClockingCapabilitiesState(DEFAULT_CLOCKING_CAPABILITIES);
     setJobs([]);
     setTimeEntries([]);
     setTimeCorrections([]);
@@ -126,6 +139,7 @@ export function ClockingProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo<ClockingState>(
     () => ({
       businessTimeZone,
+      clockingCapabilities,
       jobs,
       timeEntries,
       timeCorrections,
@@ -138,6 +152,7 @@ export function ClockingProvider({ children }: { children: React.ReactNode }) {
       activeShiftWarnings,
       activityConfigs,
       setBusinessTimeZone,
+      setClockingCapabilities,
       setJobs,
       setTimeEntries,
       setTimeCorrections,
@@ -155,12 +170,14 @@ export function ClockingProvider({ children }: { children: React.ReactNode }) {
       activeShiftWarnings,
       activityConfigs,
       businessTimeZone,
+      clockingCapabilities,
       currentActiveEntryId,
       jobs,
       resetClockingState,
       resetUnbillableCategories,
       setActiveShiftWarnings,
       setBusinessTimeZone,
+      setClockingCapabilities,
       setUnbillableCategories,
       timeCorrections,
       timeEntries,

@@ -18,6 +18,7 @@ export function useClockingActions() {
     setActiveShiftWarnings,
     setActivityConfigs,
     setBusinessTimeZone,
+    setClockingCapabilities,
     setCurrentActiveEntryId,
     setJobs,
     setTimeCorrections,
@@ -54,6 +55,7 @@ export function useClockingActions() {
     const scopedJobs = scopeJobsForSession(payload.jobs ?? [], user);
     setJobs(scopedJobs);
     setBusinessTimeZone(payload.timezone);
+    setClockingCapabilities(payload.capabilities);
     setTimeEntries(scopeTimeEntriesForSession(payload.timeEntries ?? [], user));
     setTimeCorrections(payload.timeCorrections ?? []);
     setCurrentActiveEntryId(payload.currentActiveEntryId ?? null);
