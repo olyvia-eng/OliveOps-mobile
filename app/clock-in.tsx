@@ -96,6 +96,9 @@ export default function ClockInScreen() {
     }
     if (pendingClockIn.workflow) {
       redirectingActiveShiftRef.current = false;
+      if (pendingClockIn.phase?.kind === 'ready_to_finalize') {
+        router.replace('/home');
+      }
       return;
     }
     if (effectiveClock.hydrated && (
@@ -354,16 +357,6 @@ export default function ClockInScreen() {
     setError(null);
 
     if (pendingClockIn.workflow) {
-      if (pendingClockIn.phase.kind === 'ready_to_finalize') {
-        const result = await pendingClockIn.finalize();
-        if (result.ok) {
-          await refreshWorkContext();
-          router.replace('/active-shift');
-        } else {
-          setError(result.error);
-        }
-        return;
-      }
       const form = await pendingClockIn.ensureCurrentForm();
       if (!form) {
         setError('The required pre-shift form is not available yet. Reconnect and try again.');
@@ -597,25 +590,7 @@ export default function ClockInScreen() {
       {status ? <StatusBanner tone="success" message={status} /> : null}
       {error ? <StatusBanner tone="error" message={error} /> : null}
 
-      {pendingClockIn.workflow && pendingClockIn.phase?.kind === 'ready_to_finalize' ? (
-        <View style={styles.progressiveSection}>
-          <StatusBanner tone="success" message="Required forms complete" />
-          <Text style={styles.helper}>{pendingClockIn.error ? 'Clock-in still needs to be finished.' : 'Finishing clock in...'}</Text>
-          {pendingClockIn.error ? (
-            <PrimaryActionButton
-              label={pendingClockIn.busy ? 'Finishing Clock In...' : 'Retry Finish Clock In'}
-              disabled={pendingClockIn.busy}
-              onPress={() => {
-                void pendingClockIn.finalize().then(async (result) => {
-                  if (!result.ok) return;
-                  await refreshWorkContext();
-                  router.replace('/active-shift');
-                });
-              }}
-            />
-          ) : null}
-        </View>
-      ) : pendingClockIn.workflow && pendingClockIn.currentForm ? (
+      {pendingClockIn.workflow && pendingClockIn.phase?.kind !== 'ready_to_finalize' && pendingClockIn.currentForm ? (
         <AdvisoryFormsPrompt
           forms={[pendingClockIn.currentForm]}
           heading="Complete Required Form"
@@ -636,7 +611,7 @@ export default function ClockInScreen() {
             });
           }}
         />
-      ) : pendingClockIn.workflow ? (
+      ) : pendingClockIn.workflow && pendingClockIn.phase?.kind !== 'ready_to_finalize' ? (
         <PrimaryActionButton
           label={pendingClockIn.busy ? 'Refreshing Required Form...' : 'Refresh Required Form'}
           disabled={pendingClockIn.busy}

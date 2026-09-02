@@ -78,6 +78,8 @@ export default function FormScreen() {
         ? 'clock_out'
         : null
     : null;
+  const clockInFormContext = mandatoryKind === 'clock_in'
+    || Boolean(params.workflowId && workflow?.id === params.workflowId && workflow.intent.kind === 'clock_in');
   const mandatoryClockInRequirement = params.workflowOccurrenceId === pendingClockIn.workflow?.workflowOccurrenceId
     && params.workflowRequirementId === pendingClockIn.currentRequirement?.requirementId
     ? pendingClockIn.currentRequirement
@@ -171,6 +173,7 @@ export default function FormScreen() {
   const [photoAttachments, setPhotoAttachments] = useState<Record<string, LocalFormAttachment>>({});
   const [processingPhotos, setProcessingPhotos] = useState(false);
   const submittedRef = useRef(false);
+  const clockInNavigationCompletedRef = useRef(false);
   const initializedAttemptRef = useRef('');
   const clientSubmissionRef = useRef<{ identity: string; value: string } | null>(null);
   const refreshedMissingRef = useRef<string | null>(null);
@@ -206,10 +209,15 @@ export default function FormScreen() {
   }, [attachmentIdentityKey, submissionIdentity]);
 
   useLayoutEffect(() => {
+    navigation.setOptions({ title: clockInFormContext ? 'Clock In' : 'Complete Form' });
+  }, [clockInFormContext, navigation]);
+
+  useLayoutEffect(() => {
     if (!submissionIdentity || initializedAttemptRef.current === submissionIdentity) return;
     initializedAttemptRef.current = submissionIdentity;
     submittedRef.current = false;
     submissionInProgressRef.current = false;
+    clockInNavigationCompletedRef.current = false;
     setMandatorySubmissionAccepted(false);
     setFinalizationKind(null);
     setFinalizationState('idle');
@@ -260,7 +268,6 @@ export default function FormScreen() {
     return (
       <Screen>
         <View style={styles.clockInContext} testID="clock-in-form-context">
-          <Text style={styles.clockInContextTitle}>Clock In</Text>
           <Text style={styles.clockInProgress}>{clockInProgress}</Text>
         </View>
         <ScreenHeader
@@ -425,6 +432,8 @@ export default function FormScreen() {
       // Finalization succeeded; the next app refresh will reconcile clock state.
     }
     if (kind === 'clock_in') {
+      if (clockInNavigationCompletedRef.current) return;
+      clockInNavigationCompletedRef.current = true;
       returnToParentThenPush('/home', '/active-shift');
       return;
     }
@@ -587,9 +596,8 @@ export default function FormScreen() {
 
   return (
     <Screen testID="employee-form-scroll">
-      {mandatoryKind === 'clock_in' || (params.workflowId && workflow?.id === params.workflowId && workflow.intent.kind === 'clock_in') ? (
+      {clockInFormContext ? (
         <View style={styles.clockInContext} testID="clock-in-form-context">
-          <Text style={styles.clockInContextTitle}>Clock In</Text>
           <Text style={styles.clockInProgress}>{clockInProgress}</Text>
           <Text style={styles.clockInContextLabel}>Complete Required Form</Text>
         </View>
@@ -650,7 +658,6 @@ export default function FormScreen() {
 
 const styles = StyleSheet.create({
   clockInContext: { gap: spacing.xs, paddingBottom: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.divider },
-  clockInContextTitle: { color: colors.textPrimary, fontSize: typography.title, fontWeight: '700' },
   clockInProgress: { color: colors.primary, fontSize: typography.caption, fontWeight: '700' },
   clockInContextLabel: { color: colors.textSecondary, fontSize: typography.body, fontWeight: '600' },
   requiredHint: { color: colors.textMuted, fontSize: typography.caption, marginTop: spacing.xs },

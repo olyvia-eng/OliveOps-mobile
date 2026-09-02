@@ -332,6 +332,28 @@ describe('ClockInScreen', () => {
     expect(reconcileActiveShift).toHaveBeenCalledTimes(1);
   });
 
+  it('does not mount or finalize a duplicate ready-to-finalize state', async () => {
+    const finalize = jest.fn();
+    mockPendingClockIn = {
+      ...mockPendingClockIn,
+      workflow: { workflowOccurrenceId: 'occurrence-1' },
+      phase: { kind: 'ready_to_finalize', total: 1 },
+      currentRequirement: null,
+      currentForm: null,
+      finalize,
+    };
+
+    let tree: any;
+    await act(async () => { tree = create(<ClockInScreen />); });
+
+    const text = tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ');
+    expect(text).not.toContain('Required forms complete');
+    expect(text).not.toContain('Finishing clock in...');
+    expect(finalize).not.toHaveBeenCalled();
+    expect(router.replace).toHaveBeenCalledTimes(1);
+    expect(router.replace).toHaveBeenCalledWith('/home');
+  });
+
   it('does not redirect a covered Clock In route while the Form route is active', async () => {
     mockRouteFocused = false;
     mockOfflineClock = {

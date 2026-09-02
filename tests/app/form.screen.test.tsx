@@ -13,6 +13,7 @@ const mockReplace = jest.fn();
 const mockBack = jest.fn();
 const mockDismissTo = jest.fn();
 const mockPush = jest.fn();
+const mockSetOptions = jest.fn();
 const mockDispatch = jest.fn();
 const mockAddListener = jest.fn(() => jest.fn());
 const mockCompleteCurrentForm = jest.fn();
@@ -58,7 +59,7 @@ jest.mock('expo-router', () => ({
     push: (...args: unknown[]) => mockPush(...args),
   },
   useLocalSearchParams: () => mockParams,
-  useNavigation: () => ({ addListener: mockAddListener, dispatch: mockDispatch }),
+  useNavigation: () => ({ addListener: mockAddListener, dispatch: mockDispatch, setOptions: mockSetOptions }),
 }));
 jest.mock('@/store/formsStore', () => ({
   useFormsStore: () => ({ toDo: [mockForm], available: [] }),
@@ -152,6 +153,7 @@ describe('FormScreen', () => {
     mockBack.mockClear();
     mockDismissTo.mockClear();
     mockPush.mockClear();
+    mockSetOptions.mockClear();
     mockCompleteCurrentForm.mockClear();
     mockWorkflow = null;
     mockPendingClockOut = {
@@ -291,7 +293,8 @@ describe('FormScreen', () => {
     await act(async () => { tree = create(<FormScreen />); });
     const clockInContext = tree.root.findByProps({ testID: 'clock-in-form-context' });
     const contextText = clockInContext.findAllByType('text').map((node: any) => String(node.props.children)).join(' ');
-    expect(contextText).toContain('Clock In');
+    expect(mockSetOptions).toHaveBeenCalledWith({ title: 'Clock In' });
+    expect(contextText).not.toContain('Clock In');
     expect(contextText).toContain('Forms');
     expect(contextText).toContain('Complete Required Form');
     await act(async () => tree.root.findByProps({ testID: 'form-field-condition' }).props.onChangeText('Good'));
@@ -309,6 +312,7 @@ describe('FormScreen', () => {
       .mockResolvedValueOnce({ ok: true, submission: { id: 'sub-1' } });
     let tree: any;
     await act(async () => { tree = create(<FormScreen />); });
+    expect(mockSetOptions).toHaveBeenCalledWith({ title: 'Complete Form' });
     await act(async () => tree.root.findByProps({ testID: 'form-field-condition' }).props.onChangeText('Good'));
     await act(async () => tree.root.findByType('primary-button').props.onPress());
     await act(async () => tree.root.findByType('primary-button').props.onPress());
@@ -372,7 +376,9 @@ describe('FormScreen', () => {
     }));
     expect(mockFinalize).toHaveBeenCalledTimes(1);
     expect(mockRefreshWorkContext).toHaveBeenCalledTimes(1);
+    expect(mockDismissTo).toHaveBeenCalledTimes(1);
     expect(mockDismissTo).toHaveBeenCalledWith('/home');
+    expect(mockPush).toHaveBeenCalledTimes(1);
     expect(mockPush).toHaveBeenCalledWith('/active-shift');
     expect(tree.root.findAllByProps({ label: 'View Active Shift' })).toHaveLength(0);
   });
@@ -537,6 +543,7 @@ describe('FormScreen', () => {
     const text = tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ');
     expect(text).toContain('Updated Daily Inspection');
     expect(text).not.toContain('Form unavailable');
+    expect(mockSetOptions).toHaveBeenCalledWith({ title: 'Complete Form' });
   });
 
   it('stays on Finishing while successful clock-in finalization resolves with store busy false', async () => {
@@ -556,6 +563,7 @@ describe('FormScreen', () => {
     mockFinalize.mockImplementationOnce(() => new Promise((resolve) => { resolveFinalize = resolve; }));
     let tree: any;
     await act(async () => { tree = create(<FormScreen />); });
+    expect(mockSetOptions).toHaveBeenCalledWith({ title: 'Clock In' });
     await act(async () => tree.root.findByProps({ testID: 'form-field-condition' }).props.onChangeText('Good'));
     await act(async () => {
       tree.root.findByType('primary-button').props.onPress();
@@ -572,7 +580,9 @@ describe('FormScreen', () => {
     await act(async () => resolveFinalize({ ok: true }));
 
     expect(mockFinalize).toHaveBeenCalledTimes(1);
+    expect(mockDismissTo).toHaveBeenCalledTimes(1);
     expect(mockDismissTo).toHaveBeenCalledWith('/home');
+    expect(mockPush).toHaveBeenCalledTimes(1);
     expect(mockPush).toHaveBeenCalledWith('/active-shift');
     expect(tree.root.findAllByProps({ label: 'View Active Shift' })).toHaveLength(0);
     expect(tree.root.findAllByType('primary-button').some((node: any) => node.props.label === 'Retry Finish Clock In')).toBe(false);
