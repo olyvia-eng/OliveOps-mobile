@@ -248,8 +248,8 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   inputRow: {
-    minHeight: 54,
-    borderRadius: 13,
+    minHeight: 48,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.surface,
@@ -315,8 +315,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   primaryButton: {
-    minHeight: 53,
-    borderRadius: 13,
+    minHeight: 48,
+    borderRadius: 12,
     backgroundColor: colors.primary,
     marginTop: 24,
     paddingHorizontal: 16,

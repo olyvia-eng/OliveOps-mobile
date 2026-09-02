@@ -115,7 +115,7 @@ const styles = StyleSheet.create({
   headingText: { flex: 1, gap: spacing.xs },
   type: { color: colors.textPrimary, fontSize: typography.title, fontWeight: typography.bold },
   dates: { color: colors.textSecondary, fontSize: typography.body },
-  details: { borderWidth: 1, borderColor: colors.cardBorder, borderRadius: radii.md, backgroundColor: colors.surface, overflow: 'hidden' },
+  details: { borderWidth: 1, borderColor: colors.cardBorder, borderRadius: radii.lg, backgroundColor: colors.surface, overflow: 'hidden' },
   detailRow: { padding: spacing.md, gap: spacing.xs, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.divider },
   label: { color: colors.textSecondary, fontSize: typography.caption, fontWeight: typography.semibold, textTransform: 'uppercase' },
   value: { color: colors.textPrimary, fontSize: typography.body },

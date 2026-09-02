@@ -28,6 +28,7 @@ export default function TimeOffScreen() {
       if (next === 'active' && wasAway) void refresh();
     });
     return () => subscription.remove();
+
   }, [refresh]);
 
   return (
@@ -75,3 +76,4 @@ export default function TimeOffScreen() {
 }
 
 const styles = StyleSheet.create({ list: { gap: spacing.xs } });
+

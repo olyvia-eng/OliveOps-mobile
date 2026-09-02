@@ -7,7 +7,7 @@ import { PrimaryActionButton } from '@/components/PrimaryActionButton';
 import { getCorrectionTypeLabel } from '@/features/clocking/presentation';
 import { useTimeCorrectionActions } from '@/hooks/useTimeCorrectionActions';
 import { useClockingStore } from '@/store/clockingStore';
-import { colors } from '@/theme/colors';
+import { colors, radii, spacing } from '@/theme/colors';
 import { formatBusinessDate, formatBusinessDateTime } from '@/utils/businessTime';
 
 export default function MyCorrectionRequestsScreen() {
@@ -72,10 +72,10 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   listContent: {
-    gap: 0,
+    gap: spacing.sm,
     paddingBottom: 20,
   },
-  requestRow: { borderTopWidth: 1, borderTopColor: colors.divider, paddingVertical: 14, gap: 5 },
+  requestRow: { borderWidth: 1, borderColor: colors.cardBorder, borderRadius: radii.lg, backgroundColor: colors.surface, padding: spacing.md, gap: 5 },
   empty: {
     color: colors.textSecondary,
     fontSize: 14,

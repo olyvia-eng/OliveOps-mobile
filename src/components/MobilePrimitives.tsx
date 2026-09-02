@@ -29,6 +29,53 @@ export function SectionHeader({ title, action }: { title: string; action?: React
   );
 }
 
+export function SectionCard({ children, selected = false, testID }: PropsWithChildren<{
+  selected?: boolean;
+  testID?: string;
+}>) {
+  return <View testID={testID} style={[styles.sectionCard, selected && styles.sectionCardSelected]}>{children}</View>;
+}
+
+export function InfoRow({ label, value, emphasis = false }: {
+  label: string;
+  value: string;
+  emphasis?: boolean;
+}) {
+  return (
+    <View style={styles.infoRow}>
+      <Text style={styles.infoLabel}>{label}</Text>
+      <Text style={[styles.infoValue, emphasis && styles.infoValueEmphasis]}>{value}</Text>
+    </View>
+  );
+}
+
+export function SegmentedControl<T extends string>({ options, value, onChange, testIDPrefix = 'segment' }: {
+  options: ReadonlyArray<{ value: T; label: string }>;
+  value: T;
+  onChange: (value: T) => void;
+  testIDPrefix?: string;
+}) {
+  return (
+    <View accessibilityRole="tablist" style={styles.segmentedControl}>
+      {options.map((option) => {
+        const selected = value === option.value;
+        return (
+          <Pressable
+            key={option.value}
+            testID={`${testIDPrefix}-${option.value}`}
+            accessibilityRole="tab"
+            accessibilityState={{ selected }}
+            onPress={() => onChange(option.value)}
+            style={({ pressed }) => [styles.segment, selected && styles.segmentSelected, pressed && styles.pressed]}
+          >
+            <Text style={[styles.segmentText, selected && styles.segmentTextSelected]}>{option.label}</Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
 export function ActionCard({ children, onPress, selected = false, accessibilityLabel, testID }: PropsWithChildren<{
   onPress?: () => void;
   selected?: boolean;
@@ -113,6 +160,17 @@ const styles = StyleSheet.create({
   subtitle: { color: colors.textSecondary, fontSize: typography.bodySmall, lineHeight: 20 },
   sectionHeader: { minHeight: 28, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   sectionTitle: { color: colors.textPrimary, fontSize: typography.title, fontWeight: typography.bold },
+  sectionCard: { borderRadius: radii.lg, borderWidth: 1, borderColor: colors.cardBorder, backgroundColor: colors.surface, padding: spacing.lg, gap: spacing.sm },
+  sectionCardSelected: { borderColor: colors.primary, backgroundColor: colors.oliveTint },
+  infoRow: { minHeight: 32, flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: spacing.lg },
+  infoLabel: { flex: 1, color: colors.textSecondary, fontSize: typography.bodySmall },
+  infoValue: { flex: 2, color: colors.textPrimary, fontSize: typography.bodySmall, fontWeight: typography.medium, textAlign: 'right' },
+  infoValueEmphasis: { fontWeight: typography.bold },
+  segmentedControl: { flexDirection: 'row', borderRadius: radii.md, backgroundColor: colors.surfaceMuted, padding: 3 },
+  segment: { minHeight: 44, flex: 1, alignItems: 'center', justifyContent: 'center', borderRadius: radii.sm, paddingHorizontal: spacing.sm },
+  segmentSelected: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.cardBorder },
+  segmentText: { color: colors.textSecondary, fontSize: typography.bodySmall, fontWeight: typography.semibold, textAlign: 'center' },
+  segmentTextSelected: { color: colors.primary, fontWeight: typography.bold },
   actionCard: { borderRadius: radii.lg, borderWidth: 1, borderColor: colors.cardBorder, backgroundColor: colors.surface, padding: spacing.lg, gap: spacing.sm },
   actionCardSelected: { borderColor: colors.primary, backgroundColor: colors.oliveTint },
   pressed: { opacity: 0.72 },

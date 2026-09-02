@@ -28,12 +28,12 @@ export function PrimaryActionButton({
 
 const styles = StyleSheet.create({
   button: {
-    minHeight: 50,
-    borderRadius: radii.md,
+    minHeight: 48,
+    borderRadius: radii.lg,
     backgroundColor: colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 16,
+    paddingHorizontal: 18,
   },
   disabled: {
     opacity: 0.6,

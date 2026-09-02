@@ -336,9 +336,9 @@ export default function EditWorkAreasScreen() {
 
 const styles = StyleSheet.create({
   loading: { minHeight: 160, alignItems: 'center', justifyContent: 'center', gap: spacing.sm },
-  timeline: { borderTopWidth: 1, borderTopColor: colors.divider },
-  segment: { paddingVertical: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.divider, gap: spacing.sm },
-  lockedSegment: { backgroundColor: colors.surfaceMuted, paddingHorizontal: spacing.sm },
+  timeline: { gap: spacing.sm },
+  segment: { borderWidth: 1, borderColor: colors.cardBorder, borderRadius: radii.lg, backgroundColor: colors.surface, padding: spacing.md, gap: spacing.sm },
+  lockedSegment: { backgroundColor: colors.surfaceMuted },
   segmentTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: spacing.sm },
   timeRange: { flex: 1, color: colors.textSecondary, fontSize: typography.bodySmall },
   duration: { color: colors.textPrimary, fontSize: typography.bodySmall, fontWeight: typography.bold },
@@ -347,7 +347,7 @@ const styles = StyleSheet.create({
   areaName: { color: colors.textPrimary, fontSize: typography.body, fontWeight: typography.bold },
   meta: { color: colors.textSecondary, fontSize: typography.bodySmall },
   chevron: { color: colors.textMuted, fontSize: 26 },
-  boundaryButton: { minHeight: 44, justifyContent: 'center', borderWidth: 1, borderColor: colors.border, borderRadius: radii.md, paddingHorizontal: spacing.md },
+  boundaryButton: { minHeight: 44, justifyContent: 'center', borderWidth: 1, borderColor: colors.border, borderRadius: radii.lg, paddingHorizontal: spacing.md },
   boundaryText: { color: colors.primary, fontSize: typography.bodySmall, fontWeight: typography.semibold },
   splitButton: { minHeight: 44, justifyContent: 'center' },
   splitText: { color: colors.primary, fontSize: typography.bodySmall, fontWeight: typography.bold },

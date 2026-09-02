@@ -1,5 +1,5 @@
 import { StyleSheet, Text, View } from 'react-native';
-import { colors } from '@/theme/colors';
+import { colors, radii, spacing, typography } from '@/theme/colors';
 
 export function StatusBanner({
   tone,
@@ -17,14 +17,15 @@ export function StatusBanner({
 
 const styles = StyleSheet.create({
   box: {
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
+    borderRadius: radii.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
     borderWidth: 1,
   },
   text: {
-    fontSize: 14,
-    fontWeight: '500',
+    fontSize: typography.bodySmall,
+    fontWeight: typography.medium,
+    lineHeight: 20,
     color: colors.textPrimary,
   },
 });

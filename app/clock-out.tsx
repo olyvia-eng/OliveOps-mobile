@@ -29,7 +29,7 @@ import { useAuthStore } from '@/store/authStore';
 import { useClockingStore } from '@/store/clockingStore';
 import { useFormsWorkflowStore } from '@/store/formsWorkflowStore';
 import { usePendingClockOutStore } from '@/store/pendingClockOutStore';
-import { colors } from '@/theme/colors';
+import { colors, radii, spacing } from '@/theme/colors';
 import { toUserFacingError } from '@/utils/userFacingError';
 import { returnToParentOrReplace } from '@/utils/navigation';
 import type { EmployeeForm } from '@/types/forms';
@@ -775,9 +775,9 @@ export default function ClockOutScreen() {
 
 const styles = StyleSheet.create({
   completionMessage: { color: colors.textSecondary, fontSize: 15, lineHeight: 21 },
-  summarySection: { gap: 8 },
+  summarySection: { gap: 8, borderWidth: 1, borderColor: colors.cardBorder, borderRadius: radii.lg, backgroundColor: colors.surface, padding: spacing.lg },
   sectionLabel: { color: colors.textSecondary, fontSize: 13, fontWeight: '700' },
-  workAreaSummary: { borderTopWidth: 1, borderBottomWidth: 1, borderColor: colors.divider, paddingVertical: 12, gap: 4 },
+  workAreaSummary: { borderWidth: 1, borderColor: colors.cardBorder, borderRadius: radii.lg, backgroundColor: colors.surface, padding: spacing.lg, gap: 4 },
   workAreaSummaryTitle: { color: colors.textPrimary, fontSize: 17, fontWeight: '700' },
   workAreaSummaryMeta: { color: colors.textSecondary, fontSize: 14 },
   workAreaSummaryArea: { color: colors.textPrimary, fontSize: 15, fontWeight: '600', marginTop: 3 },
@@ -803,38 +803,6 @@ const styles = StyleSheet.create({
   formSection: { gap: 10 },
   optional: { color: colors.textMuted, fontWeight: '400' },
   photoHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  card: {
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
-    backgroundColor: colors.surface,
-    padding: 16,
-    gap: 12,
-  },
-  title: {
-    color: colors.textPrimary,
-    fontSize: 24,
-    fontWeight: '700',
-    letterSpacing: -0.2,
-  },
-  shiftSummary: {
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.divider,
-    backgroundColor: colors.surfaceMuted,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    gap: 3,
-  },
-  shiftJob: {
-    color: colors.textPrimary,
-    fontSize: 17,
-    fontWeight: '600',
-  },
-  shiftMeta: {
-    color: colors.textSecondary,
-    fontSize: 14,
-  },
   label: {
     color: colors.textPrimary,
     fontSize: 15,

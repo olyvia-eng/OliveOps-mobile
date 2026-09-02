@@ -6,7 +6,7 @@ import { SecondaryButton } from '@/components/SecondaryButton';
 import { Screen } from '@/components/Screen';
 import { StatusBanner } from '@/components/StatusBanner';
 import { OfflineClockStatus } from '@/components/OfflineClockStatus';
-import { EmptyState, ScreenHeader, SectionHeader, StatusBadge } from '@/components/MobilePrimitives';
+import { EmptyState, ScreenHeader, SectionCard, SectionHeader, StatusBadge } from '@/components/MobilePrimitives';
 import {
   formatDurationForEntry,
   formatElapsedClock,
@@ -94,7 +94,7 @@ export default function ActiveShiftScreen() {
         />
       ) : (
         <>
-          <View style={styles.hero}>
+          <SectionCard testID="active-shift-current-work">
             <StatusBadge
               label={effectiveClock.effectiveStatus === 'clocked_in_pending' ? 'Clocked in — Pending sync' : 'Clocked in'}
               tone="active"
@@ -108,7 +108,7 @@ export default function ActiveShiftScreen() {
             {effectiveClock.currentSegmentStartedAt && effectiveClock.currentSegmentStartedAt !== effectiveClock.shiftStartedAt ? (
               <Text style={styles.heroMeta}>Current activity since {formatBusinessTime(new Date(effectiveClock.currentSegmentStartedAt), businessTimeZone, { hour: 'numeric', minute: '2-digit' })}</Text>
             ) : null}
-          </View>
+          </SectionCard>
 
           <View style={styles.timelineSection}>
             <SectionHeader title="Today's Shift" />
@@ -156,17 +156,11 @@ export default function ActiveShiftScreen() {
 }
 
 const styles = StyleSheet.create({
-  hero: {
-    borderRadius: 12,
-    backgroundColor: colors.primary,
-    padding: 18,
-    gap: 5,
-  },
-  heroLabel: { color: '#D7E2D2', fontSize: 12, fontWeight: '700', textTransform: 'uppercase', marginTop: 6 },
-  heroActivity: { color: colors.primaryText, fontSize: 24, fontWeight: '700' },
-  heroJob: { color: '#E7EFE3', fontSize: 15, fontWeight: '600' },
-  heroWorkArea: { color: '#D7E2D2', fontSize: 14, fontWeight: '600' },
-  heroMeta: { color: '#D7E2D2', fontSize: 14 },
+  heroLabel: { color: colors.textSecondary, fontSize: 12, fontWeight: '700', textTransform: 'uppercase', marginTop: 6 },
+  heroActivity: { color: colors.textPrimary, fontSize: 24, fontWeight: '700' },
+  heroJob: { color: colors.textPrimary, fontSize: 15, fontWeight: '600' },
+  heroWorkArea: { color: colors.textSecondary, fontSize: 14, fontWeight: '600' },
+  heroMeta: { color: colors.textSecondary, fontSize: 14 },
   timelineSection: { gap: 8 },
   timeline: { borderTopWidth: 1, borderTopColor: colors.divider, paddingTop: 6 },
   segmentRow: { flexDirection: 'row', minHeight: 70 },
@@ -181,79 +175,11 @@ const styles = StyleSheet.create({
   segmentTime: { color: colors.textSecondary, fontSize: 14, marginTop: 3 },
   segmentMeta: { color: colors.textMuted, fontSize: 13, marginTop: 2 },
   actions: { gap: 8 },
-  card: {
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
-    backgroundColor: colors.surface,
-    padding: 16,
-    gap: 10,
-  },
-  sectionLabel: {
-    color: colors.textSecondary,
-    fontSize: 13,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-  },
-  statusRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  statusDot: {
-    color: colors.primary,
-    fontSize: 12,
-  },
-  statusValue: {
-    color: colors.textPrimary,
-    fontSize: 20,
-    fontWeight: '700',
-  },
-  jobTitle: {
-    color: colors.textPrimary,
-    fontSize: 20,
-    fontWeight: '600',
-  },
-  activityText: {
-    color: colors.textSecondary,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  activityStack: {
-    gap: 2,
-  },
-  activityCategoryText: {
-    color: colors.textPrimary,
-    fontSize: 15,
-    fontWeight: '600',
-  },
   elapsedClock: {
-    color: colors.primaryText,
-    fontSize: 36,
+    color: colors.primary,
+    fontSize: 32,
     fontWeight: '700',
     marginTop: 10,
-  },
-  elapsedLabel: {
-    color: colors.textSecondary,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  emptyTitle: {
-    color: colors.textPrimary,
-    fontSize: 20,
-    fontWeight: '700',
-  },
-  text: {
-    color: colors.textSecondary,
-    fontSize: 15,
-  },
-  metaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  metaLabel: {
-    color: colors.textSecondary,
-    fontSize: 15,
   },
   warningBlock: {
     gap: 8,

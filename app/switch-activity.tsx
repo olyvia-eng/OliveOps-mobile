@@ -9,8 +9,8 @@ import { StatusBanner } from '@/components/StatusBanner';
 import { UnbillableCategorySelector } from '@/components/UnbillableCategorySelector';
 import { WorkAreaSelector } from '@/components/WorkAreaSelector';
 import { ActivitySelector } from '@/components/ActivitySelector';
-import { ListRow, ScreenHeader, SectionHeader } from '@/components/MobilePrimitives';
-import { getWorkTypeLabel, resolveJobTitle } from '@/features/clocking/presentation';
+import { InfoRow, ListRow, ScreenHeader, SectionCard, SectionHeader } from '@/components/MobilePrimitives';
+import { getWorkTypeLabel, resolveJobTitle, resolveWorkAreaName } from '@/features/clocking/presentation';
 import { scopeJobsForSession } from '@/features/clocking/scoping';
 import { useClockingActions } from '@/hooks/useClockingActions';
 import { useEffectiveClockState } from '@/hooks/useEffectiveClockState';
@@ -21,7 +21,6 @@ import { useAuthStore } from '@/store/authStore';
 import { useClockingStore } from '@/store/clockingStore';
 import { useOptionalOfflineClockStore } from '@/store/offlineClockContext';
 import { useFormsWorkflowStore, type FormsWorkflowIntent } from '@/store/formsWorkflowStore';
-import { colors } from '@/theme/colors';
 import type { TimeEntryWorkType } from '@/types/domain';
 import type { EmployeeForm } from '@/types/forms';
 import { returnToParentOrReplace } from '@/utils/navigation';
@@ -391,11 +390,19 @@ export default function SwitchActivityScreen() {
   return (
     <Screen>
       <OfflineNotice />
-      <ScreenHeader title="Switch Activity" subtitle={activeEntry ? `Currently ${getWorkTypeLabel(activeEntry.workType)}` : undefined} />
+      <ScreenHeader title="Switch Activity" subtitle="Update what you're working on without ending your shift" />
         {!activeEntry ? (
           <StatusBanner tone="info" message="No active shift found. Clock in before switching activity." />
         ) : (
           <>
+            <View style={styles.currentSection}>
+              <SectionHeader title="Current" />
+              <SectionCard>
+                <InfoRow label="Activity" value={getWorkTypeLabel(activeEntry.workType)} emphasis />
+                {activeEntry.workType !== 'drive_time' ? <InfoRow label="Job" value={resolveJobTitle(activeEntry, assignedJobs)} /> : null}
+                {resolveWorkAreaName(activeEntry) ? <InfoRow label="Work Area" value={resolveWorkAreaName(activeEntry) || ''} /> : null}
+              </SectionCard>
+            </View>
             <ActivitySelector
               heading="What are you switching to?"
               testIDPrefix="switch-activity-option"
@@ -422,7 +429,7 @@ export default function SwitchActivityScreen() {
                       : 'No assigned active jobs available. You can continue without a job context.'}
                   />
                 ) : (
-                  <View style={styles.selectionList}>
+                  <SectionCard>
                     {assignedJobs.map((job) => {
                       const selected = selectedJobId === job.id;
                       return (
@@ -441,7 +448,7 @@ export default function SwitchActivityScreen() {
                         />
                       );
                     })}
-                  </View>
+                  </SectionCard>
                 )}
               </View>
             ) : null}
@@ -553,84 +560,5 @@ export default function SwitchActivityScreen() {
 
 const styles = StyleSheet.create({
   progressiveSection: { gap: 8 },
-  selectionList: { borderRadius: 12, borderWidth: 1, borderColor: colors.cardBorder, backgroundColor: colors.surface, paddingHorizontal: 12 },
-  card: {
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
-    backgroundColor: colors.surface,
-    padding: 16,
-    gap: 10,
-  },
-  title: {
-    color: colors.textPrimary,
-    fontSize: 24,
-    fontWeight: '700',
-    letterSpacing: -0.2,
-  },
-  help: {
-    color: colors.textSecondary,
-    fontSize: 15,
-    lineHeight: 21,
-  },
-  list: {
-    gap: 10,
-  },
-  sectionLabel: {
-    color: colors.textSecondary,
-    fontSize: 13,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    marginTop: 4,
-  },
-  row: {
-    minHeight: 64,
-    borderRadius: 12,
-    borderColor: colors.border,
-    borderWidth: 1,
-    backgroundColor: colors.surface,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 10,
-  },
-  rowSelected: {
-    borderColor: colors.primary,
-    backgroundColor: colors.inputFocusBackground,
-  },
-  textBlock: {
-    flex: 1,
-    gap: 4,
-  },
-  rowTitle: {
-    color: colors.textPrimary,
-    fontSize: 17,
-    fontWeight: '600',
-  },
-  rowMeta: {
-    color: colors.textSecondary,
-    fontSize: 14,
-    textTransform: 'capitalize',
-  },
-  checkDot: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.surface,
-  },
-  checkDotSelected: {
-    borderColor: colors.primary,
-    backgroundColor: colors.primary,
-  },
-  checkMark: {
-    color: colors.surface,
-    fontSize: 14,
-    fontWeight: '700',
-  },
+  currentSection: { gap: 8 },
 });

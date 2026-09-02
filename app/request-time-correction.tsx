@@ -22,7 +22,7 @@ import { useUnbillableCategories } from '@/hooks/useUnbillableCategories';
 import { useAuthStore } from '@/store/authStore';
 import { useClockingStore } from '@/store/clockingStore';
 import { useOptionalOfflineClockStore } from '@/store/offlineClockContext';
-import { colors } from '@/theme/colors';
+import { colors, radii, spacing } from '@/theme/colors';
 import { WORK_AREA_CLOCKING_CONTRACT_VERSION, type CreateTimeCorrectionRequest } from '@/types/api';
 import type { TimeCorrectionRequestType, TimeEntryWorkType } from '@/types/domain';
 import { businessDateKey, businessLocalDateTimeToIso, formatBusinessTime } from '@/utils/businessTime';
@@ -527,7 +527,7 @@ export default function RequestTimeCorrectionScreen() {
 
 const styles = StyleSheet.create({
   section: {
-    gap: 10,
+    gap: spacing.sm,
   },
   summaryBlock: { borderTopWidth: 1, borderTopColor: colors.divider, paddingTop: 12, gap: 5 },
   summaryHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
@@ -546,16 +546,16 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   option: {
-    borderRadius: 10,
+    borderRadius: radii.lg,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.surface,
-    paddingHorizontal: 12,
-    paddingVertical: 11,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
   },
   optionSelected: {
     borderColor: colors.primary,
-    backgroundColor: colors.surfaceMuted,
+    backgroundColor: colors.oliveTint,
   },
   optionLabel: {
     color: colors.textPrimary,
@@ -564,11 +564,11 @@ const styles = StyleSheet.create({
   },
   input: {
     minHeight: 48,
-    borderRadius: 10,
+    borderRadius: radii.lg,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.surface,
-    paddingHorizontal: 12,
+    paddingHorizontal: spacing.md,
     fontSize: 15,
     color: colors.textPrimary,
   },

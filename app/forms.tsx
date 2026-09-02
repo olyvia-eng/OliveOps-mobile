@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { EmptyState, ScreenHeader, StatusBadge } from '@/components/MobilePrimitives';
+import { EmptyState, ScreenHeader, SegmentedControl, StatusBadge } from '@/components/MobilePrimitives';
 import { ErrorState } from '@/components/ErrorState';
 import { FormContextSummary } from '@/components/FormContextSummary';
 import { LoadingState } from '@/components/LoadingState';
@@ -105,24 +105,15 @@ export default function FormsScreen() {
               </Pressable>
             ) : null}
             {error ? <StatusBanner tone="error" message={error} /> : null}
-            <View accessibilityRole="tablist" style={styles.tabs}>
-              {tabs.map((item) => {
-                const selected = tab === item.id;
-                const count = item.id === 'todo' ? toDo.length : item.id === 'available' ? available.length : completed.length;
-                return (
-                  <Pressable
-                    key={item.id}
-                    testID={`forms-tab-${item.id}`}
-                    accessibilityRole="tab"
-                    accessibilityState={{ selected }}
-                    onPress={() => setTab(item.id)}
-                    style={[styles.tab, selected && styles.tabSelected]}
-                  >
-                    <Text style={[styles.tabText, selected && styles.tabTextSelected]}>{item.label} {count}</Text>
-                  </Pressable>
-                );
-              })}
-            </View>
+            <SegmentedControl
+              testIDPrefix="forms-tab"
+              value={tab}
+              onChange={setTab}
+              options={tabs.map((item) => ({
+                value: item.id,
+                label: `${item.label} ${item.id === 'todo' ? toDo.length : item.id === 'available' ? available.length : completed.length}`,
+              }))}
+            />
           </View>
         )}
         ListEmptyComponent={(
@@ -179,11 +170,6 @@ const styles = StyleSheet.create({
   content: { flexGrow: 1, paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.xxl },
   header: { gap: spacing.md, paddingBottom: spacing.md },
   dismiss: { color: colors.primary, fontSize: typography.bodySmall, fontWeight: typography.bold, textAlign: 'right' },
-  tabs: { flexDirection: 'row', borderRadius: radii.md, backgroundColor: colors.surfaceMuted, padding: 3 },
-  tab: { minHeight: 44, flex: 1, alignItems: 'center', justifyContent: 'center', borderRadius: radii.sm },
-  tabSelected: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.cardBorder },
-  tabText: { color: colors.textSecondary, fontSize: typography.bodySmall, fontWeight: typography.semibold },
-  tabTextSelected: { color: colors.primary, fontWeight: typography.bold },
   row: { gap: spacing.xs, minHeight: 72, borderTopWidth: 1, borderTopColor: colors.divider, paddingVertical: spacing.md },
   rowTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
   rowTitle: { flex: 1, color: colors.textPrimary, fontSize: typography.body, fontWeight: typography.bold },

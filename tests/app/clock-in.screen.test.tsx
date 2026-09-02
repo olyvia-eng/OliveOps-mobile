@@ -362,7 +362,7 @@ describe('ClockInScreen', () => {
     const selectedJob = tree.root.findAllByType('pressable').find((node: any) => node.props.testID === 'job-option-job-1');
     expect(selectedJob.props.accessibilityState).toEqual({ selected: true });
     expect(selectedJob.props.style).toEqual(expect.arrayContaining([
-      expect.objectContaining({ backgroundColor: '#EBF1E7', borderColor: '#56734A' }),
+      expect.objectContaining({ backgroundColor: '#EEF4E3', borderColor: '#6B8E23' }),
     ]));
 
     const enabledSubmit = tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Clock In');

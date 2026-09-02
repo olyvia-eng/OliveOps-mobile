@@ -10,7 +10,7 @@ import { UnbillableCategorySelector } from '@/components/UnbillableCategorySelec
 import { WorkAreaSelector } from '@/components/WorkAreaSelector';
 import { ActivitySelector } from '@/components/ActivitySelector';
 import { StartTimeField } from '@/components/StartTimeField';
-import { ListRow, ScreenHeader, SectionHeader } from '@/components/MobilePrimitives';
+import { ListRow, ScreenHeader, SectionCard, SectionHeader } from '@/components/MobilePrimitives';
 import { scopeJobsForSession } from '@/features/clocking/scoping';
 import { useClockingActions } from '@/hooks/useClockingActions';
 import { useEffectiveClockState } from '@/hooks/useEffectiveClockState';
@@ -23,7 +23,6 @@ import { useOptionalOfflineClockStore } from '@/store/offlineClockContext';
 import { useFormsWorkflowStore, type FormsWorkflowIntent } from '@/store/formsWorkflowStore';
 import { pendingClockInRequirementForm, usePendingClockInStore } from '@/store/pendingClockInStore';
 import { usePendingClockOutStore } from '@/store/pendingClockOutStore';
-import { colors } from '@/theme/colors';
 import type { TimeEntryWorkType } from '@/types/domain';
 import { businessDateKey, businessLocalDateTimeToIso } from '@/utils/businessTime';
 
@@ -474,7 +473,7 @@ export default function ClockInScreen() {
                   : 'No assigned active jobs available. You can continue without a job context.'}
               />
             ) : (
-              <View style={styles.selectionList}>
+              <SectionCard>
                 {assignedJobs.map((job) => {
                   const selected = selectedJobId === job.id;
                   return (
@@ -493,7 +492,7 @@ export default function ClockInScreen() {
                     />
                   );
                 })}
-              </View>
+              </SectionCard>
             )}
           </View>
         ) : null}
@@ -625,84 +624,4 @@ export default function ClockInScreen() {
 
 const styles = StyleSheet.create({
   progressiveSection: { gap: 8 },
-  selectionList: { borderRadius: 12, borderWidth: 1, borderColor: colors.cardBorder, backgroundColor: colors.surface, paddingHorizontal: 12 },
-  card: {
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
-    backgroundColor: colors.surface,
-    padding: 16,
-    gap: 10,
-  },
-  title: {
-    color: colors.textPrimary,
-    fontSize: 24,
-    fontWeight: '700',
-    letterSpacing: -0.2,
-  },
-  help: {
-    color: colors.textSecondary,
-    fontSize: 15,
-    lineHeight: 21,
-  },
-  sectionLabel: {
-    color: colors.textSecondary,
-    fontSize: 13,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    marginTop: 4,
-  },
-  jobsList: {
-    gap: 10,
-  },
-  jobRow: {
-    minHeight: 64,
-    borderRadius: 12,
-    borderColor: colors.border,
-    borderWidth: 1,
-    backgroundColor: colors.surface,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 10,
-  },
-  jobRowSelected: {
-    borderColor: colors.primary,
-    backgroundColor: colors.inputFocusBackground,
-  },
-  jobTextBlock: {
-    flex: 1,
-    gap: 4,
-  },
-  jobTitle: {
-    color: colors.textPrimary,
-    fontSize: 17,
-    fontWeight: '600',
-  },
-  jobMeta: {
-    color: colors.textSecondary,
-    fontSize: 14,
-    textTransform: 'capitalize',
-  },
-  checkDot: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.surface,
-  },
-  checkDotSelected: {
-    borderColor: colors.primary,
-    backgroundColor: colors.primary,
-  },
-  checkMark: {
-    color: colors.surface,
-    fontSize: 14,
-    fontWeight: '700',
-  },
 });

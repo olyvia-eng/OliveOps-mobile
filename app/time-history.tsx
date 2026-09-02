@@ -20,7 +20,7 @@ import { useAuthStore } from '@/store/authStore';
 import { useClockingStore } from '@/store/clockingStore';
 import { getWeekTotalHours } from '@/api/timeEntriesApi';
 import { groupTimeHistoryEntries } from '@/features/clocking/timeHistory';
-import { colors, spacing } from '@/theme/colors';
+import { colors, radii, spacing } from '@/theme/colors';
 
 type HistoryListItem =
   | { kind: 'header'; key: string; label: string }
@@ -146,29 +146,19 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textTransform: 'uppercase',
     paddingTop: 16,
-    paddingBottom: 4,
+    paddingBottom: 8,
   },
-  headerCard: {
-    borderRadius: 14,
+  entryRow: {
     borderWidth: 1,
     borderColor: colors.cardBorder,
+    borderRadius: radii.lg,
     backgroundColor: colors.surface,
-    padding: 16,
-    gap: 6,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    gap: 5,
   },
-  entryRow: { borderTopWidth: 1, borderTopColor: colors.divider, paddingVertical: 14, gap: 5 },
   entryHeading: { flex: 1, gap: 2 },
   entryActivity: { color: colors.textPrimary, fontSize: 16, fontWeight: '700' },
-  title: {
-    color: colors.textPrimary,
-    fontSize: 24,
-    fontWeight: '700',
-    letterSpacing: -0.2,
-  },
-  meta: {
-    color: colors.textSecondary,
-    fontSize: 15,
-  },
   headerActionsRow: {
     flexDirection: 'row',
     gap: 8,
@@ -187,14 +177,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
   },
-  entryCard: {
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-    padding: 14,
-    gap: 6,
-  },
   entryTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -211,39 +193,6 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 14,
     fontWeight: '600',
-  },
-  activeBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: colors.successBorder,
-    backgroundColor: colors.successBackground,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    gap: 5,
-  },
-  activeDot: {
-    color: colors.primary,
-    fontSize: 10,
-  },
-  activeLabel: {
-    color: colors.success,
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  incompleteBadge: {
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surfaceMuted,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-  },
-  incompleteLabel: {
-    color: colors.textSecondary,
-    fontSize: 12,
-    fontWeight: '700',
   },
   badgeRow: {
     flexDirection: 'row',
@@ -275,26 +224,9 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
   },
-  entryDateLabel: {
-    color: colors.textSecondary,
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  entryType: {
-    color: colors.textSecondary,
-    fontSize: 13,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.3,
-  },
   entryRange: {
     color: colors.textPrimary,
     fontSize: 15,
-  },
-  empty: {
-    color: colors.textSecondary,
-    fontSize: 15,
-    marginTop: 12,
   },
   requestAction: {
     marginTop: 6,

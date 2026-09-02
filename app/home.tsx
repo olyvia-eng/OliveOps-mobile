@@ -7,13 +7,14 @@ import { Screen } from '@/components/Screen';
 import { OfflineNotice } from '@/components/OfflineNotice';
 import { OfflineClockStatus } from '@/components/OfflineClockStatus';
 import { StatusBanner } from '@/components/StatusBanner';
-import { ActionCard, ListRow, ScreenHeader, SectionHeader, StatusBadge } from '@/components/MobilePrimitives';
+import { ActionCard, InfoRow, ListRow, ScreenHeader, SectionCard, SectionHeader, StatusBadge } from '@/components/MobilePrimitives';
 import {
   formatLongShiftWarning,
   formatElapsedShort,
   getGreetingForTime,
   getWorkTypeLabel,
   resolveJobTitle,
+  resolveWorkAreaName,
 } from '@/features/clocking/presentation';
 import { useClockingActions } from '@/hooks/useClockingActions';
 import { useEffectiveClockState } from '@/hooks/useEffectiveClockState';
@@ -87,6 +88,7 @@ export default function HomeScreen() {
     if (!activeShift) return 'None';
     return getWorkTypeLabel(activeShift.workType);
   }, [activeShift]);
+  const currentWorkAreaLabel = useMemo(() => activeShift ? resolveWorkAreaName(activeShift) : undefined, [activeShift]);
 
   const runningDuration = useMemo(() => {
     if (!activeShift) return '0h 0m';
@@ -150,30 +152,30 @@ export default function HomeScreen() {
           </Text>
         </ActionCard>
       ) : activeShift ? (
-        <View style={styles.activeCard}>
-          <StatusBadge
-            label={localPendingClockIn ? 'Clock in pending sync' : 'Active Shift'}
-            tone="active"
-          />
-          <Text style={styles.activeTitle}>
-            {localPendingClockIn ? 'Your clock-in is waiting to sync' : "You're clocked in"}
-          </Text>
-          <Text style={styles.activeJob}>{currentJobLabel}</Text>
-          <Text style={styles.activeActivity}>{currentActivityLabel}</Text>
-          <View style={styles.shiftMetrics}>
-            <View>
-              <Text style={styles.metricLabel}>Total shift</Text>
-              <Text style={styles.metricValue}>{runningDuration}</Text>
+        <SectionCard testID="current-work-card">
+          <View style={styles.currentWorkHeader}>
+            <View style={styles.currentWorkHeading}>
+              <Text style={styles.currentWorkEyebrow}>CURRENT WORK</Text>
+              <Text style={styles.currentWorkTitle}>
+                {localPendingClockIn ? 'Your clock-in is waiting to sync' : "You're clocked in"}
+              </Text>
             </View>
-            <View>
-              <Text style={styles.metricLabel}>Started</Text>
-              <Text style={styles.metricValue}>{formatBusinessTime(new Date(effectiveClock.shiftStartedAt ?? activeShift.clockIn), businessTimeZone, { hour: 'numeric', minute: '2-digit' })}</Text>
-            </View>
+            <StatusBadge
+              label={localPendingClockIn ? 'Clock in pending sync' : 'Active'}
+              tone="active"
+            />
+          </View>
+          <View style={styles.currentWorkDetails}>
+            <InfoRow label="Job" value={currentJobLabel} emphasis />
+            {currentWorkAreaLabel ? <InfoRow label="Work Area" value={currentWorkAreaLabel} /> : null}
+            <InfoRow label="Activity" value={currentActivityLabel} />
+            <InfoRow label="Started" value={formatBusinessTime(new Date(effectiveClock.shiftStartedAt ?? activeShift.clockIn), businessTimeZone, { hour: 'numeric', minute: '2-digit' })} />
+            <InfoRow label="Total shift" value={runningDuration} emphasis />
           </View>
           <Pressable accessibilityRole="button" onPress={() => router.push('/active-shift')}>
-            <Text style={styles.detailsLink}>View Details ›</Text>
+            <Text style={styles.detailsLink}>View shift details ›</Text>
           </Pressable>
-        </View>
+        </SectionCard>
       ) : (
         <ActionCard>
           <StatusBadge label={effectiveClock.effectiveStatus === 'clocked_out_pending'
@@ -183,6 +185,21 @@ export default function HomeScreen() {
           <Text style={styles.idleText}>Choose what you're working on and clock in.</Text>
         </ActionCard>
       )}
+
+      {!activeShift && !showPendingClockIn && !pendingClockOut.workflow && effectiveJobs.length > 0 ? (
+        <View style={styles.assignedSection}>
+          <SectionHeader title="Assigned Jobs" />
+          <SectionCard>
+            {effectiveJobs.slice(0, 3).map((job) => (
+              <ListRow
+                key={job.id}
+                title={job.title || 'Untitled Job'}
+                subtitle={job.status.replace('_', ' ')}
+              />
+            ))}
+          </SectionCard>
+        </View>
+      ) : null}
 
       {showLongShiftWarning ? (
         <View style={styles.warningBlock}>
@@ -300,49 +317,16 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  activeCard: {
-    borderRadius: 12,
-    backgroundColor: colors.primary,
-    padding: 18,
-    gap: 6,
-  },
-  activeTitle: {
-    color: colors.primaryText,
-    fontSize: 24,
+  currentWorkHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 },
+  currentWorkHeading: { flex: 1, gap: 3 },
+  currentWorkEyebrow: { color: colors.textSecondary, fontSize: 12, fontWeight: '700' },
+  currentWorkTitle: { color: colors.textPrimary, fontSize: 20, fontWeight: '700' },
+  currentWorkDetails: { borderTopWidth: 1, borderTopColor: colors.divider, paddingTop: 10, gap: 4 },
+  detailsLink: {
+    color: colors.primary,
+    fontSize: 14,
     fontWeight: '700',
     marginTop: 4,
-  },
-  activeJob: {
-    color: colors.primaryText,
-    fontSize: 18,
-    fontWeight: '600',
-  },
-  activeActivity: {
-    color: '#E7EFE3',
-    fontSize: 14,
-  },
-  shiftMetrics: {
-    flexDirection: 'row',
-    gap: 32,
-    marginTop: 10,
-  },
-  metricLabel: {
-    color: '#D7E2D2',
-    fontSize: 12,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-  },
-  metricValue: {
-    color: colors.primaryText,
-    fontSize: 18,
-    fontWeight: '700',
-    marginTop: 2,
-  },
-  detailsLink: {
-    color: colors.primaryText,
-    fontSize: 14,
-    fontWeight: '700',
-    marginTop: 8,
   },
   idleTitle: {
     color: colors.textPrimary,
@@ -360,6 +344,7 @@ const styles = StyleSheet.create({
     gap: 6,
     marginTop: 4,
   },
+  assignedSection: { gap: 6 },
   quickList: {
     borderTopWidth: 1,
     borderTopColor: colors.divider,
@@ -368,15 +353,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-  },
-  brandPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  brandDot: {
-    color: colors.primary,
-    fontSize: 12,
   },
   brandText: {
     color: colors.textPrimary,
@@ -388,59 +364,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
-  headerBlock: {
-    gap: 8,
-  },
-  greeting: {
-    color: colors.textPrimary,
-    fontSize: 32,
-    fontWeight: '700',
-    letterSpacing: -0.4,
-  },
-  today: {
-    color: colors.textSecondary,
-    fontSize: 14,
-  },
-  statusCard: {
-    borderRadius: 14,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
-    padding: 16,
-    gap: 10,
-  },
-  sectionLabel: {
-    color: colors.textSecondary,
-    fontSize: 13,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-  },
-  statusRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  statusDot: {
-    fontSize: 12,
-  },
-  statusDotActive: {
-    color: colors.primary,
-  },
-  statusDotIdle: {
-    color: colors.textMuted,
-  },
-  statusValue: {
-    color: colors.textPrimary,
-    fontSize: 22,
-    fontWeight: '700',
-  },
-  metaText: {
-    color: colors.textSecondary,
-    fontSize: 15,
-  },
-  sectionBlock: {
-    gap: 10,
-  },
   warningBlock: {
     gap: 8,
   },
@@ -448,62 +371,5 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontSize: 14,
     fontWeight: '700',
-  },
-  warningSecondary: {
-    minHeight: 48,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 12,
-  },
-  warningSecondaryText: {
-    color: colors.textPrimary,
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  sectionTitle: {
-    color: colors.textPrimary,
-    fontSize: 19,
-    fontWeight: '700',
-  },
-  jobCard: {
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
-    backgroundColor: colors.surface,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    gap: 4,
-  },
-  jobTitle: {
-    color: colors.textPrimary,
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  jobMeta: {
-    color: colors.textSecondary,
-    fontSize: 14,
-    textTransform: 'capitalize',
-  },
-  secondaryCard: {
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
-    backgroundColor: colors.surface,
-    paddingHorizontal: 14,
-    paddingVertical: 13,
-    gap: 4,
-  },
-  secondaryTitle: {
-    color: colors.textPrimary,
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  secondaryMeta: {
-    color: colors.textSecondary,
-    fontSize: 14,
   },
 });

@@ -1,5 +1,5 @@
 import { View } from 'react-native';
-import { ListRow, SectionHeader } from '@/components/MobilePrimitives';
+import { ListRow, SectionCard, SectionHeader } from '@/components/MobilePrimitives';
 import { StatusBanner } from '@/components/StatusBanner';
 import type { Job } from '@/types/domain';
 
@@ -26,7 +26,7 @@ export function WorkAreaSelector({
       {workAreas.length === 0 ? (
         <StatusBanner tone="error" message="This Job has no Work Areas available for clocking." />
       ) : (
-        <View>
+        <SectionCard>
           {workAreas.map((workArea) => (
             <ListRow
               key={workArea.id}
@@ -37,7 +37,7 @@ export function WorkAreaSelector({
               onPress={() => onSelect(workArea.id)}
             />
           ))}
-        </View>
+        </SectionCard>
       )}
     </View>
   );

@@ -213,7 +213,7 @@ describe('SwitchActivityScreen', () => {
     const selectedJob = tree.root.findAllByType('pressable').find((node: any) => node.props.testID === 'switch-job-option-job-2');
     expect(selectedJob.props.accessibilityState).toEqual({ selected: true });
     expect(selectedJob.props.style).toEqual(expect.arrayContaining([
-      expect.objectContaining({ backgroundColor: '#EBF1E7', borderColor: '#56734A' }),
+      expect.objectContaining({ backgroundColor: '#EEF4E3', borderColor: '#6B8E23' }),
     ]));
   });
 

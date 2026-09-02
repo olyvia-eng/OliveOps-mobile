@@ -33,14 +33,14 @@ export function SecondaryButton({
 
 const styles = StyleSheet.create({
   button: {
-    minHeight: 50,
-    borderRadius: radii.md,
+    minHeight: 48,
+    borderRadius: radii.lg,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 16,
+    paddingHorizontal: 18,
   },
   destructiveButton: {
     borderColor: colors.errorBorder,
