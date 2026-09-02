@@ -48,4 +48,32 @@ describe('apiRequest errors', () => {
     await expect(apiRequest('/api/time-off-requests?action=mine', { accessToken: 'token-a' })).rejects.toBeInstanceOf(ApiError);
     expect(mockNotifySessionExpired).toHaveBeenCalledTimes(1);
   });
+
+  it('disables caching for authenticated GET requests', async () => {
+    mockFetchWithTimeout.mockResolvedValue(response(200, { ok: true }));
+
+    await apiRequest('/api/clocking?action=pending-clock-out', { accessToken: 'token-a' });
+
+    const [, requestInit] = mockFetchWithTimeout.mock.calls[0] as [string, RequestInit];
+    const headers = requestInit.headers as Headers;
+    expect(requestInit.cache).toBe('no-store');
+    expect(headers.get('Authorization')).toBe('Bearer token-a');
+    expect(headers.get('Cache-Control')).toBe('no-store, no-cache, max-age=0');
+    expect(headers.get('Pragma')).toBe('no-cache');
+    expect(headers.get('Expires')).toBe('0');
+  });
+
+  it('rejects a 304 response as a controlled cache error', async () => {
+    mockFetchWithTimeout.mockResolvedValue(response(304, null));
+
+    await expect(apiRequest('/api/clocking?action=pending-clock-out', { accessToken: 'token-a' }))
+      .rejects.toMatchObject<ApiError>({ status: 304, code: 'API_RESPONSE_NOT_MODIFIED' });
+  });
+
+  it('rejects an empty successful response as invalid JSON', async () => {
+    mockFetchWithTimeout.mockResolvedValue(response(200, null));
+
+    await expect(apiRequest('/api/clocking?action=pending-clock-out', { accessToken: 'token-a' }))
+      .rejects.toMatchObject<ApiError>({ status: 200, code: 'API_RESPONSE_INVALID_JSON' });
+  });
 });

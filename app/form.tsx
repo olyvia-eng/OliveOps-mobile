@@ -42,7 +42,7 @@ import {
 } from '@/store/pendingClockOutStore';
 import { colors, spacing, typography } from '@/theme/colors';
 import type { EmployeeForm, LocalFormAttachment, SubmitEmployeeFormRequest } from '@/types/forms';
-import { returnToParentOrReplace, returnToParentThenPush } from '@/utils/navigation';
+import { returnToParentOrReplace } from '@/utils/navigation';
 
 type MandatoryFinalizationKind = 'clock_in' | 'clock_out';
 type FinalizationState = 'idle' | 'finalizing' | 'failed';
@@ -426,16 +426,16 @@ export default function FormScreen() {
     }
 
     submissionInProgressRef.current = false;
+    if (kind === 'clock_in') {
+      if (clockInNavigationCompletedRef.current) return;
+      clockInNavigationCompletedRef.current = true;
+      router.dismissTo('/active-shift');
+      return;
+    }
     try {
       await refreshWorkContext();
     } catch {
       // Finalization succeeded; the next app refresh will reconcile clock state.
-    }
-    if (kind === 'clock_in') {
-      if (clockInNavigationCompletedRef.current) return;
-      clockInNavigationCompletedRef.current = true;
-      returnToParentThenPush('/home', '/active-shift');
-      return;
     }
     setClockOutCompleted(true);
     setFinalizationKind(null);

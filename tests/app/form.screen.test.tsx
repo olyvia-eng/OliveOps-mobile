@@ -375,11 +375,10 @@ describe('FormScreen', () => {
       formId: 'form-1',
     }));
     expect(mockFinalize).toHaveBeenCalledTimes(1);
-    expect(mockRefreshWorkContext).toHaveBeenCalledTimes(1);
+    expect(mockRefreshWorkContext).not.toHaveBeenCalled();
     expect(mockDismissTo).toHaveBeenCalledTimes(1);
-    expect(mockDismissTo).toHaveBeenCalledWith('/home');
-    expect(mockPush).toHaveBeenCalledTimes(1);
-    expect(mockPush).toHaveBeenCalledWith('/active-shift');
+    expect(mockDismissTo).toHaveBeenCalledWith('/active-shift');
+    expect(mockPush).not.toHaveBeenCalled();
     expect(tree.root.findAllByProps({ label: 'View Active Shift' })).toHaveLength(0);
   });
 
@@ -581,9 +580,9 @@ describe('FormScreen', () => {
 
     expect(mockFinalize).toHaveBeenCalledTimes(1);
     expect(mockDismissTo).toHaveBeenCalledTimes(1);
-    expect(mockDismissTo).toHaveBeenCalledWith('/home');
-    expect(mockPush).toHaveBeenCalledTimes(1);
-    expect(mockPush).toHaveBeenCalledWith('/active-shift');
+    expect(mockDismissTo).toHaveBeenCalledWith('/active-shift');
+    expect(mockPush).not.toHaveBeenCalled();
+    expect(mockRefreshWorkContext).not.toHaveBeenCalled();
     expect(tree.root.findAllByProps({ label: 'View Active Shift' })).toHaveLength(0);
     expect(tree.root.findAllByType('primary-button').some((node: any) => node.props.label === 'Retry Finish Clock In')).toBe(false);
   });
@@ -627,10 +626,10 @@ describe('FormScreen', () => {
     expect(Alert.alert).not.toHaveBeenCalled();
     expect(mockSubmitForm).toHaveBeenCalledTimes(1);
     expect(mockFinalize).toHaveBeenCalledTimes(1);
-    expect(mockRefreshWorkContext).toHaveBeenCalledTimes(1);
+    expect(mockRefreshWorkContext).not.toHaveBeenCalled();
     expect(mockReplace).not.toHaveBeenCalled();
-    expect(mockDismissTo).toHaveBeenCalledWith('/home');
-    expect(mockPush).toHaveBeenCalledWith('/active-shift');
+    expect(mockDismissTo).toHaveBeenCalledWith('/active-shift');
+    expect(mockPush).not.toHaveBeenCalled();
   });
 
   it('retries only clock-in finalization after the form submission was accepted', async () => {
@@ -673,9 +672,9 @@ describe('FormScreen', () => {
     await act(async () => tree.root.findByType('primary-button').props.onPress());
     expect(mockSubmitForm).toHaveBeenCalledTimes(1);
     expect(mockFinalize).toHaveBeenCalledTimes(2);
-    expect(mockRefreshWorkContext).toHaveBeenCalledTimes(1);
-    expect(mockDismissTo).toHaveBeenCalledWith('/home');
-    expect(mockPush).toHaveBeenCalledWith('/active-shift');
+    expect(mockRefreshWorkContext).not.toHaveBeenCalled();
+    expect(mockDismissTo).toHaveBeenCalledWith('/active-shift');
+    expect(mockPush).not.toHaveBeenCalled();
     expect(tree.root.findAllByProps({ label: 'View Active Shift' })).toHaveLength(0);
   });
 
@@ -795,8 +794,8 @@ describe('FormScreen', () => {
 
     expect(mockSubmitForm).toHaveBeenCalledTimes(2);
     expect(mockFinalize).toHaveBeenCalledTimes(1);
-    expect(mockDismissTo).toHaveBeenCalledWith('/home');
-    expect(mockPush).toHaveBeenCalledWith('/active-shift');
+    expect(mockDismissTo).toHaveBeenCalledWith('/active-shift');
+    expect(mockPush).not.toHaveBeenCalled();
   });
 
   it('routes to the next server requirement instead of finalizing early', async () => {
@@ -1148,7 +1147,7 @@ describe('FormScreen', () => {
     await act(async () => tree.root.findByType('primary-button').props.onPress());
 
     expect(mockFinalize).toHaveBeenCalledTimes(1);
-    expect(mockDismissTo).toHaveBeenCalledWith('/home');
-    expect(mockPush).toHaveBeenCalledWith('/active-shift');
+    expect(mockDismissTo).toHaveBeenCalledWith('/active-shift');
+    expect(mockPush).not.toHaveBeenCalled();
   });
 });

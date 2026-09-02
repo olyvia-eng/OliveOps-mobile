@@ -12,6 +12,7 @@ const mockLoadRecord = jest.fn();
 const mockSaveRecord = jest.fn();
 const mockClearRecord = jest.fn();
 const mockRefreshWorkContext = jest.fn();
+let mockRefreshWorkContextAction = mockRefreshWorkContext;
 const mockPrepareFormSubmissionAttachments = jest.fn();
 const mockMarkFormAttachmentsSubmitted = jest.fn();
 let mockOnline = true;
@@ -69,7 +70,7 @@ jest.mock('@/store/authStore', () => ({
   }),
 }));
 jest.mock('@/hooks/useClockingActions', () => ({
-  useClockingActions: () => ({ refreshWorkContext: mockRefreshWorkContext }),
+  useClockingActions: () => ({ refreshWorkContext: mockRefreshWorkContextAction }),
 }));
 jest.mock('@react-native-community/netinfo', () => ({
   __esModule: true,
@@ -110,6 +111,7 @@ describe('PendingClockOutProvider', () => {
     mockSaveRecord.mockReset().mockResolvedValue(undefined);
     mockClearRecord.mockReset().mockResolvedValue(undefined);
     mockRefreshWorkContext.mockReset().mockResolvedValue({ ok: true });
+    mockRefreshWorkContextAction = mockRefreshWorkContext;
     mockLoadBootstrap.mockReset().mockResolvedValue({
       ok: true,
       capabilities: { requiredAfterClockOutForms: true },
@@ -261,6 +263,43 @@ describe('PendingClockOutProvider', () => {
     await act(async () => mockAppStateListener?.('active'));
 
     expect(mockFinalizeClockOut).not.toHaveBeenCalled();
+  });
+
+  it('does not restart pending recovery during ordinary provider renders', async () => {
+    mockLoadBootstrap.mockResolvedValue({
+      ok: true,
+      capabilities: { requiredAfterClockOutForms: true },
+    });
+    await mount();
+    expect(mockLoadPendingClockOut).toHaveBeenCalledTimes(1);
+
+    mockRefreshWorkContextAction = jest.fn().mockResolvedValue({ ok: true });
+    await act(async () => {
+      tree?.update(React.createElement(PendingClockOutProvider, null, React.createElement(Probe)));
+    });
+
+    expect(mockLoadBootstrap).toHaveBeenCalledTimes(1);
+    expect(mockLoadPendingClockOut).toHaveBeenCalledTimes(1);
+  });
+
+  it('shares one pending recovery across simultaneous callers', async () => {
+    await mount();
+    let resolveRecovery!: (value: ReturnType<typeof workflow>) => void;
+    mockLoadPendingClockOut.mockClear().mockImplementationOnce(() => new Promise((resolve) => {
+      resolveRecovery = resolve;
+    }));
+
+    const first = pendingStore.recover();
+    const second = pendingStore.recover();
+    expect(first).toBe(second);
+    await act(async () => { await Promise.resolve(); });
+    expect(mockLoadPendingClockOut).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveRecovery(workflow());
+      await Promise.all([first, second]);
+    });
+    expect(mockLoadPendingClockOut).toHaveBeenCalledTimes(1);
   });
 
   it('auto-finalizes after replaying a genuinely queued clock-out form submission', async () => {

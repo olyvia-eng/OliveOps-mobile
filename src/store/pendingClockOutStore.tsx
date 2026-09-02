@@ -96,6 +96,7 @@ export function PendingClockOutProvider({ children }: { children: React.ReactNod
   const identityRef = useRef(identityKey);
   identityRef.current = identityKey;
   const recordRef = useRef<PendingClockOutRecord | null>(null);
+  const recoveryPromiseRef = useRef<Promise<PendingClockOutWorkflow | null> | null>(null);
   const syncPromiseRef = useRef<Promise<void> | null>(null);
   const finalizePromiseRef = useRef<Promise<FinalizeResult> | null>(null);
   const [hydrated, setHydrated] = useState(false);
@@ -128,22 +129,30 @@ export function PendingClockOutProvider({ children }: { children: React.ReactNod
     setError(null);
   }, [commit]);
 
-  const recover = useCallback(async () => {
-    if (!identityKey || status !== 'authenticated') return null;
-    if (!await isOnline()) return recordRef.current?.workflow ?? null;
-    try {
-      const response = await clockingApi.loadPendingClockOut(accessToken);
-      if (identityRef.current !== identityKey) return null;
-      if (response.status === 'no_pending_clock_out') {
-        await commit(null);
-        return null;
+  const recover = useCallback((): Promise<PendingClockOutWorkflow | null> => {
+    if (recoveryPromiseRef.current) return recoveryPromiseRef.current;
+    const run = async () => {
+      if (!identityKey || status !== 'authenticated') return null;
+      if (!await isOnline()) return recordRef.current?.workflow ?? null;
+      try {
+        const response = await clockingApi.loadPendingClockOut(accessToken);
+        if (identityRef.current !== identityKey) return null;
+        if (response.status === 'no_pending_clock_out') {
+          await commit(null);
+          return null;
+        }
+        await acceptWorkflow(response);
+        return response;
+      } catch (recoverError) {
+        setError('Could not refresh the required clock-out form. Your progress is still saved.');
+        return recordRef.current?.workflow ?? null;
       }
-      await acceptWorkflow(response);
-      return response;
-    } catch (recoverError) {
-      setError('Could not refresh the required clock-out form. Your progress is still saved.');
-      return recordRef.current?.workflow ?? null;
-    }
+    };
+    const promise = run().finally(() => {
+      if (recoveryPromiseRef.current === promise) recoveryPromiseRef.current = null;
+    });
+    recoveryPromiseRef.current = promise;
+    return promise;
   }, [acceptWorkflow, accessToken, commit, identityKey, status]);
 
   const finalize = useCallback((): Promise<FinalizeResult> => {
@@ -251,6 +260,13 @@ export function PendingClockOutProvider({ children }: { children: React.ReactNod
     return promise;
   }, [accessToken, commit, finalize, identityKey, recover, refreshWorkContext]);
 
+  const acceptWorkflowRef = useRef(acceptWorkflow);
+  const recoverRef = useRef(recover);
+  const syncQueuedRef = useRef(syncQueued);
+  acceptWorkflowRef.current = acceptWorkflow;
+  recoverRef.current = recover;
+  syncQueuedRef.current = syncQueued;
+
   useEffect(() => {
     let cancelled = false;
     setHydrated(false);
@@ -269,15 +285,15 @@ export function PendingClockOutProvider({ children }: { children: React.ReactNod
       try {
         const bootstrap = await clockingApi.loadBootstrap(accessToken);
         if (cancelled || identityRef.current !== identityKey) return;
-        if (bootstrap.pendingClockOutWorkflow) await acceptWorkflow(bootstrap.pendingClockOutWorkflow);
-        else if (bootstrap.capabilities?.requiredAfterClockOutForms || stored) await recover();
-        await syncQueued();
+        if (bootstrap.pendingClockOutWorkflow) await acceptWorkflowRef.current(bootstrap.pendingClockOutWorkflow);
+        else if (bootstrap.capabilities?.requiredAfterClockOutForms || stored) await recoverRef.current();
+        await syncQueuedRef.current();
       } catch {
         // The stored workflow remains the safe fallback until connectivity recovers.
       }
     }).catch(() => setHydrated(true));
     return () => { cancelled = true; };
-  }, [acceptWorkflow, accessToken, identityKey, recover, status, syncQueued]);
+  }, [accessToken, identityKey, status]);
 
   useEffect(() => {
     if (!hydrated || status !== 'authenticated') return;

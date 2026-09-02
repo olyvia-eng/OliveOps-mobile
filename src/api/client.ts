@@ -33,6 +33,9 @@ export async function apiRequest<T>(path: string, init: RequestInitWithAuth = {}
   const url = buildUrl(path);
   const headers = new Headers(init.headers ?? {});
   headers.set('Content-Type', 'application/json');
+  headers.set('Cache-Control', 'no-store, no-cache, max-age=0');
+  headers.set('Pragma', 'no-cache');
+  headers.set('Expires', '0');
 
   if (init.accessToken) {
     headers.set('Authorization', `Bearer ${init.accessToken}`);
@@ -40,11 +43,20 @@ export async function apiRequest<T>(path: string, init: RequestInitWithAuth = {}
 
   const response = await fetchWithTimeout(url, {
     ...init,
+    cache: 'no-store',
     headers,
     credentials: 'include',
   }, API_REQUEST_TIMEOUT_MS);
 
   const payload = await readJson(response);
+
+  if (response.status === 304) {
+    throw new ApiError(
+      'Cached API responses are not valid for authenticated application data.',
+      response.status,
+      'API_RESPONSE_NOT_MODIFIED',
+    );
+  }
 
   if (!response.ok || payload?.ok === false) {
     if (response.status === 401 && init.accessToken) {
@@ -64,6 +76,14 @@ export async function apiRequest<T>(path: string, init: RequestInitWithAuth = {}
           : undefined,
       typeof payload?.fieldId === 'string' ? payload.fieldId : undefined,
       payload,
+    );
+  }
+
+  if (payload === null) {
+    throw new ApiError(
+      'API response did not contain valid JSON.',
+      response.status,
+      'API_RESPONSE_INVALID_JSON',
     );
   }
 
