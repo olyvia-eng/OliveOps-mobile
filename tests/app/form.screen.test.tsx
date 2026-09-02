@@ -12,6 +12,7 @@ const mockRefreshForms = jest.fn().mockResolvedValue({ ok: true });
 const mockReplace = jest.fn();
 const mockBack = jest.fn();
 const mockDismissTo = jest.fn();
+const mockPush = jest.fn();
 const mockDispatch = jest.fn();
 const mockAddListener = jest.fn(() => jest.fn());
 const mockCompleteCurrentForm = jest.fn();
@@ -54,6 +55,7 @@ jest.mock('expo-router', () => ({
     replace: (...args: unknown[]) => mockReplace(...args),
     back: (...args: unknown[]) => mockBack(...args),
     dismissTo: (...args: unknown[]) => mockDismissTo(...args),
+    push: (...args: unknown[]) => mockPush(...args),
   },
   useLocalSearchParams: () => mockParams,
   useNavigation: () => ({ addListener: mockAddListener, dispatch: mockDispatch }),
@@ -149,6 +151,7 @@ describe('FormScreen', () => {
     mockReplace.mockClear();
     mockBack.mockClear();
     mockDismissTo.mockClear();
+    mockPush.mockClear();
     mockCompleteCurrentForm.mockClear();
     mockWorkflow = null;
     mockPendingClockOut = {
@@ -369,7 +372,9 @@ describe('FormScreen', () => {
     }));
     expect(mockFinalize).toHaveBeenCalledTimes(1);
     expect(mockRefreshWorkContext).toHaveBeenCalledTimes(1);
-    expect(tree.root.findByType('status-banner').props.message).toBe('Clock-in completed successfully.');
+    expect(mockDismissTo).toHaveBeenCalledWith('/home');
+    expect(mockPush).toHaveBeenCalledWith('/active-shift');
+    expect(tree.root.findAllByProps({ label: 'View Active Shift' })).toHaveLength(0);
   });
 
   it('keeps the first mandatory clock-in occurrence snapshot and values through store reconciliation', async () => {
@@ -559,13 +564,17 @@ describe('FormScreen', () => {
     });
 
     expect(mockFinalize).toHaveBeenCalledTimes(1);
-    expect(tree.root.findByType('primary-button').props.label).toBe('Finishing...');
+    const finishingText = tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ');
+    expect(finishingText).toContain('Required forms complete');
+    expect(finishingText).toContain('Finishing clock in...');
     expect(tree.root.findAllByType('primary-button').some((node: any) => node.props.label === 'Retry Finish Clock In')).toBe(false);
 
     await act(async () => resolveFinalize({ ok: true }));
 
     expect(mockFinalize).toHaveBeenCalledTimes(1);
-    expect(tree.root.findByType('status-banner').props.message).toBe('Clock-in completed successfully.');
+    expect(mockDismissTo).toHaveBeenCalledWith('/home');
+    expect(mockPush).toHaveBeenCalledWith('/active-shift');
+    expect(tree.root.findAllByProps({ label: 'View Active Shift' })).toHaveLength(0);
     expect(tree.root.findAllByType('primary-button').some((node: any) => node.props.label === 'Retry Finish Clock In')).toBe(false);
   });
 
@@ -610,7 +619,8 @@ describe('FormScreen', () => {
     expect(mockFinalize).toHaveBeenCalledTimes(1);
     expect(mockRefreshWorkContext).toHaveBeenCalledTimes(1);
     expect(mockReplace).not.toHaveBeenCalled();
-    expect(tree.root.findByType('status-banner').props.message).toBe('Clock-in completed successfully.');
+    expect(mockDismissTo).toHaveBeenCalledWith('/home');
+    expect(mockPush).toHaveBeenCalledWith('/active-shift');
   });
 
   it('retries only clock-in finalization after the form submission was accepted', async () => {
@@ -640,7 +650,11 @@ describe('FormScreen', () => {
     await act(async () => tree.root.findByType('primary-button').props.onPress());
 
     expect(tree.root.findByType('primary-button').props.label).toBe('Retry Finish Clock In');
-    expect(tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ')).not.toContain('Form unavailable');
+    const failureText = tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ');
+    expect(failureText).toContain('Required forms complete');
+    expect(failureText).toContain("We couldn't finish clocking you in.");
+    expect(failureText).not.toContain('Form unavailable');
+    expect(mockPendingClockIn.workflow.workflowOccurrenceId).toBe('occurrence-1');
     const preventDefault = jest.fn();
     await act(async () => beforeRemove({ preventDefault, data: { action: { type: 'GO_BACK' } } }));
     expect(preventDefault).not.toHaveBeenCalled();
@@ -650,7 +664,9 @@ describe('FormScreen', () => {
     expect(mockSubmitForm).toHaveBeenCalledTimes(1);
     expect(mockFinalize).toHaveBeenCalledTimes(2);
     expect(mockRefreshWorkContext).toHaveBeenCalledTimes(1);
-    expect(tree.root.findByType('status-banner').props.message).toBe('Clock-in completed successfully.');
+    expect(mockDismissTo).toHaveBeenCalledWith('/home');
+    expect(mockPush).toHaveBeenCalledWith('/active-shift');
+    expect(tree.root.findAllByProps({ label: 'View Active Shift' })).toHaveLength(0);
   });
 
   it('keeps the accepted clock-out form stable while its workflow clears during finalization', async () => {
@@ -752,6 +768,25 @@ describe('FormScreen', () => {
       },
     });
     expect(mockFinalize).not.toHaveBeenCalled();
+
+    mockParams = {
+      formId: 'form-2', trigger: 'before_clock_in', workflowOccurrenceId: 'clock-in-occurrence-1',
+      workflowRequirementId: 'requirement-2',
+    };
+    mockPendingClockIn = {
+      ...mockPendingClockIn,
+      workflow: { workflowOccurrenceId: 'clock-in-occurrence-1', remainingForms: [second] },
+      currentRequirement: second,
+    };
+    mockRefreshAfterSubmission.mockResolvedValue(null);
+    await act(async () => tree.update(<FormScreen />));
+    await act(async () => tree.root.findByProps({ testID: 'form-field-condition' }).props.onChangeText('Safe'));
+    await act(async () => tree.root.findByType('primary-button').props.onPress());
+
+    expect(mockSubmitForm).toHaveBeenCalledTimes(2);
+    expect(mockFinalize).toHaveBeenCalledTimes(1);
+    expect(mockDismissTo).toHaveBeenCalledWith('/home');
+    expect(mockPush).toHaveBeenCalledWith('/active-shift');
   });
 
   it('routes to the next server requirement instead of finalizing early', async () => {
@@ -1103,6 +1138,7 @@ describe('FormScreen', () => {
     await act(async () => tree.root.findByType('primary-button').props.onPress());
 
     expect(mockFinalize).toHaveBeenCalledTimes(1);
-    expect(tree.root.findByType('status-banner').props.message).toBe('Clock-in completed successfully.');
+    expect(mockDismissTo).toHaveBeenCalledWith('/home');
+    expect(mockPush).toHaveBeenCalledWith('/active-shift');
   });
 });

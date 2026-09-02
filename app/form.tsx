@@ -166,7 +166,6 @@ export default function FormScreen() {
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [submittedFormName, setSubmittedFormName] = useState<string | null>(null);
-  const [clockInCompleted, setClockInCompleted] = useState(false);
   const [clockOutCompleted, setClockOutCompleted] = useState(false);
   const [queuedOffline, setQueuedOffline] = useState(false);
   const [photoAttachments, setPhotoAttachments] = useState<Record<string, LocalFormAttachment>>({});
@@ -257,12 +256,23 @@ export default function FormScreen() {
     ]);
   }), [dirty, mandatoryKind, navigation]);
 
-  if (clockInCompleted) {
+  if (mandatorySubmissionAccepted && finalizationKind === 'clock_in') {
     return (
       <Screen>
-        <ScreenHeader title="Clocked in" subtitle="Your required pre-shift forms were submitted and your shift is active." />
-        <StatusBanner tone="success" message="Clock-in completed successfully." />
-        <PrimaryActionButton label="View Active Shift" onPress={() => returnToParentThenPush('/home', '/active-shift')} />
+        <View style={styles.clockInContext} testID="clock-in-form-context">
+          <Text style={styles.clockInContextTitle}>Clock In</Text>
+          <Text style={styles.clockInProgress}>{clockInProgress}</Text>
+        </View>
+        <ScreenHeader
+          title="Required forms complete"
+          subtitle={finalizationState === 'failed'
+            ? "We couldn't finish clocking you in."
+            : 'Finishing clock in...'}
+        />
+        {error ? <StatusBanner tone="error" message={error} /> : null}
+        {finalizationState === 'failed' ? (
+          <PrimaryActionButton label="Retry Finish Clock In" onPress={() => void finishMandatoryWorkflow('clock_in')} />
+        ) : null}
       </Screen>
     );
   }
@@ -409,15 +419,18 @@ export default function FormScreen() {
     }
 
     submissionInProgressRef.current = false;
-    if (kind === 'clock_in') setClockInCompleted(true);
-    else setClockOutCompleted(true);
-    setFinalizationKind(null);
-    setFinalizationState('idle');
     try {
       await refreshWorkContext();
     } catch {
       // Finalization succeeded; the next app refresh will reconcile clock state.
     }
+    if (kind === 'clock_in') {
+      returnToParentThenPush('/home', '/active-shift');
+      return;
+    }
+    setClockOutCompleted(true);
+    setFinalizationKind(null);
+    setFinalizationState('idle');
   }
 
   async function onSubmit() {
