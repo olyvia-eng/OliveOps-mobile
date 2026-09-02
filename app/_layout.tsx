@@ -92,6 +92,7 @@ function RootLayout() {
             <Stack.Screen name="clock-out" options={secondaryScreenOptions('Clock Out')} />
             <Stack.Screen name="edit-work-areas" options={secondaryScreenOptions('Edit Work Areas')} />
             <Stack.Screen name="time-history" options={secondaryScreenOptions('Time History')} />
+            <Stack.Screen name="time-entry-detail" options={secondaryScreenOptions('Time Entry Detail')} />
             <Stack.Screen name="request-time-correction" options={secondaryScreenOptions('Request Time Correction')} />
             <Stack.Screen name="offline-time-change" options={secondaryScreenOptions('Time Change Needs Attention')} />
             <Stack.Screen name="my-correction-requests" options={secondaryScreenOptions('Correction Requests')} />

@@ -5,6 +5,7 @@ import type { Job } from '@/types/domain';
 
 type WorkAreaSelectorProps = {
   job: Job;
+  heading?: string | null;
   selectedWorkAreaId: string;
   onSelect: (workAreaId: string) => void;
   testIDPrefix?: string;
@@ -12,6 +13,7 @@ type WorkAreaSelectorProps = {
 
 export function WorkAreaSelector({
   job,
+  heading = 'Which Work Area?',
   selectedWorkAreaId,
   onSelect,
   testIDPrefix = 'work-area-option',
@@ -22,7 +24,7 @@ export function WorkAreaSelector({
 
   return (
     <View style={{ gap: 8 }}>
-      <SectionHeader title="Which Work Area?" />
+      {heading ? <SectionHeader title={heading} /> : null}
       {workAreas.length === 0 ? (
         <StatusBanner tone="error" message="This Job has no Work Areas available for clocking." />
       ) : (

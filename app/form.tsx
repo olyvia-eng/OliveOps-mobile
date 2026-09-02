@@ -104,6 +104,18 @@ export default function FormScreen() {
   const workflowForm = params.workflowId && workflow?.id === params.workflowId
     ? workflow.forms[workflow.completedCount] ?? null
     : null;
+  const clockInFormIntent = mandatoryKind === 'clock_in'
+    ? pendingClockIn.workflow?.clockInIntent
+    : params.workflowId && workflow?.id === params.workflowId && workflow.intent.kind === 'clock_in'
+      ? workflow.intent
+      : null;
+  const clockInProgress = clockInFormIntent?.workType === 'job'
+    ? clockInFormIntent.workAreaId
+      ? 'Activity ✓   Job ✓   Work Area ✓   Forms'
+      : 'Activity ✓   Job ✓   Forms'
+    : clockInFormIntent?.workType === 'non_billable'
+      ? 'Activity ✓   Category ✓   Forms'
+      : 'Activity ✓   Forms';
   const matchedForm = useMemo(
     () => mandatoryRouteKey
       ? stableMandatoryForm
@@ -562,6 +574,13 @@ export default function FormScreen() {
 
   return (
     <Screen testID="employee-form-scroll">
+      {mandatoryKind === 'clock_in' || (params.workflowId && workflow?.id === params.workflowId && workflow.intent.kind === 'clock_in') ? (
+        <View style={styles.clockInContext} testID="clock-in-form-context">
+          <Text style={styles.clockInContextTitle}>Clock In</Text>
+          <Text style={styles.clockInProgress}>{clockInProgress}</Text>
+          <Text style={styles.clockInContextLabel}>Complete Required Form</Text>
+        </View>
+      ) : null}
       <ScreenHeader
         title={form.name}
         subtitle={form.description}
@@ -617,5 +636,9 @@ export default function FormScreen() {
 }
 
 const styles = StyleSheet.create({
+  clockInContext: { gap: spacing.xs, paddingBottom: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.divider },
+  clockInContextTitle: { color: colors.textPrimary, fontSize: typography.title, fontWeight: '700' },
+  clockInProgress: { color: colors.primary, fontSize: typography.caption, fontWeight: '700' },
+  clockInContextLabel: { color: colors.textSecondary, fontSize: typography.body, fontWeight: '600' },
   requiredHint: { color: colors.textMuted, fontSize: typography.caption, marginTop: spacing.xs },
 });

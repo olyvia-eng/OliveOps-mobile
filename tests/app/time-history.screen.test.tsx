@@ -309,7 +309,7 @@ describe('TimeHistoryScreen', () => {
     expect(renderedText).not.toContain('General work');
   });
 
-  it('opens the existing correction workflow from the compact row action', async () => {
+  it('opens Time Entry Detail from a compact history row', async () => {
     const { router } = require('expo-router');
     router.push.mockClear();
 
@@ -319,13 +319,14 @@ describe('TimeHistoryScreen', () => {
     });
 
     await act(async () => {
-      tree.root.findByProps({ testID: 'request-correction-entry-complete' }).props.onPress();
+      tree.root.findByProps({ testID: 'time-entry-entry-complete' }).props.onPress();
     });
 
     expect(router.push).toHaveBeenCalledWith({
-      pathname: '/request-time-correction',
-      params: { timeEntryId: 'entry-complete', requestType: 'wrong_time' },
+      pathname: '/time-entry-detail',
+      params: { timeEntryId: 'entry-complete' },
     });
+    expect(tree.root.findAllByProps({ testID: 'request-correction-entry-complete' })).toHaveLength(0);
   });
 
   it('shows human-friendly weekly total label instead of decimal hours', async () => {

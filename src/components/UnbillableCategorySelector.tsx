@@ -5,6 +5,7 @@ import { colors } from '@/theme/colors';
 import type { UnbillableCategory } from '@/types/domain';
 
 type UnbillableCategorySelectorProps = {
+  heading?: string | null;
   categories: UnbillableCategory[];
   selectedCategoryId: string;
   loading: boolean;
@@ -14,6 +15,7 @@ type UnbillableCategorySelectorProps = {
 };
 
 export function UnbillableCategorySelector({
+  heading = 'Category',
   categories,
   selectedCategoryId,
   loading,
@@ -23,7 +25,7 @@ export function UnbillableCategorySelector({
 }: UnbillableCategorySelectorProps) {
   return (
     <View style={styles.section}>
-      <SectionHeader title="Category" />
+      {heading ? <SectionHeader title={heading} /> : null}
 
       {loading ? (
         <View style={styles.loadingRow}>

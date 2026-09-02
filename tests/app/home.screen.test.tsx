@@ -227,7 +227,7 @@ describe('HomeScreen', () => {
     await act(async () => { tree = create(<HomeScreen />); });
     const renderedText = tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ');
     expect(renderedText).not.toContain('due');
-    expect(renderedText).toContain('Complete required and available forms');
+    expect(renderedText).toContain('Forms');
   });
 
   it('shows long-shift warning actions when possible forgotten clock-out is flagged', async () => {

@@ -20,7 +20,7 @@ import { useAuthStore } from '@/store/authStore';
 import { useClockingStore } from '@/store/clockingStore';
 import { getWeekTotalHours } from '@/api/timeEntriesApi';
 import { groupTimeHistoryEntries } from '@/features/clocking/timeHistory';
-import { colors, radii, spacing } from '@/theme/colors';
+import { colors, spacing } from '@/theme/colors';
 
 type HistoryListItem =
   | { kind: 'header'; key: string; label: string }
@@ -76,7 +76,12 @@ export default function TimeHistoryScreen() {
         renderItem={({ item }) => item.kind === 'header' ? (
           <Text style={styles.dateHeader}>{item.label}</Text>
         ) : (
-          <View style={styles.entryRow}>
+          <Pressable
+            style={styles.entryRow}
+            testID={`time-entry-${item.entry.id}`}
+            accessibilityRole="button"
+            onPress={() => router.push({ pathname: '/time-entry-detail', params: { timeEntryId: item.entry.id } })}
+          >
             <View style={styles.entryTopRow}>
               <View style={styles.entryHeading}>
                 <Text style={styles.entryActivity}>{getWorkTypeLabel(item.entry.workType)}</Text>
@@ -104,22 +109,7 @@ export default function TimeHistoryScreen() {
             </View>
             <Text style={styles.entryRange}>{formatEntryTimeRange(item.entry, isAuthoritativeActiveEntry(item.entry.id, authoritativeActiveEntryId), businessTimeZone)}</Text>
             {resolveWorkAreaName(item.entry) ? <Text style={styles.entryRange}>Work Area: {resolveWorkAreaName(item.entry)}</Text> : null}
-            <Pressable
-              testID={`request-correction-${item.entry.id}`}
-              accessibilityRole="button"
-              accessibilityLabel={`Request correction for ${getWorkTypeLabel(item.entry.workType)}`}
-              style={styles.requestAction}
-              onPress={() => router.push({
-                pathname: '/request-time-correction',
-                params: {
-                  timeEntryId: item.entry.id,
-                  requestType: item.entry.clockOut ? 'wrong_time' : 'forgot_clock_out',
-                },
-              })}
-            >
-              <Text style={styles.requestActionLabel}>Request correction →</Text>
-            </Pressable>
-          </View>
+          </Pressable>
         )}
         ListEmptyComponent={<EmptyState title="No time history" message="Your completed and active work will appear here." />}
       />
@@ -149,12 +139,9 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
   },
   entryRow: {
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
-    borderRadius: radii.lg,
-    backgroundColor: colors.surface,
-    padding: spacing.md,
-    marginBottom: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.divider,
+    paddingVertical: spacing.md,
     gap: 5,
   },
   entryHeading: { flex: 1, gap: 2 },
@@ -227,20 +214,5 @@ const styles = StyleSheet.create({
   entryRange: {
     color: colors.textPrimary,
     fontSize: 15,
-  },
-  requestAction: {
-    marginTop: 6,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    alignSelf: 'flex-start',
-  },
-  requestActionLabel: {
-    color: colors.textPrimary,
-    fontSize: 13,
-    fontWeight: '600',
   },
 });

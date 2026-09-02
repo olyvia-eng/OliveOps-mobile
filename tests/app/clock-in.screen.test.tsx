@@ -177,6 +177,19 @@ jest.mock('react-native', () => {
 import ClockInScreen from '../../app/clock-in';
 import { router } from 'expo-router';
 
+async function chooseActivity(tree: any, type: 'job' | 'drive_time' | 'non_billable') {
+  await act(async () => tree.root.findByProps({ testID: `activity-option-${type}` }).props.onPress());
+  await act(async () => tree.root.findByProps({ label: 'Continue' }).props.onPress());
+}
+
+async function chooseJob(tree: any, jobId = 'job-1') {
+  await act(async () => tree.root.findByProps({ testID: `job-option-${jobId}` }).props.onPress());
+}
+
+async function continueFlow(tree: any) {
+  await act(async () => tree.root.findByProps({ label: 'Continue' }).props.onPress());
+}
+
 describe('ClockInScreen', () => {
   beforeEach(() => {
     mockJobs = [
@@ -265,7 +278,7 @@ describe('ClockInScreen', () => {
     expect(router.replace).toHaveBeenCalledTimes(1);
   });
 
-  it('prioritizes a pending required Form over the Active Shift redirect', async () => {
+  it('keeps a pending required Form in Clock In context instead of redirecting', async () => {
     const requiredForm = {
       id: 'form-clock', name: 'Morning Truck Inspection', trigger: 'before_clock_in', required: true,
       completionRequirement: 'required', context: {}, fields: [], submissionState: { completed: false },
@@ -292,10 +305,11 @@ describe('ClockInScreen', () => {
     await act(async () => { tree = create(<ClockInScreen />); });
     await act(async () => tree.update(<ClockInScreen />));
 
-    expect(router.push).toHaveBeenCalledTimes(1);
+    expect(router.push).not.toHaveBeenCalled();
     expect(router.replace).not.toHaveBeenCalled();
     expect(tree.root.findAllByProps({ testID: 'activity-option-job' })).toHaveLength(0);
     expect(tree.root.findAllByType('primary-button').some((node: any) => node.props.label === 'Clock In')).toBe(false);
+    expect(tree.root.findByProps({ label: 'Complete Form' })).toBeTruthy();
   });
 
   it('redirects an authoritative active shift before reopening a stale pending Form', async () => {
@@ -338,7 +352,7 @@ describe('ClockInScreen', () => {
     expect(router.push).not.toHaveBeenCalled();
   });
 
-  it('shows offline notice and disables submit until a job is selected', async () => {
+  it('shows one decision at a time and disables Continue until a job is selected', async () => {
     let tree: any;
     await act(async () => {
       tree = create(React.createElement(ClockInScreen));
@@ -348,12 +362,12 @@ describe('ClockInScreen', () => {
     expect(offline.length).toBe(1);
     expect(mockRefresh).not.toHaveBeenCalled();
 
-    const submitButton = tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Clock In');
+    const submitButton = tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Continue');
     expect(submitButton?.props.disabled).toBe(true);
+    expect(tree.root.findAllByProps({ testID: 'job-option-job-1' })).toHaveLength(0);
 
-    await act(async () => {
-      tree.root.findAllByProps({ testID: 'activity-option-job' })[0].props.onPress();
-    });
+    await chooseActivity(tree, 'job');
+    expect(tree.root.findAllByProps({ testID: 'activity-option-job' })).toHaveLength(0);
     const jobPress = tree.root.findAllByProps({ testID: 'job-option-job-1' })[0];
     await act(async () => {
       jobPress.props.onPress();
@@ -365,7 +379,7 @@ describe('ClockInScreen', () => {
       expect.objectContaining({ backgroundColor: '#EEF4E3', borderColor: '#6B8E23' }),
     ]));
 
-    const enabledSubmit = tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Clock In');
+    const enabledSubmit = tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Continue');
     expect(enabledSubmit?.props.disabled).toBe(false);
   });
 
@@ -375,17 +389,9 @@ describe('ClockInScreen', () => {
       tree = create(React.createElement(ClockInScreen));
     });
 
-    await act(async () => {
-      tree.root.findAllByProps({ testID: 'activity-option-job' })[0].props.onPress();
-    });
-    await act(async () => {
-      tree.root.findAllByProps({ testID: 'job-option-job-1' })[0].props.onPress();
-    });
-
-    const submitButton = tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Clock In');
-    await act(async () => {
-      await submitButton.props.onPress();
-    });
+    await chooseActivity(tree, 'job');
+    await chooseJob(tree);
+    await continueFlow(tree);
 
     expect(mockClockIn).toHaveBeenCalledWith('emp-1', 'job', ['job-1'], undefined, { requestId: 'req-1', idempotencyKey: 'key-1' });
     expect(router.replace).toHaveBeenCalledWith('/active-shift');
@@ -395,14 +401,14 @@ describe('ClockInScreen', () => {
     mockAdjustClockInTime = true;
     let tree: any;
     await act(async () => { tree = create(<ClockInScreen />); });
-    await act(async () => tree.root.findByProps({ testID: 'activity-option-job' }).props.onPress());
+    await chooseActivity(tree, 'job');
     expect(tree.root.findAllByType('start-time-field')).toHaveLength(0);
-    await act(async () => tree.root.findByProps({ testID: 'job-option-job-1' }).props.onPress());
+    await chooseJob(tree);
     const startTime = tree.root.findByType('start-time-field');
     expect(startTime.props.value).toBeNull();
     expect(startTime.props.businessTimeZone).toBe('America/Toronto');
     await act(async () => startTime.props.onChange('07:00'));
-    await act(async () => tree.root.findByProps({ label: 'Clock In' }).props.onPress());
+    await continueFlow(tree);
 
     expect(mockClockIn).toHaveBeenCalledWith(
       'emp-1',
@@ -430,12 +436,13 @@ describe('ClockInScreen', () => {
     mockClockIn.mockResolvedValue({ ok: true });
     let tree: any;
     await act(async () => { tree = create(<ClockInScreen />); });
-    await act(async () => { tree.root.findByProps({ testID: 'activity-option-job' }).props.onPress(); });
-    await act(async () => { tree.root.findByProps({ testID: 'job-option-job-1' }).props.onPress(); });
+    await chooseActivity(tree, 'job');
+    await chooseJob(tree);
+    await continueFlow(tree);
 
-    expect(tree.root.findByProps({ label: 'Clock In' }).props.disabled).toBe(true);
+    expect(tree.root.findByProps({ label: 'Continue' }).props.disabled).toBe(true);
     await act(async () => { tree.root.findByProps({ testID: 'work-area-option-area-2' }).props.onPress(); });
-    await act(async () => { tree.root.findByProps({ label: 'Clock In' }).props.onPress(); });
+    await continueFlow(tree);
 
     expect(mockClockIn).toHaveBeenCalledWith(
       'emp-1',
@@ -459,11 +466,12 @@ describe('ClockInScreen', () => {
     mockClockIn.mockResolvedValue({ ok: true });
     let tree: any;
     await act(async () => { tree = create(<ClockInScreen />); });
-    await act(async () => { tree.root.findByProps({ testID: 'activity-option-job' }).props.onPress(); });
-    await act(async () => { tree.root.findByProps({ testID: 'job-option-job-1' }).props.onPress(); });
+    await chooseActivity(tree, 'job');
+    await chooseJob(tree);
+    await continueFlow(tree);
 
-    expect(tree.root.findByProps({ label: 'Clock In' }).props.disabled).toBe(false);
-    await act(async () => { tree.root.findByProps({ label: 'Clock In' }).props.onPress(); });
+    expect(tree.root.findByProps({ label: 'Continue' }).props.disabled).toBe(false);
+    await continueFlow(tree);
     expect(mockClockIn).toHaveBeenCalledWith(
       'emp-1',
       'job',
@@ -489,10 +497,9 @@ describe('ClockInScreen', () => {
       });
     let tree: any;
     await act(async () => { tree = create(<ClockInScreen />); });
-    await act(async () => tree.root.findByProps({ testID: 'activity-option-job' }).props.onPress());
-    await act(async () => tree.root.findByProps({ testID: 'job-option-job-1' }).props.onPress());
-
-    await act(async () => tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Clock In').props.onPress());
+    await chooseActivity(tree, 'job');
+    await chooseJob(tree);
+    await continueFlow(tree);
 
     expect(mockGetRequiredForms).toHaveBeenNthCalledWith(1, 'before_clock_in');
     expect(mockGetRequiredForms).toHaveBeenNthCalledWith(2, 'before_starting_job', { jobId: 'job-1' });
@@ -523,8 +530,7 @@ describe('ClockInScreen', () => {
     });
     let tree: any;
     await act(async () => { tree = create(<ClockInScreen />); });
-    await act(async () => tree.root.findByProps({ testID: 'activity-option-drive_time' }).props.onPress());
-    await act(async () => tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Clock In').props.onPress());
+    await chooseActivity(tree, 'drive_time');
 
     expect(mockClockIn).not.toHaveBeenCalled();
     expect(tree.root.findAllByType('secondary-button').some((node: any) => node.props.label === 'Skip for Now')).toBe(true);
@@ -547,8 +553,7 @@ describe('ClockInScreen', () => {
     mockClockIn.mockResolvedValueOnce({ ok: true, pendingWorkflow });
     let tree: any;
     await act(async () => { tree = create(<ClockInScreen />); });
-    await act(async () => tree.root.findByProps({ testID: 'activity-option-drive_time' }).props.onPress());
-    await act(async () => tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Clock In').props.onPress());
+    await chooseActivity(tree, 'drive_time');
     mockPendingClockIn = {
       ...mockPendingClockIn,
       workflow: pendingWorkflow,
@@ -593,8 +598,7 @@ describe('ClockInScreen', () => {
     mockPendingClockIn.acceptWorkflow.mockResolvedValueOnce(acceptedWorkflow);
     let tree: any;
     await act(async () => { tree = create(<ClockInScreen />); });
-    await act(async () => tree.root.findByProps({ testID: 'activity-option-drive_time' }).props.onPress());
-    await act(async () => tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Clock In').props.onPress());
+    await chooseActivity(tree, 'drive_time');
 
     expect(mockPendingClockIn.acceptWorkflow).toHaveBeenCalledTimes(1);
     expect(mockPendingClockIn.acceptWorkflow).toHaveBeenCalledWith(pendingWorkflow);
@@ -608,6 +612,8 @@ describe('ClockInScreen', () => {
     };
     await act(async () => tree.update(<ClockInScreen />));
     await act(async () => tree.update(<ClockInScreen />));
+    expect(router.push).not.toHaveBeenCalled();
+    await act(async () => tree.root.findByProps({ label: 'Complete Form' }).props.onPress());
     expect(router.push).toHaveBeenCalledWith({
       pathname: '/form',
       params: {
@@ -643,10 +649,10 @@ describe('ClockInScreen', () => {
     });
     let tree: any;
     await act(async () => { tree = create(<ClockInScreen />); });
-    await act(async () => tree.root.findByProps({ testID: 'activity-option-job' }).props.onPress());
-    await act(async () => tree.root.findByProps({ testID: 'job-option-job-1' }).props.onPress());
+    await chooseActivity(tree, 'job');
+    await chooseJob(tree);
     await act(async () => tree.root.findByType('start-time-field').props.onChange('07:00'));
-    await act(async () => tree.root.findByProps({ label: 'Clock In' }).props.onPress());
+    await continueFlow(tree);
 
     const storedIntent = mockStartWorkflow.mock.calls[0][0].intent;
     expect(storedIntent.requestedClockInAt).toEqual(expect.any(String));
@@ -698,8 +704,7 @@ describe('ClockInScreen', () => {
     mockGetRequiredForms.mockResolvedValue({ ok: false, error: 'Could not check required Forms.' });
     let tree: any;
     await act(async () => { tree = create(<ClockInScreen />); });
-    await act(async () => tree.root.findByProps({ testID: 'activity-option-drive_time' }).props.onPress());
-    await act(async () => tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Clock In').props.onPress());
+    await chooseActivity(tree, 'drive_time');
 
     expect(mockClockIn).toHaveBeenCalledTimes(1);
     expect(router.replace).toHaveBeenCalledWith('/active-shift');
@@ -714,14 +719,7 @@ describe('ClockInScreen', () => {
     const driveOption = tree.root.findAllByProps({ testID: 'activity-option-drive_time' });
     expect(driveOption.length).toBeGreaterThan(0);
 
-    await act(async () => {
-      driveOption[0].props.onPress();
-    });
-
-    const submitButton = tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Clock In');
-    await act(async () => {
-      await submitButton.props.onPress();
-    });
+    await chooseActivity(tree, 'drive_time');
 
     expect(mockClockIn).toHaveBeenCalledWith('emp-1', 'drive_time', [], undefined, { requestId: 'req-1', idempotencyKey: 'key-1' });
     expect(router.replace).toHaveBeenCalledWith('/active-shift');
@@ -735,17 +733,9 @@ describe('ClockInScreen', () => {
       tree = create(React.createElement(ClockInScreen));
     });
 
-    await act(async () => {
-      tree.root.findAllByProps({ testID: 'activity-option-job' })[0].props.onPress();
-    });
-    await act(async () => {
-      tree.root.findAllByProps({ testID: 'job-option-job-1' })[0].props.onPress();
-    });
-
-    const submitButton = tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Clock In');
-    await act(async () => {
-      await submitButton.props.onPress();
-    });
+    await chooseActivity(tree, 'job');
+    await chooseJob(tree);
+    await continueFlow(tree);
 
     const retryButton = tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Retry Clock In');
     expect(retryButton).toBeTruthy();
@@ -757,9 +747,7 @@ describe('ClockInScreen', () => {
       tree = create(React.createElement(ClockInScreen));
     });
 
-    await act(async () => {
-      tree.root.findAllByProps({ testID: 'activity-option-non_billable' })[0].props.onPress();
-    });
+    await chooseActivity(tree, 'non_billable');
 
     expect(mockLoadUnbillableCategoriesIfNeeded).toHaveBeenCalled();
 
@@ -775,11 +763,9 @@ describe('ClockInScreen', () => {
       tree = create(React.createElement(ClockInScreen));
     });
 
-    await act(async () => {
-      tree.root.findAllByProps({ testID: 'activity-option-non_billable' })[0].props.onPress();
-    });
+    await chooseActivity(tree, 'non_billable');
 
-    const submitButton = tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Clock In');
+    const submitButton = tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Continue');
     expect(submitButton?.props.disabled).toBe(true);
   });
 
@@ -789,18 +775,13 @@ describe('ClockInScreen', () => {
       tree = create(React.createElement(ClockInScreen));
     });
 
-    await act(async () => {
-      tree.root.findAllByProps({ testID: 'activity-option-non_billable' })[0].props.onPress();
-    });
+    await chooseActivity(tree, 'non_billable');
 
     await act(async () => {
       tree.root.findAllByProps({ testID: 'unbillable-category-option-cat-training' })[0].props.onPress();
     });
 
-    const submitButton = tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Clock In');
-    await act(async () => {
-      await submitButton.props.onPress();
-    });
+    await continueFlow(tree);
 
     expect(mockClockIn).toHaveBeenCalledWith('emp-1', 'non_billable', [], 'cat-training', { requestId: 'req-1', idempotencyKey: 'key-1' });
   });
@@ -820,14 +801,12 @@ describe('ClockInScreen', () => {
       tree = create(React.createElement(ClockInScreen));
     });
 
-    await act(async () => {
-      tree.root.findAllByProps({ testID: 'activity-option-non_billable' })[0].props.onPress();
-    });
+    await chooseActivity(tree, 'non_billable');
 
     const banners = tree.root.findAllByType('status-banner').map((node: any) => node.props.message);
     expect(banners).toContain('No unbillable categories are currently available. Ask your administrator to configure them in OliveOps.');
 
-    const submitButton = tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Clock In');
+    const submitButton = tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Continue');
     expect(submitButton?.props.disabled).toBe(true);
   });
 
@@ -846,9 +825,7 @@ describe('ClockInScreen', () => {
       tree = create(React.createElement(ClockInScreen));
     });
 
-    await act(async () => {
-      tree.root.findAllByProps({ testID: 'activity-option-non_billable' })[0].props.onPress();
-    });
+    await chooseActivity(tree, 'non_billable');
 
     const retryPressable = tree.root.findAllByProps({ testID: 'unbillable-category-retry' })[0];
     expect(retryPressable).toBeTruthy();
@@ -858,7 +835,89 @@ describe('ClockInScreen', () => {
     });
     expect(mockRetryUnbillableCategories).toHaveBeenCalledTimes(1);
 
-    const submitButton = tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Clock In');
+    const submitButton = tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Continue');
     expect(submitButton?.props.disabled).toBe(true);
+  });
+
+  it('preserves the selected Job when navigating back through stages', async () => {
+    mockJobs = [{
+      id: 'job-1', title: 'Site A', status: 'scheduled', assignedEmployeeIds: ['emp-1'],
+      hasOperationalWorkAreas: true,
+      eligibleOperationalWorkAreas: [{ id: 'area-1', name: 'Foundation', status: 'in_progress' }],
+    }];
+    let tree: any;
+    await act(async () => { tree = create(<ClockInScreen />); });
+    await chooseActivity(tree, 'job');
+    await chooseJob(tree);
+    await continueFlow(tree);
+    await act(async () => tree.root.findByProps({ label: 'Back' }).props.onPress());
+
+    expect(tree.root.findAllByType('pressable').find((node: any) => node.props.testID === 'job-option-job-1').props.accessibilityState).toEqual({ selected: true });
+    await act(async () => tree.root.findByProps({ label: 'Back' }).props.onPress());
+    expect(tree.root.findAllByType('pressable').find((node: any) => node.props.testID === 'activity-option-job').props.accessibilityState).toEqual({ selected: true });
+  });
+
+  it('clears incompatible Job and Work Area selections when Activity changes', async () => {
+    mockJobs = [{
+      id: 'job-1', title: 'Site A', status: 'scheduled', assignedEmployeeIds: ['emp-1'],
+      hasOperationalWorkAreas: true,
+      eligibleOperationalWorkAreas: [{ id: 'area-1', name: 'Foundation', status: 'in_progress' }],
+    }];
+    let tree: any;
+    await act(async () => { tree = create(<ClockInScreen />); });
+    await chooseActivity(tree, 'job');
+    await chooseJob(tree);
+    await continueFlow(tree);
+    await act(async () => tree.root.findByProps({ label: 'Back' }).props.onPress());
+    await act(async () => tree.root.findByProps({ label: 'Back' }).props.onPress());
+    await act(async () => tree.root.findByProps({ testID: 'activity-option-drive_time' }).props.onPress());
+    await continueFlow(tree);
+
+    expect(mockClockIn).toHaveBeenCalledWith('emp-1', 'drive_time', [], undefined, expect.any(Object));
+  });
+
+  it('shows an unavailable Work Area stage without inventing a selection', async () => {
+    mockJobs = [{
+      id: 'job-1', title: 'Site A', status: 'scheduled', assignedEmployeeIds: ['emp-1'],
+      hasOperationalWorkAreas: true, eligibleOperationalWorkAreas: [],
+    }];
+    let tree: any;
+    await act(async () => { tree = create(<ClockInScreen />); });
+    await chooseActivity(tree, 'job');
+    await chooseJob(tree);
+    await continueFlow(tree);
+
+    expect(tree.root.findByProps({ label: 'Continue' }).props.disabled).toBe(true);
+    expect(mockClockIn).not.toHaveBeenCalled();
+  });
+
+  it('uses a dynamic progress path for Drive Time', async () => {
+    let tree: any;
+    await act(async () => { tree = create(<ClockInScreen />); });
+    await act(async () => tree.root.findByProps({ testID: 'activity-option-drive_time' }).props.onPress());
+    const progressText = tree.root.findByProps({ testID: 'clock-in-progress' })
+      .findAllByType('text').map((node: any) => String(node.props.children)).join(' ');
+
+    expect(progressText).toContain('Activity');
+    expect(progressText).toContain('Clock In');
+    expect(progressText).not.toContain('Job');
+    expect(progressText).not.toContain('Work Area');
+  });
+
+  it('ignores duplicate Continue taps during one clock-in submission', async () => {
+    let resolveClockIn!: (result: { ok: true }) => void;
+    mockClockIn.mockImplementationOnce(() => new Promise((resolve) => { resolveClockIn = resolve; }));
+    let tree: any;
+    await act(async () => { tree = create(<ClockInScreen />); });
+    await act(async () => tree.root.findByProps({ testID: 'activity-option-drive_time' }).props.onPress());
+    const onPress = tree.root.findByProps({ label: 'Continue' }).props.onPress;
+    await act(async () => {
+      onPress();
+      onPress();
+      await Promise.resolve();
+    });
+
+    expect(mockClockIn).toHaveBeenCalledTimes(1);
+    await act(async () => { resolveClockIn({ ok: true }); });
   });
 });

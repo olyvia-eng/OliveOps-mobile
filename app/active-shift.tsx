@@ -6,7 +6,7 @@ import { SecondaryButton } from '@/components/SecondaryButton';
 import { Screen } from '@/components/Screen';
 import { StatusBanner } from '@/components/StatusBanner';
 import { OfflineClockStatus } from '@/components/OfflineClockStatus';
-import { EmptyState, ScreenHeader, SectionCard, SectionHeader, StatusBadge } from '@/components/MobilePrimitives';
+import { EmptyState, InfoRow, ScreenHeader, SectionCard, SectionHeader, StatusBadge } from '@/components/MobilePrimitives';
 import {
   formatDurationForEntry,
   formatElapsedClock,
@@ -95,20 +95,30 @@ export default function ActiveShiftScreen() {
       ) : (
         <>
           <SectionCard testID="active-shift-current-work">
-            <StatusBadge
-              label={effectiveClock.effectiveStatus === 'clocked_in_pending' ? 'Clocked in — Pending sync' : 'Clocked in'}
-              tone="active"
-            />
-            <Text style={styles.heroLabel}>Current Activity</Text>
-            <Text style={styles.heroActivity}>{entry.workType === 'non_billable' ? unbillableCategoryLabel : activityLabel}</Text>
-            {entry.workType === 'job' ? <Text style={styles.heroJob}>{jobLabel}</Text> : null}
-            {resolveWorkAreaName(entry) ? <Text style={styles.heroWorkArea}>{resolveWorkAreaName(entry)}</Text> : null}
-            <Text style={styles.elapsedClock}>{formatElapsedClock(effectiveClock.shiftStartedAt ?? entry.clockIn, now)}</Text>
-            <Text style={styles.heroMeta}>Started {formatBusinessTime(new Date(effectiveClock.shiftStartedAt ?? entry.clockIn), businessTimeZone, { hour: 'numeric', minute: '2-digit' })}</Text>
+            <View style={styles.statusRow}>
+              <StatusBadge
+                label={effectiveClock.effectiveStatus === 'clocked_in_pending' ? 'Clocked in — Pending sync' : 'Clocked in'}
+                tone="active"
+              />
+              <Text style={styles.sinceLabel}>Since {formatBusinessTime(new Date(effectiveClock.shiftStartedAt ?? entry.clockIn), businessTimeZone, { hour: 'numeric', minute: '2-digit' })}</Text>
+            </View>
+            <Text style={styles.currentWorkTitle}>Current Work</Text>
+            <View style={styles.currentWorkDetails}>
+              {entry.workType === 'job' ? <InfoRow label="Job" value={jobLabel} emphasis /> : null}
+              {resolveWorkAreaName(entry) ? <InfoRow label="Work Area" value={resolveWorkAreaName(entry)!} /> : null}
+              <InfoRow label="Activity" value={entry.workType === 'non_billable' ? unbillableCategoryLabel ?? activityLabel : activityLabel} />
+              <InfoRow label="Started" value={formatBusinessTime(new Date(effectiveClock.shiftStartedAt ?? entry.clockIn), businessTimeZone, { hour: 'numeric', minute: '2-digit' })} />
+              <InfoRow label="Elapsed" value={formatElapsedClock(effectiveClock.shiftStartedAt ?? entry.clockIn, now)} />
+            </View>
             {effectiveClock.currentSegmentStartedAt && effectiveClock.currentSegmentStartedAt !== effectiveClock.shiftStartedAt ? (
               <Text style={styles.heroMeta}>Current activity since {formatBusinessTime(new Date(effectiveClock.currentSegmentStartedAt), businessTimeZone, { hour: 'numeric', minute: '2-digit' })}</Text>
             ) : null}
           </SectionCard>
+
+          <View style={styles.actions}>
+            <SecondaryButton label="Switch Activity" onPress={() => router.push('/switch-activity')} />
+            <PrimaryActionButton label="Clock Out" onPress={() => router.push('/clock-out')} />
+          </View>
 
           <View style={styles.timelineSection}>
             <SectionHeader title="Today's Shift" />
@@ -145,21 +155,15 @@ export default function ActiveShiftScreen() {
         </View>
       ) : null}
 
-      {entry ? (
-        <View style={styles.actions}>
-          <SecondaryButton label="Switch Activity" onPress={() => router.push('/switch-activity')} />
-          <PrimaryActionButton label="Clock Out" onPress={() => router.push('/clock-out')} />
-        </View>
-      ) : null}
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  heroLabel: { color: colors.textSecondary, fontSize: 12, fontWeight: '700', textTransform: 'uppercase', marginTop: 6 },
-  heroActivity: { color: colors.textPrimary, fontSize: 24, fontWeight: '700' },
-  heroJob: { color: colors.textPrimary, fontSize: 15, fontWeight: '600' },
-  heroWorkArea: { color: colors.textSecondary, fontSize: 14, fontWeight: '600' },
+  statusRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
+  sinceLabel: { color: colors.textSecondary, fontSize: 13, fontWeight: '600' },
+  currentWorkTitle: { color: colors.textPrimary, fontSize: 18, fontWeight: '700', marginTop: 4 },
+  currentWorkDetails: { borderTopWidth: 1, borderTopColor: colors.divider, paddingTop: 8, gap: 3 },
   heroMeta: { color: colors.textSecondary, fontSize: 14 },
   timelineSection: { gap: 8 },
   timeline: { borderTopWidth: 1, borderTopColor: colors.divider, paddingTop: 6 },
@@ -175,12 +179,6 @@ const styles = StyleSheet.create({
   segmentTime: { color: colors.textSecondary, fontSize: 14, marginTop: 3 },
   segmentMeta: { color: colors.textMuted, fontSize: 13, marginTop: 2 },
   actions: { gap: 8 },
-  elapsedClock: {
-    color: colors.primary,
-    fontSize: 32,
-    fontWeight: '700',
-    marginTop: 10,
-  },
   warningBlock: {
     gap: 8,
   },

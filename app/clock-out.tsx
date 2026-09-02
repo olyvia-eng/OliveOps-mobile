@@ -775,9 +775,9 @@ export default function ClockOutScreen() {
 
 const styles = StyleSheet.create({
   completionMessage: { color: colors.textSecondary, fontSize: 15, lineHeight: 21 },
-  summarySection: { gap: 8, borderWidth: 1, borderColor: colors.cardBorder, borderRadius: radii.lg, backgroundColor: colors.surface, padding: spacing.lg },
+  summarySection: { gap: 6, borderWidth: 1, borderColor: colors.cardBorder, borderRadius: radii.lg, backgroundColor: colors.surface, padding: spacing.md },
   sectionLabel: { color: colors.textSecondary, fontSize: 13, fontWeight: '700' },
-  workAreaSummary: { borderWidth: 1, borderColor: colors.cardBorder, borderRadius: radii.lg, backgroundColor: colors.surface, padding: spacing.lg, gap: 4 },
+  workAreaSummary: { borderWidth: 1, borderColor: colors.cardBorder, borderRadius: radii.lg, backgroundColor: colors.surface, padding: spacing.md, gap: 3 },
   workAreaSummaryTitle: { color: colors.textPrimary, fontSize: 17, fontWeight: '700' },
   workAreaSummaryMeta: { color: colors.textSecondary, fontSize: 14 },
   workAreaSummaryArea: { color: colors.textPrimary, fontSize: 15, fontWeight: '600', marginTop: 3 },

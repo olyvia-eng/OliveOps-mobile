@@ -4,6 +4,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { OfflineNotice } from '@/components/OfflineNotice';
 import { AdvisoryFormsPrompt } from '@/components/AdvisoryFormsPrompt';
 import { PrimaryActionButton } from '@/components/PrimaryActionButton';
+import { SecondaryButton } from '@/components/SecondaryButton';
 import { Screen } from '@/components/Screen';
 import { StatusBanner } from '@/components/StatusBanner';
 import { UnbillableCategorySelector } from '@/components/UnbillableCategorySelector';
@@ -21,10 +22,13 @@ import { useAuthStore } from '@/store/authStore';
 import { useClockingStore } from '@/store/clockingStore';
 import { useOptionalOfflineClockStore } from '@/store/offlineClockContext';
 import { useFormsWorkflowStore, type FormsWorkflowIntent } from '@/store/formsWorkflowStore';
-import { pendingClockInRequirementForm, usePendingClockInStore } from '@/store/pendingClockInStore';
+import { usePendingClockInStore } from '@/store/pendingClockInStore';
 import { usePendingClockOutStore } from '@/store/pendingClockOutStore';
+import { colors } from '@/theme/colors';
 import type { TimeEntryWorkType } from '@/types/domain';
 import { businessDateKey, businessLocalDateTimeToIso } from '@/utils/businessTime';
+
+type ClockInStage = 'activity' | 'job' | 'work_area' | 'category';
 
 type ActivityOption = {
   type: TimeEntryWorkType;
@@ -52,6 +56,7 @@ export default function ClockInScreen() {
   } = useUnbillableCategories();
   const [selectedWorkType, setSelectedWorkType] = useState<TimeEntryWorkType>('job');
   const [activityChosen, setActivityChosen] = useState(false);
+  const [stage, setStage] = useState<ClockInStage>('activity');
   const [selectedJobId, setSelectedJobId] = useState('');
   const [selectedWorkAreaId, setSelectedWorkAreaId] = useState('');
   const [selectedUnbillableCategoryId, setSelectedUnbillableCategoryId] = useState('');
@@ -64,32 +69,11 @@ export default function ClockInScreen() {
   const advisoryAcceptedRef = useRef(false);
   const checkingFormsRef = useRef(false);
   const continuingWorkflowRef = useRef<string | null>(null);
-  const openedMandatoryRequirementRef = useRef<string | null>(null);
   const redirectingActiveShiftRef = useRef(false);
+  const submitInFlightRef = useRef(false);
   const authoritativeActiveShift = currentActiveEntryId
     ? timeEntries.some((entry) => entry.id === currentActiveEntryId && entry.status === 'clocked_in')
     : false;
-
-  const openMandatoryForm = useCallback((
-    workflowOccurrenceId: string,
-    requirement: NonNullable<typeof pendingClockIn.currentRequirement>,
-  ) => {
-    const form = pendingClockInRequirementForm(requirement);
-    if (!form) return false;
-    const navigationKey = `${workflowOccurrenceId}:${requirement.requirementId}`;
-    if (openedMandatoryRequirementRef.current === navigationKey) return true;
-    openedMandatoryRequirementRef.current = navigationKey;
-    router.push({
-      pathname: '/form',
-      params: {
-        formId: form.id,
-        trigger: 'before_clock_in',
-        workflowOccurrenceId,
-        workflowRequirementId: requirement.requirementId,
-      },
-    });
-    return true;
-  }, []);
 
   useEffect(() => {
     const intent = pendingClockIn.workflow?.clockInIntent;
@@ -99,6 +83,7 @@ export default function ClockInScreen() {
     setSelectedJobId(intent.jobIds[0] ?? '');
     setSelectedWorkAreaId(intent.workAreaId ?? '');
     setSelectedUnbillableCategoryId(intent.unbillableCategoryId ?? '');
+    setStage(intent.workType === 'job' ? (intent.workAreaId ? 'work_area' : 'job') : intent.workType === 'non_billable' ? 'category' : 'activity');
   }, [pendingClockIn.workflow?.workflowOccurrenceId, user?.employeeId]);
 
   useFocusEffect(useCallback(() => {
@@ -111,9 +96,6 @@ export default function ClockInScreen() {
     }
     if (pendingClockIn.workflow) {
       redirectingActiveShiftRef.current = false;
-      if (pendingClockIn.currentRequirement) {
-        openMandatoryForm(pendingClockIn.workflow.workflowOccurrenceId, pendingClockIn.currentRequirement);
-      }
       return;
     }
     if (effectiveClock.hydrated && (
@@ -127,7 +109,7 @@ export default function ClockInScreen() {
       return;
     }
     redirectingActiveShiftRef.current = false;
-  }, [authoritativeActiveShift, effectiveClock.activeEntry, effectiveClock.effectiveStatus, effectiveClock.hydrated, openMandatoryForm, pendingClockIn.currentForm, pendingClockIn.currentRequirement, pendingClockIn.reconcileActiveShift, pendingClockIn.workflow]));
+  }, [authoritativeActiveShift, effectiveClock.activeEntry, effectiveClock.effectiveStatus, effectiveClock.hydrated, pendingClockIn.reconcileActiveShift, pendingClockIn.workflow]));
 
   const assignedJobs = useMemo(() => {
     const employeeId = user?.employeeId;
@@ -167,7 +149,6 @@ export default function ClockInScreen() {
     [assignedJobs, selectedJobId],
   );
 
-  const showJobSelection = activityChosen && selectedWorkType === 'job';
   const requiresJobSelection = activityChosen && selectedActivity?.requiresJob === true;
   const requiresUnbillableCategory = activityChosen && selectedWorkType === 'non_billable';
   const requiresWorkArea = selectedWorkType === 'job' && selectedJob?.hasOperationalWorkAreas === true;
@@ -234,6 +215,64 @@ export default function ClockInScreen() {
   const clockInWorkflow = workflow?.originRoute === '/clock-in' && workflow.intent.kind === 'clock_in'
     ? { ...workflow, intent: workflow.intent }
     : null;
+
+  const workflowStep = pendingClockIn.workflow || advisoryForms.length > 0 ? 'forms' : stage;
+  const progressSteps = useMemo(() => {
+    const finalStep = pendingClockIn.workflow || advisoryForms.length > 0 ? 'forms' : 'clock_in';
+    if (!activityChosen || selectedWorkType === 'job') {
+      return selectedJob && selectedJob.hasOperationalWorkAreas !== true
+        ? ['activity', 'job', finalStep] as const
+        : ['activity', 'job', 'work_area', finalStep] as const;
+    }
+    if (selectedWorkType === 'non_billable') {
+      return ['activity', 'category', finalStep] as const;
+    }
+    return ['activity', finalStep] as const;
+  }, [activityChosen, advisoryForms.length, pendingClockIn.workflow, selectedJob, selectedWorkType]);
+  const progressIndex = Math.max(0, (progressSteps as readonly string[]).indexOf(workflowStep));
+
+  function continueFromActivity() {
+    if (!activityChosen) return;
+    setError(null);
+    if (selectedWorkType === 'job') {
+      setStage('job');
+      return;
+    }
+    if (selectedWorkType === 'non_billable') {
+      setStage('category');
+      return;
+    }
+    void submitOnce();
+  }
+
+  function continueFromJob() {
+    if (!selectedJob) return;
+    setError(null);
+    if (selectedJob.hasOperationalWorkAreas === true) {
+      setStage('work_area');
+      return;
+    }
+    void submitOnce();
+  }
+
+  function goBack() {
+    setError(null);
+    if (stage === 'job' || stage === 'category') {
+      setStage('activity');
+      return;
+    }
+    if (stage === 'work_area') setStage('job');
+  }
+
+  async function submitOnce() {
+    if (submitInFlightRef.current) return;
+    submitInFlightRef.current = true;
+    try {
+      await submitClockIn();
+    } finally {
+      submitInFlightRef.current = false;
+    }
+  }
 
   useEffect(() => {
     if (!clockInWorkflow || clockInWorkflow.intent.employeeId !== user?.employeeId) return;
@@ -445,11 +484,27 @@ export default function ClockInScreen() {
   return (
     <Screen>
       <OfflineNotice />
-      <ScreenHeader title="Clock In" subtitle="Start a new shift" />
+      <ScreenHeader title="Clock In" />
+      <View style={styles.progress} testID="clock-in-progress">
+        {progressSteps.map((step, index) => {
+          const complete = index < progressIndex;
+          const active = index === progressIndex;
+          const label = step === 'work_area' ? 'Work Area' : step === 'clock_in' ? 'Clock In' : `${step.charAt(0).toUpperCase()}${step.slice(1)}`;
+          return (
+            <View key={step} style={styles.progressItem}>
+              <Text style={[styles.progressText, active && styles.progressTextActive]}>{label}{complete ? ' ✓' : ''}</Text>
+              {index < progressSteps.length - 1 ? <View style={[styles.progressLine, complete && styles.progressLineComplete]} /> : null}
+            </View>
+          );
+        })}
+      </View>
       {!pendingClockIn.workflow ? (
         <>
-          <ActivitySelector
-            heading="What are you working on?"
+        {stage === 'activity' && advisoryForms.length === 0 ? (
+          <>
+            <ActivitySelector
+            heading="What are you doing?"
+            helper="Select your current activity."
             selectedType={activityChosen ? selectedWorkType : null}
             onSelect={(type) => {
               setSelectedWorkType(type);
@@ -461,10 +516,13 @@ export default function ClockInScreen() {
               advisoryAcceptedRef.current = false;
             }}
           />
+          </>
+        ) : null}
 
-        {showJobSelection ? (
+        {stage === 'job' && advisoryForms.length === 0 ? (
           <View style={styles.progressiveSection}>
-            <SectionHeader title="Which job?" />
+            <SectionHeader title="Select a Job" />
+            <Text style={styles.helper}>Choose the job you'll be working on.</Text>
             {assignedJobs.length === 0 ? (
               <StatusBanner
                 tone={requiresJobSelection ? 'error' : 'info'}
@@ -497,22 +555,25 @@ export default function ClockInScreen() {
           </View>
         ) : null}
 
-        {showJobSelection && selectedJob ? (
-          <WorkAreaSelector
-            job={selectedJob}
-            selectedWorkAreaId={selectedWorkAreaId}
-            onSelect={setSelectedWorkAreaId}
-          />
-        ) : null}
-
-        {activityChosen && selectedWorkType === 'drive_time' ? (
-          <StatusBanner tone="info" message="No job is required for Drive Time." />
-        ) : null}
-
-        {requiresUnbillableCategory ? (
+        {stage === 'work_area' && selectedJob && advisoryForms.length === 0 ? (
           <View style={styles.progressiveSection}>
-            <SectionHeader title="What are you doing?" />
+            <SectionHeader title="Select Work Area" />
+            <Text style={styles.helper}>Choose the area you'll be working in.</Text>
+            <WorkAreaSelector
+              job={selectedJob}
+              heading={null}
+              selectedWorkAreaId={selectedWorkAreaId}
+              onSelect={setSelectedWorkAreaId}
+            />
+          </View>
+        ) : null}
+
+        {stage === 'category' && requiresUnbillableCategory && advisoryForms.length === 0 ? (
+          <View style={styles.progressiveSection}>
+            <SectionHeader title="Select a Category" />
+            <Text style={styles.helper}>Choose the type of unbillable work.</Text>
             <UnbillableCategorySelector
+              heading={null}
               categories={unbillableCategories}
               selectedCategoryId={selectedUnbillableCategoryId}
               loading={unbillableCategoriesLoading}
@@ -522,7 +583,7 @@ export default function ClockInScreen() {
             />
           </View>
         ) : null}
-        {canSubmit && clockingCapabilities.adjustClockInTime ? (
+        {stage !== 'activity' && canSubmit && clockingCapabilities.adjustClockInTime && advisoryForms.length === 0 ? (
           <StartTimeField
             value={selectedStartTime}
             businessTimeZone={businessTimeZone}
@@ -536,10 +597,28 @@ export default function ClockInScreen() {
       {status ? <StatusBanner tone="success" message={status} /> : null}
       {error ? <StatusBanner tone="error" message={error} /> : null}
 
-      {pendingClockIn.workflow && pendingClockIn.currentForm ? (
+      {pendingClockIn.workflow && pendingClockIn.phase?.kind === 'ready_to_finalize' ? (
+        <View style={styles.progressiveSection}>
+          <StatusBanner tone="success" message="Required forms complete" />
+          <Text style={styles.helper}>{pendingClockIn.error ? 'Clock-in still needs to be finished.' : 'Finishing clock in...'}</Text>
+          {pendingClockIn.error ? (
+            <PrimaryActionButton
+              label={pendingClockIn.busy ? 'Finishing Clock In...' : 'Retry Finish Clock In'}
+              disabled={pendingClockIn.busy}
+              onPress={() => {
+                void pendingClockIn.finalize().then(async (result) => {
+                  if (!result.ok) return;
+                  await refreshWorkContext();
+                  router.replace('/active-shift');
+                });
+              }}
+            />
+          ) : null}
+        </View>
+      ) : pendingClockIn.workflow && pendingClockIn.currentForm ? (
         <AdvisoryFormsPrompt
           forms={[pendingClockIn.currentForm]}
-          heading="Clock in pending"
+          heading="Complete Required Form"
           message={`Required form ${pendingClockIn.completedCount + 1} of ${pendingClockIn.totalCount}`}
           completeLabel="Complete Form"
           completedCount={pendingClockIn.completedCount}
@@ -603,12 +682,17 @@ export default function ClockInScreen() {
             router.replace('/home');
           }}
         />
+      ) : stage === 'activity' ? (
+        <PrimaryActionButton label="Continue" disabled={!activityChosen || loading || checkingForms} onPress={continueFromActivity} />
       ) : (
-        <PrimaryActionButton
-          label={loading ? 'Clocking in...' : checkingForms ? 'Checking Forms...' : 'Clock In'}
-          disabled={!canSubmit || loading || checkingForms}
-          onPress={() => void submitClockIn()}
-        />
+        <View style={styles.actions}>
+          <SecondaryButton label="Back" onPress={goBack} />
+          <PrimaryActionButton
+            label={loading ? 'Clocking in...' : checkingForms ? 'Checking Forms...' : 'Continue'}
+            disabled={(stage === 'job' ? !selectedJobId : !canSubmit) || loading || checkingForms}
+            onPress={stage === 'job' ? continueFromJob : () => void submitOnce()}
+          />
+        </View>
       )}
 
       {error && retryMeta ? (
@@ -624,4 +708,12 @@ export default function ClockInScreen() {
 
 const styles = StyleSheet.create({
   progressiveSection: { gap: 8 },
+  actions: { gap: 8 },
+  helper: { color: colors.textSecondary, fontSize: 14, marginTop: -4 },
+  progress: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
+  progressItem: { flexDirection: 'row', alignItems: 'center', flexShrink: 1 },
+  progressText: { color: colors.textMuted, fontSize: 12, fontWeight: '600' },
+  progressTextActive: { color: colors.primary, fontWeight: '700' },
+  progressLine: { width: 14, height: 1, backgroundColor: colors.divider, marginHorizontal: 6 },
+  progressLineComplete: { backgroundColor: colors.primary },
 });

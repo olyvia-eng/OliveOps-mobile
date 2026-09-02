@@ -194,7 +194,6 @@ export default function HomeScreen() {
               <ListRow
                 key={job.id}
                 title={job.title || 'Untitled Job'}
-                subtitle={job.status.replace('_', ' ')}
               />
             ))}
           </SectionCard>
@@ -300,16 +299,20 @@ export default function HomeScreen() {
 
       <View style={styles.quickSection}>
         <SectionHeader title="Quick Actions" />
-        <View style={styles.quickList}>
-          <ListRow
-            title="Forms"
-            subtitle="Complete required and available forms"
-            detail={toDo.length > 0 ? `${toDo.length} due` : undefined}
-            onPress={() => router.push('/forms')}
-          />
-          <ListRow title="Time Off" subtitle="Request time off and view status" onPress={() => router.push('/time-off')} />
-          <ListRow title="Time History" subtitle="Review entries and weekly totals" onPress={() => router.push('/time-history')} />
-          <ListRow title="Correction Requests" subtitle="View or request a time correction" onPress={() => router.push('/my-correction-requests')} />
+        <View style={styles.quickGrid}>
+          <Pressable style={styles.quickAction} onPress={() => router.push('/forms')}>
+            <Text style={styles.quickActionLabel}>Forms</Text>
+            {toDo.length > 0 ? <Text style={styles.quickActionMeta}>{`${toDo.length} due`}</Text> : null}
+          </Pressable>
+          <Pressable style={styles.quickAction} onPress={() => router.push('/time-off')}>
+            <Text style={styles.quickActionLabel}>Time Off</Text>
+          </Pressable>
+          <Pressable style={styles.quickAction} onPress={() => router.push('/time-history')}>
+            <Text style={styles.quickActionLabel}>Time History</Text>
+          </Pressable>
+          <Pressable style={styles.quickAction} onPress={() => router.push('/my-correction-requests')}>
+            <Text style={styles.quickActionLabel}>Corrections</Text>
+          </Pressable>
         </View>
       </View>
     </Screen>
@@ -345,10 +348,10 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   assignedSection: { gap: 6 },
-  quickList: {
-    borderTopWidth: 1,
-    borderTopColor: colors.divider,
-  },
+  quickGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  quickAction: { minHeight: 42, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, paddingHorizontal: 12, paddingVertical: 9, justifyContent: 'center' },
+  quickActionLabel: { color: colors.textPrimary, fontSize: 14, fontWeight: '600' },
+  quickActionMeta: { color: colors.primary, fontSize: 11, fontWeight: '700' },
   topRow: {
     flexDirection: 'row',
     alignItems: 'center',

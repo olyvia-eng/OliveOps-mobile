@@ -11,16 +11,18 @@ const options: Array<{
 }> = [
   { type: 'job', icon: '▣', label: 'Job Work', description: 'Working at a customer or job site' },
   { type: 'drive_time', icon: '→', label: 'Drive Time', description: 'Driving between jobs, shop, or site' },
-  { type: 'non_billable', icon: '○', label: 'Unbillable', description: 'Shop work, meetings, training, etc.' },
+  { type: 'non_billable', icon: '○', label: 'Unbillable Time', description: 'Shop work, meetings, training, etc.' },
 ];
 
 export function ActivitySelector({
   heading,
+  helper,
   selectedType,
   onSelect,
   testIDPrefix = 'activity-option',
 }: {
   heading: string;
+  helper?: string;
   selectedType: TimeEntryWorkType | null;
   onSelect: (type: TimeEntryWorkType) => void;
   testIDPrefix?: string;
@@ -28,6 +30,7 @@ export function ActivitySelector({
   return (
     <View style={styles.section}>
       <SectionHeader title={heading} />
+      {helper ? <Text style={styles.helper}>{helper}</Text> : null}
       <View style={styles.list}>
         {options.map((option) => (
           <ListRow
@@ -51,6 +54,7 @@ export function ActivitySelector({
 
 const styles = StyleSheet.create({
   section: { gap: spacing.sm },
+  helper: { color: colors.textSecondary, fontSize: typography.bodySmall, marginTop: -spacing.xs },
   list: { borderRadius: radii.lg, borderWidth: 1, borderColor: colors.cardBorder, backgroundColor: colors.surface, paddingHorizontal: spacing.md },
   icon: { width: 34, height: 34, borderRadius: radii.md, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceMuted },
   iconSelected: { backgroundColor: colors.primary },

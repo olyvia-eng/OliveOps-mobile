@@ -286,6 +286,11 @@ describe('FormScreen', () => {
     };
     let tree: any;
     await act(async () => { tree = create(<FormScreen />); });
+    const clockInContext = tree.root.findByProps({ testID: 'clock-in-form-context' });
+    const contextText = clockInContext.findAllByType('text').map((node: any) => String(node.props.children)).join(' ');
+    expect(contextText).toContain('Clock In');
+    expect(contextText).toContain('Forms');
+    expect(contextText).toContain('Complete Required Form');
     await act(async () => tree.root.findByProps({ testID: 'form-field-condition' }).props.onChangeText('Good'));
     await act(async () => tree.root.findByType('primary-button').props.onPress());
 
@@ -352,6 +357,7 @@ describe('FormScreen', () => {
     };
     let tree: any;
     await act(async () => { tree = create(<FormScreen />); });
+    expect(tree.root.findByProps({ testID: 'clock-in-form-context' })).toBeTruthy();
     await act(async () => tree.root.findByProps({ testID: 'form-field-condition' }).props.onChangeText('Good'));
     await act(async () => tree.root.findByType('primary-button').props.onPress());
 
