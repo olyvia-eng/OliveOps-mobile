@@ -21,5 +21,9 @@ export const ENDPOINTS = {
   employeeRequiredForms: '/api/employee?action=required',
   employeeFormSubmission: '/api/employee?action=submission',
   employeeFormSubmit: '/api/employee?action=submit',
+  trainingMyList: '/api/training?action=my-list',
+  trainingMyDetail: '/api/training?action=my-detail',
+  trainingMyHistory: '/api/training?action=my-history',
+  trainingComplete: '/api/training?action=complete',
   storage: '/api/storage',
 } as const;

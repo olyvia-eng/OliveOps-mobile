@@ -304,6 +304,10 @@ export default function HomeScreen() {
             <Text style={styles.quickActionLabel}>Forms</Text>
             {toDo.length > 0 ? <Text style={styles.quickActionMeta}>{`${toDo.length} due`}</Text> : null}
           </Pressable>
+          <Pressable style={styles.quickAction} onPress={() => router.push('/employee-hub')}>
+            <Text style={styles.quickActionLabel}>Employee Hub</Text>
+            <Text style={styles.quickActionMeta}>Training</Text>
+          </Pressable>
           <Pressable style={styles.quickAction} onPress={() => router.push('/time-off')}>
             <Text style={styles.quickActionLabel}>Time Off</Text>
           </Pressable>

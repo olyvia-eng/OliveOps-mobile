@@ -99,6 +99,8 @@ function RootLayout() {
             <Stack.Screen name="forms" options={secondaryScreenOptions('Forms')} />
             <Stack.Screen name="form" options={secondaryScreenOptions('Complete Form')} />
             <Stack.Screen name="form-submission" options={secondaryScreenOptions('Completed Form')} />
+            <Stack.Screen name="employee-hub" options={secondaryScreenOptions('Employee Hub')} />
+            <Stack.Screen name="training-detail" options={secondaryScreenOptions('Training')} />
             <Stack.Screen name="time-off" options={secondaryScreenOptions('Time Off')} />
             <Stack.Screen name="request-time-off" options={secondaryScreenOptions('Request Time Off')} />
             <Stack.Screen name="time-off-detail" options={secondaryScreenOptions('Time Off Details')} />
