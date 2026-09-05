@@ -12,6 +12,9 @@ jest.mock('expo-router', () => ({
 }));
 jest.mock('@/store/authStore', () => ({ useAuthStore: () => ({ status: 'authenticated' }) }));
 jest.mock('@/store/trainingStore', () => ({ useTrainingStore: () => mockCounts }));
+jest.mock('react-native-safe-area-context', () => ({
+  SafeAreaView: ({ children, ...props }: any) => require('react').createElement('safe-area', props, children),
+}));
 jest.mock('react-native', () => {
   const ReactModule = require('react');
   return {
@@ -31,6 +34,7 @@ describe('PrimaryNavigation', () => {
     await act(async () => { tree = create(<PrimaryNavigation />); });
     expect(tree.root.findAllByType('pressable')).toHaveLength(4);
     expect(tree.root.findAllByProps({ testID: 'hub-attention-badge' })).toHaveLength(0);
+    expect(tree.root.findByType('safe-area').props.edges).toEqual(['bottom']);
   });
 
   it('sums Training attention, caps the badge, and provides an accessible label', async () => {

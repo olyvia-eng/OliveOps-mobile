@@ -1,11 +1,16 @@
 import { PropsWithChildren } from 'react';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, type Edge } from 'react-native-safe-area-context';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { colors, spacing } from '@/theme/colors';
 
-export function Screen({ children, testID }: PropsWithChildren<{ testID?: string }>) {
+const nestedScreenEdges: Edge[] = ['left', 'right'];
+const primaryScreenEdges: Edge[] = ['top', 'left', 'right'];
+
+type ScreenProps = PropsWithChildren<{ testID?: string; safeAreaEdges?: Edge[] }>;
+
+export function Screen({ children, testID, safeAreaEdges = nestedScreenEdges }: ScreenProps) {
   return (
-    <SafeAreaView style={styles.safe} edges={['left', 'right']}>
+    <SafeAreaView testID={testID ? `${testID}-safe-area` : undefined} style={styles.safe} edges={safeAreaEdges}>
       <ScrollView
         testID={testID}
         contentContainerStyle={styles.content}
@@ -14,6 +19,19 @@ export function Screen({ children, testID }: PropsWithChildren<{ testID?: string
       >
         <View style={styles.inner}>{children}</View>
       </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+// Headerless primary destinations own the top inset; Stack-header screens use Screen instead.
+export function PrimaryScreen(props: Omit<ScreenProps, 'safeAreaEdges'>) {
+  return <Screen {...props} safeAreaEdges={primaryScreenEdges} />;
+}
+
+export function PrimarySafeAreaView({ children, testID }: PropsWithChildren<{ testID?: string }>) {
+  return (
+    <SafeAreaView testID={testID} style={styles.safe} edges={primaryScreenEdges}>
+      {children}
     </SafeAreaView>
   );
 }

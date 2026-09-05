@@ -4,7 +4,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { EmptyState, ListRow, ScreenHeader, SectionCard, SegmentedControl, StatusBadge } from '@/components/MobilePrimitives';
 import { ErrorState } from '@/components/ErrorState';
 import { LoadingState } from '@/components/LoadingState';
-import { Screen } from '@/components/Screen';
+import { PrimaryScreen } from '@/components/Screen';
 import { StatusBanner } from '@/components/StatusBanner';
 import { formatTrainingDate, getTrainingStatusLabel, getTrainingStatusTone } from '@/features/training/presentation';
 import { useTrainingActions } from '@/hooks/useTrainingActions';
@@ -29,7 +29,7 @@ export default function EmployeeHubScreen() {
   }, [refresh]));
 
   return (
-    <Screen testID="employee-hub-screen">
+    <PrimaryScreen testID="employee-hub-screen">
       <ScreenHeader title="Employee Hub" subtitle="Your assigned training and completion history" />
       {loaded && error ? <StatusBanner tone="error" message={error} /> : null}
       <SegmentedControl
@@ -81,7 +81,7 @@ export default function EmployeeHubScreen() {
           </SectionCard>
         )
       ) : null}
-    </Screen>
+    </PrimaryScreen>
   );
 }
 

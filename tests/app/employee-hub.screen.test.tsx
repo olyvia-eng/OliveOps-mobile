@@ -15,7 +15,12 @@ jest.mock('@/hooks/useTrainingActions', () => ({
   useTrainingActions: () => ({ refreshAssignments: mockLoadTraining, refreshHistory: mockLoadHistory }),
 }));
 jest.mock('@/store/trainingStore', () => ({ useTrainingStore: () => mockTrainingState }));
-jest.mock('@/components/Screen', () => ({ Screen: ({ children }: any) => require('react').createElement('screen', {}, children) }));
+jest.mock('@/components/Screen', () => ({
+  Screen: ({ children }: any) => require('react').createElement('screen', {}, children),
+  PrimaryScreen: ({ children, testID }: any) => require('react').createElement('primary-screen', {
+    edges: ['top', 'left', 'right'], testID,
+  }, children),
+}));
 jest.mock('react-native', () => {
   const ReactModule = require('react');
   return {
@@ -61,6 +66,7 @@ describe('EmployeeHubScreen', () => {
     await act(async () => { tree = create(<EmployeeHubScreen />); });
     expect(textOf(tree)).toContain('1 assignment need attention.');
     expect(textOf(tree)).toContain('WHMIS');
+    expect(tree.root.findByType('primary-screen').props.edges).toEqual(['top', 'left', 'right']);
     await act(async () => tree.root.findByProps({ testID: 'training-row-assignment-1' }).props.onPress());
     expect(mockPush).toHaveBeenCalledWith({ pathname: '/training-detail', params: { assignmentId: 'assignment-1' } });
   });

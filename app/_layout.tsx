@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { AppState, Pressable, StyleSheet, Text, View, type AppStateStatus } from 'react-native';
 import { router, Stack } from 'expo-router';
 import * as Sentry from '@sentry/react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AppErrorBoundary } from '@/components/AppErrorBoundary';
 import { PrimaryNavigation } from '@/components/PrimaryNavigation';
 import { useClockingActions } from '@/hooks/useClockingActions';
@@ -68,8 +69,9 @@ function AppLifecycleSync() {
 
 function RootLayout() {
   return (
-    <AppErrorBoundary>
-      <AuthProvider>
+    <SafeAreaProvider>
+      <AppErrorBoundary>
+        <AuthProvider>
         <TimeOffProvider>
           <FormsProvider>
             <FormsWorkflowProvider>
@@ -124,8 +126,9 @@ function RootLayout() {
             </FormsWorkflowProvider>
           </FormsProvider>
         </TimeOffProvider>
-      </AuthProvider>
-    </AppErrorBoundary>
+        </AuthProvider>
+      </AppErrorBoundary>
+    </SafeAreaProvider>
   );
 }
 

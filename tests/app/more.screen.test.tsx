@@ -4,7 +4,12 @@ import { describe, expect, it, jest } from '@jest/globals';
 
 const mockPush = jest.fn();
 jest.mock('expo-router', () => ({ router: { push: (...args: unknown[]) => mockPush(...args) } }));
-jest.mock('@/components/Screen', () => ({ Screen: ({ children }: any) => require('react').createElement('screen', {}, children) }));
+jest.mock('@/components/Screen', () => ({
+  Screen: ({ children }: any) => require('react').createElement('screen', {}, children),
+  PrimaryScreen: ({ children, testID }: any) => require('react').createElement('primary-screen', {
+    edges: ['top', 'left', 'right'], testID,
+  }, children),
+}));
 jest.mock('react-native', () => {
   const ReactModule = require('react');
   return {
@@ -19,6 +24,12 @@ jest.mock('react-native', () => {
 import MoreScreen from '../../app/more';
 
 describe('MoreScreen', () => {
+  it('applies the primary top inset once', async () => {
+    let tree: any;
+    await act(async () => { tree = create(<MoreScreen />); });
+    expect(tree.root.findByType('primary-screen').props.edges).toEqual(['top', 'left', 'right']);
+  });
+
   it.each([
     ['more-forms', '/forms'],
     ['more-time-off', '/time-off'],

@@ -107,6 +107,9 @@ jest.mock('@/store/offlineClockContext', () => ({
 
 jest.mock('@/components/Screen', () => ({
   Screen: ({ children }: any) => require('react').createElement('screen', {}, children),
+  PrimaryScreen: ({ children, testID }: any) => require('react').createElement('primary-screen', {
+    edges: ['top', 'left', 'right'], testID,
+  }, children),
 }));
 
 jest.mock('@/components/OfflineNotice', () => ({
@@ -190,6 +193,7 @@ describe('HomeScreen', () => {
     const renderedText = tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ');
     expect(renderedText).toContain('Front Walkway');
     expect(renderedText).not.toContain('Current job: Warehouse');
+    expect(tree.root.findByType('primary-screen').props.edges).toEqual(['top', 'left', 'right']);
   });
 
   it('orders overdue before due-soon Training and caps attention at three rows', async () => {

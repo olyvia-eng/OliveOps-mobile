@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { ListRow, ScreenHeader, SectionCard, SectionHeader } from '@/components/MobilePrimitives';
-import { Screen } from '@/components/Screen';
+import { PrimaryScreen } from '@/components/Screen';
 
 const actions = [
   { title: 'Forms', subtitle: 'Complete assigned and available forms', path: '/forms' },
@@ -12,7 +12,7 @@ const actions = [
 
 export default function MoreScreen() {
   return (
-    <Screen testID="more-screen">
+    <PrimaryScreen testID="more-screen">
       <ScreenHeader title="More" subtitle="Forms, requests, and account settings" />
       <SectionHeader title="Employee Tools" />
       <SectionCard>
@@ -26,6 +26,6 @@ export default function MoreScreen() {
           />
         ))}
       </SectionCard>
-    </Screen>
+    </PrimaryScreen>
   );
 }

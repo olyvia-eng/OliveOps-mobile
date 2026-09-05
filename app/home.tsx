@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { PrimaryActionButton } from '@/components/PrimaryActionButton';
 import { SecondaryButton } from '@/components/SecondaryButton';
-import { Screen } from '@/components/Screen';
+import { PrimaryScreen } from '@/components/Screen';
 import { OfflineNotice } from '@/components/OfflineNotice';
 import { OfflineClockStatus } from '@/components/OfflineClockStatus';
 import { StatusBanner } from '@/components/StatusBanner';
@@ -113,7 +113,7 @@ export default function HomeScreen() {
   );
 
   return (
-    <Screen testID="home-scroll">
+    <PrimaryScreen testID="home-scroll">
       <OfflineNotice />
       <OfflineClockStatus showHistoricalAttention />
 
@@ -368,7 +368,7 @@ export default function HomeScreen() {
         <PrimaryActionButton label="Clock In" onPress={() => router.push('/clock-in')} />
       )}
 
-    </Screen>
+    </PrimaryScreen>
   );
 }
 
