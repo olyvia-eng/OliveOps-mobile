@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { EmptyState, ScreenHeader, StatusBadge } from '@/components/MobilePrimitives';
-import { PrimarySafeAreaView } from '@/components/Screen';
+import { ScreenSafeAreaView } from '@/components/Screen';
 import {
   buildEffectiveTimeEntries,
   formatDurationForEntry,
@@ -52,7 +52,7 @@ export default function TimeHistoryScreen() {
   );
   const weekTotalLabel = useMemo(() => formatDurationMinutes(weekTotal * 60), [weekTotal]);
   return (
-    <PrimarySafeAreaView testID="time-history-safe-area">
+    <ScreenSafeAreaView testID="time-history-safe-area">
       <FlatList
         data={historyItems}
         keyExtractor={(item) => item.key}
@@ -113,7 +113,7 @@ export default function TimeHistoryScreen() {
         )}
         ListEmptyComponent={<EmptyState title="No time history" message="Your completed and active work will appear here." />}
       />
-    </PrimarySafeAreaView>
+    </ScreenSafeAreaView>
   );
 }
 

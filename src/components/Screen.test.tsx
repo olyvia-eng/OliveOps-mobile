@@ -15,7 +15,7 @@ jest.mock('react-native', () => {
   };
 });
 
-import { PrimarySafeAreaView, PrimaryScreen, Screen } from '@/components/Screen';
+import { PrimarySafeAreaView, PrimaryScreen, Screen, ScreenSafeAreaView } from '@/components/Screen';
 
 describe('safe-area screen containers', () => {
   it('applies the top inset once to a scrollable primary destination', async () => {
@@ -44,5 +44,15 @@ describe('safe-area screen containers', () => {
     expect(tree.root.findByType('safe-area').props.edges).toEqual(['top', 'left', 'right']);
     expect(tree.root.findAllByType('scroll-view')).toHaveLength(0);
     expect(tree.root.findByType('virtual-list')).toBeTruthy();
+  });
+
+  it('supports header-managed virtualized lists without duplicating the top inset', async () => {
+    let tree: any;
+    await act(async () => {
+      tree = create(<ScreenSafeAreaView testID="nested-list">{React.createElement('virtual-list')}</ScreenSafeAreaView>);
+    });
+
+    expect(tree.root.findByType('safe-area').props.edges).toEqual(['left', 'right']);
+    expect(tree.root.findAllByType('scroll-view')).toHaveLength(0);
   });
 });

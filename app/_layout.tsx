@@ -95,12 +95,13 @@ function RootLayout() {
                             <Stack.Screen name="index" options={{ headerShown: false }} />
                             <Stack.Screen name="login" options={{ headerShown: false }} />
                             <Stack.Screen name="home" options={{ headerShown: false, gestureEnabled: false }} />
+                            <Stack.Screen name="time" options={{ headerShown: false, gestureEnabled: false }} />
                             <Stack.Screen name="clock-in" options={secondaryScreenOptions('Clock In')} />
                             <Stack.Screen name="switch-activity" options={secondaryScreenOptions('Switch Activity')} />
                             <Stack.Screen name="active-shift" options={secondaryScreenOptions('Active Shift')} />
                             <Stack.Screen name="clock-out" options={secondaryScreenOptions('Clock Out')} />
                             <Stack.Screen name="edit-work-areas" options={secondaryScreenOptions('Edit Work Areas')} />
-                            <Stack.Screen name="time-history" options={{ headerShown: false, gestureEnabled: false }} />
+                            <Stack.Screen name="time-history" options={secondaryScreenOptions('Time History')} />
                             <Stack.Screen name="time-entry-detail" options={secondaryScreenOptions('Time Entry Detail')} />
                             <Stack.Screen name="request-time-correction" options={secondaryScreenOptions('Request Time Correction')} />
                             <Stack.Screen name="offline-time-change" options={secondaryScreenOptions('Time Change Needs Attention')} />

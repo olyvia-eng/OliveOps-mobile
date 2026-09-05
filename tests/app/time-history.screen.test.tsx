@@ -187,11 +187,11 @@ describe('TimeHistoryScreen', () => {
     ];
   });
 
-  it('applies the primary top inset once and keeps history scrollable above navigation', async () => {
+  it('leaves top inset ownership to its Stack header and keeps history scrollable above navigation', async () => {
     let tree: any;
     await act(async () => { tree = create(<TimeHistoryScreen />); });
 
-    expect(tree.root.findByType('safe-area').props.edges).toEqual(['top', 'left', 'right']);
+    expect(tree.root.findByType('safe-area').props.edges).toEqual(['left', 'right']);
     expect(tree.root.findByType('flat-list').props.contentContainerStyle).toEqual(expect.objectContaining({
       flexGrow: 1,
       paddingBottom: 24,

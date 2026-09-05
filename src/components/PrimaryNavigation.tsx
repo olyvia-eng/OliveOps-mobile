@@ -7,7 +7,7 @@ import { colors, spacing, typography } from '@/theme/colors';
 
 const destinations = [
   { label: 'Home', path: '/home' },
-  { label: 'Time', path: '/time-history' },
+  { label: 'Time', path: '/time' },
   { label: 'Hub', path: '/employee-hub' },
   { label: 'More', path: '/more' },
 ] as const;

@@ -50,7 +50,15 @@ describe('PrimaryNavigation', () => {
     let tree: any;
     await act(async () => { tree = create(<PrimaryNavigation />); });
     await act(async () => tree.root.findByProps({ testID: 'primary-nav-time' }).props.onPress());
-    expect(mockReplace).toHaveBeenCalledWith('/time-history');
+    expect(mockReplace).toHaveBeenCalledWith('/time');
+  });
+
+  it('selects the new Time workspace instead of full history', async () => {
+    mockPathname = '/time';
+    let tree: any;
+    await act(async () => { tree = create(<PrimaryNavigation />); });
+    expect(tree.root.findByProps({ testID: 'primary-nav-time' }).props.accessibilityState).toEqual({ selected: true });
+    mockPathname = '/home';
   });
 
   it('remains available on authenticated detail routes', async () => {

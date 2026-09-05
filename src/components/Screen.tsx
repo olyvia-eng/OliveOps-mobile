@@ -36,6 +36,14 @@ export function PrimarySafeAreaView({ children, testID }: PropsWithChildren<{ te
   );
 }
 
+export function ScreenSafeAreaView({ children, testID }: PropsWithChildren<{ testID?: string }>) {
+  return (
+    <SafeAreaView testID={testID} style={styles.safe} edges={nestedScreenEdges}>
+      {children}
+    </SafeAreaView>
+  );
+}
+
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
