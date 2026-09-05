@@ -1,47 +1,28 @@
 import { useCallback, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
-import { loadMyTraining, loadMyTrainingHistory } from '@/api/trainingApi';
 import { EmptyState, ListRow, ScreenHeader, SectionCard, SegmentedControl, StatusBadge } from '@/components/MobilePrimitives';
 import { ErrorState } from '@/components/ErrorState';
 import { LoadingState } from '@/components/LoadingState';
 import { Screen } from '@/components/Screen';
 import { StatusBanner } from '@/components/StatusBanner';
 import { formatTrainingDate, getTrainingStatusLabel, getTrainingStatusTone } from '@/features/training/presentation';
-import { useAuthStore } from '@/store/authStore';
+import { useTrainingActions } from '@/hooks/useTrainingActions';
+import { useTrainingStore } from '@/store/trainingStore';
 import { spacing } from '@/theme/colors';
-import type { TrainingAssignment, TrainingCompletion } from '@/types/training';
 
 type HubTab = 'assigned' | 'history';
 
 export default function EmployeeHubScreen() {
-  const { accessToken } = useAuthStore();
   const [tab, setTab] = useState<HubTab>('assigned');
-  const [assignments, setAssignments] = useState<TrainingAssignment[]>([]);
-  const [completions, setCompletions] = useState<TrainingCompletion[]>([]);
-  const [attentionCount, setAttentionCount] = useState(0);
-  const [loaded, setLoaded] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { assignments, completions, overdueCount, dueSoonCount, loadedAt, loading, error } = useTrainingStore();
+  const { refreshAssignments, refreshHistory } = useTrainingActions();
+  const attentionCount = overdueCount + dueSoonCount;
+  const loaded = loadedAt !== null;
 
   const refresh = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [assigned, history] = await Promise.all([
-        loadMyTraining(accessToken),
-        loadMyTrainingHistory(accessToken),
-      ]);
-      setAssignments(assigned.assignments);
-      setAttentionCount(assigned.attentionCount);
-      setCompletions(history.completions);
-      setError(null);
-      setLoaded(true);
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Training could not be loaded.');
-    } finally {
-      setLoading(false);
-    }
-  }, [accessToken]);
+    await Promise.all([refreshAssignments(), refreshHistory()]);
+  }, [refreshAssignments, refreshHistory]);
 
   useFocusEffect(useCallback(() => {
     void refresh();

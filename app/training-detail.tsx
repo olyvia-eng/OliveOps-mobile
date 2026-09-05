@@ -12,6 +12,7 @@ import { SecondaryButton } from '@/components/SecondaryButton';
 import { StatusBanner } from '@/components/StatusBanner';
 import { formatTrainingDate, getRecurrenceLabel, getTrainingStatusLabel, getTrainingStatusTone } from '@/features/training/presentation';
 import { createRequestMeta } from '@/services/requestGuards';
+import { useTrainingActions } from '@/hooks/useTrainingActions';
 import { useAuthStore } from '@/store/authStore';
 import { colors, radii, spacing, typography } from '@/theme/colors';
 import { ApiError } from '@/types/errors';
@@ -21,6 +22,7 @@ export default function TrainingDetailScreen() {
   const params = useLocalSearchParams<{ assignmentId?: string | string[] }>();
   const assignmentId = Array.isArray(params.assignmentId) ? params.assignmentId[0] : params.assignmentId ?? '';
   const { accessToken } = useAuthStore();
+  const { refreshAssignments } = useTrainingActions();
   const [detail, setDetail] = useState<MyTrainingDetailResponse | null>(null);
   const [checkedItems, setCheckedItems] = useState<Set<string>>(new Set());
   const [acknowledged, setAcknowledged] = useState(false);
@@ -84,9 +86,11 @@ export default function TrainingDetailScreen() {
         checklistResponses: detail.version.checklist.map((item) => ({ itemId: item.itemId, checked: true })),
         acknowledged: true,
       }, accessToken);
+      await refreshAssignments({ force: true });
       router.replace('/employee-hub');
     } catch (reason) {
       if (reason instanceof ApiError && reason.code === 'cycle_complete') {
+        await refreshAssignments({ force: true });
         router.replace('/employee-hub');
         return;
       }

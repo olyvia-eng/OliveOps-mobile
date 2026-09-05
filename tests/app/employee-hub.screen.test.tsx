@@ -5,16 +5,16 @@ import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 const mockLoadTraining = jest.fn();
 const mockLoadHistory = jest.fn();
 const mockPush = jest.fn();
+let mockTrainingState: any;
 
 jest.mock('expo-router', () => ({
   router: { push: (...args: unknown[]) => mockPush(...args) },
   useFocusEffect: (callback: () => void) => require('react').useEffect(callback, [callback]),
 }));
-jest.mock('@/api/trainingApi', () => ({
-  loadMyTraining: (...args: unknown[]) => mockLoadTraining(...args),
-  loadMyTrainingHistory: (...args: unknown[]) => mockLoadHistory(...args),
+jest.mock('@/hooks/useTrainingActions', () => ({
+  useTrainingActions: () => ({ refreshAssignments: mockLoadTraining, refreshHistory: mockLoadHistory }),
 }));
-jest.mock('@/store/authStore', () => ({ useAuthStore: () => ({ accessToken: 'token-1' }) }));
+jest.mock('@/store/trainingStore', () => ({ useTrainingStore: () => mockTrainingState }));
 jest.mock('@/components/Screen', () => ({ Screen: ({ children }: any) => require('react').createElement('screen', {}, children) }));
 jest.mock('react-native', () => {
   const ReactModule = require('react');
@@ -37,21 +37,23 @@ function textOf(tree: any) {
 describe('EmployeeHubScreen', () => {
   beforeEach(() => {
     mockPush.mockReset();
-    mockLoadTraining.mockReset().mockResolvedValue({
-      ok: true,
-      attentionCount: 1,
+    mockLoadTraining.mockReset().mockResolvedValue({ ok: true });
+    mockLoadHistory.mockReset().mockResolvedValue({ ok: true });
+    mockTrainingState = {
+      overdueCount: 0,
+      dueSoonCount: 1,
+      loadedAt: 1,
+      loading: false,
+      error: null,
       assignments: [{
         id: 'assignment-1', assignmentId: 'assignment-1', trainingTitle: 'WHMIS',
         currentDueDate: '2026-09-10', presentationStatus: 'due_soon',
       }],
-    });
-    mockLoadHistory.mockReset().mockResolvedValue({
-      ok: true,
       completions: [{
         id: 'completion-1', completionId: 'completion-1', trainingTitle: 'Site Orientation',
         completedAt: '2026-09-01T14:00:00.000Z', completedVersion: 3,
       }],
-    });
+    };
   });
 
   it('shows attention work and opens the exact assignment', async () => {

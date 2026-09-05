@@ -52,4 +52,22 @@ describe('trainingApi', () => {
     expect(body).not.toHaveProperty('businessId');
     expect(body).not.toHaveProperty('employeeId');
   });
+
+  it('shares simultaneous Training list requests but permits a forced refresh', async () => {
+    let resolveFetch!: (response: any) => void;
+    const pending = new Promise<any>((resolve) => { resolveFetch = resolve; });
+    const fetchMock = jest.spyOn(global, 'fetch' as any)
+      .mockReturnValueOnce(pending)
+      .mockResolvedValueOnce(mockResponse({ ok: true, assignments: [], attentionCount: 0 }));
+
+    const first = loadMyTraining('shared-token');
+    const second = loadMyTraining('shared-token');
+    expect(first).toBe(second);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    resolveFetch(mockResponse({ ok: true, assignments: [], attentionCount: 0 }));
+    await Promise.all([first, second]);
+
+    await loadMyTraining('shared-token', { force: true });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
 });

@@ -3,10 +3,11 @@ import { act, create } from 'react-test-renderer';
 import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
 
 const mockRefresh = jest.fn().mockResolvedValue({ ok: true });
-const mockRefreshForms = jest.fn().mockResolvedValue({ ok: true });
+const mockRefreshTraining = jest.fn().mockResolvedValue({ ok: true });
 let mockPendingClockOut: any;
 let mockPendingClockIn: any;
 let mockOfflineClock: any;
+let mockTrainingAssignments: any[];
 
 const mockUseClockingActions = jest.fn(() => ({
   refreshWorkContext: mockRefresh,
@@ -76,8 +77,8 @@ jest.mock('@/hooks/useClockingActions', () => ({
   useClockingActions: () => mockUseClockingActions(),
 }));
 
-jest.mock('@/hooks/useFormsActions', () => ({
-  useFormsActions: () => ({ refreshForms: mockRefreshForms }),
+jest.mock('@/hooks/useTrainingActions', () => ({
+  useTrainingActions: () => ({ refreshAssignments: mockRefreshTraining }),
 }));
 
 jest.mock('@/store/authStore', () => ({
@@ -88,8 +89,8 @@ jest.mock('@/store/clockingStore', () => ({
   useClockingStore: () => mockUseClockingStore(),
 }));
 
-jest.mock('@/store/formsStore', () => ({
-  useFormsStore: () => mockFormsState,
+jest.mock('@/store/trainingStore', () => ({
+  useTrainingStore: () => ({ assignments: mockTrainingAssignments }),
 }));
 
 jest.mock('@/store/pendingClockOutStore', () => ({
@@ -146,8 +147,8 @@ describe('HomeScreen', () => {
 
   beforeEach(() => {
     mockRefresh.mockClear();
-    mockRefreshForms.mockClear();
-    mockFormsState.toDo = [{ id: 'required-1' }, { id: 'required-2' }];
+    mockRefreshTraining.mockClear();
+    mockTrainingAssignments = [];
     mockClockingState.currentActiveEntryId = 'entry-1';
     mockOfflineClock = undefined;
     mockClockingState.activeShiftWarnings.possibleForgottenClockOut = false;
@@ -191,43 +192,24 @@ describe('HomeScreen', () => {
     expect(renderedText).not.toContain('Current job: Warehouse');
   });
 
-  it('opens Forms as a primary employee feature', async () => {
+  it('orders overdue before due-soon Training and caps attention at three rows', async () => {
+    mockTrainingAssignments = [
+      { id: 'soon-1', trainingTitle: 'First Aid', currentDueDate: '2026-09-12', presentationStatus: 'due_soon' },
+      { id: 'late-1', trainingTitle: 'WHMIS', currentDueDate: '2026-09-01', presentationStatus: 'overdue' },
+      { id: 'late-2', trainingTitle: 'Fall Protection', currentDueDate: '2026-09-02', presentationStatus: 'overdue' },
+      { id: 'soon-2', trainingTitle: 'Orientation', currentDueDate: '2026-09-15', presentationStatus: 'due_soon' },
+    ];
     await act(async () => {
       tree = create(React.createElement(HomeScreen));
     });
 
-    const formsRow = tree.root.findAllByType('pressable').find((node: any) => {
-      const text = node.findAllByType('text').map((child: any) => String(child.props.children)).join(' ');
-      return text.includes('Forms');
-    });
-    await act(async () => formsRow.props.onPress());
-    expect(router.push).toHaveBeenCalledWith('/forms');
-  });
-
-  it('opens Time Off from Quick Actions', async () => {
-    await act(async () => {
-      tree = create(React.createElement(HomeScreen));
-    });
-
-    const row = tree.root.findAllByType('pressable').find((node: any) => textOf(node).includes('Time Off'));
-    await act(async () => row.props.onPress());
-    expect(router.push).toHaveBeenCalledWith('/time-off');
-  });
-
-  it('shows only the outstanding To Do count for Forms', async () => {
-    await act(async () => { tree = create(<HomeScreen />); });
-    const renderedText = tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ');
-    expect(renderedText).toContain('2 due');
-    expect(renderedText).not.toContain('3 due');
-    expect(renderedText).not.toContain('6 due');
-  });
-
-  it('omits the due count when no required Forms are outstanding', async () => {
-    mockFormsState.toDo = [];
-    await act(async () => { tree = create(<HomeScreen />); });
-    const renderedText = tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ');
-    expect(renderedText).not.toContain('due');
-    expect(renderedText).toContain('Forms');
+    const attentionRows = tree.root.findByProps({ testID: 'attention-list' }).findAllByType('pressable');
+    expect(attentionRows).toHaveLength(3);
+    expect(textOf(attentionRows[0])).toContain('WHMIS');
+    expect(textOf(attentionRows[1])).toContain('Fall Protection');
+    expect(textOf(attentionRows[2])).toContain('First Aid');
+    expect(textOf(tree.root)).toContain('View all');
+    expect(textOf(tree.root)).not.toContain('Quick Actions');
   });
 
   it('shows long-shift warning actions when possible forgotten clock-out is flagged', async () => {

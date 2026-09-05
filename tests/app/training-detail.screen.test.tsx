@@ -8,6 +8,7 @@ const mockComplete = jest.fn();
 const mockPrepareDownload = jest.fn();
 const mockOpenUrl = jest.fn();
 const mockReplace = jest.fn();
+const mockRefreshAssignments = jest.fn();
 
 const detail = {
   ok: true,
@@ -36,6 +37,7 @@ jest.mock('@/api/trainingApi', () => ({
 }));
 jest.mock('@/api/storageApi', () => ({ prepareDownload: (...args: unknown[]) => mockPrepareDownload(...args) }));
 jest.mock('@/store/authStore', () => ({ useAuthStore: () => ({ accessToken: 'token-1' }) }));
+jest.mock('@/hooks/useTrainingActions', () => ({ useTrainingActions: () => ({ refreshAssignments: mockRefreshAssignments }) }));
 jest.mock('@/services/requestGuards', () => ({ createRequestMeta: () => ({ idempotencyKey: 'training-attempt-1' }) }));
 jest.mock('@/components/Screen', () => ({ Screen: ({ children }: any) => require('react').createElement('screen', {}, children) }));
 jest.mock('@/components/PrimaryActionButton', () => ({ PrimaryActionButton: (props: any) => require('react').createElement('primary-button', props) }));
@@ -62,6 +64,7 @@ describe('TrainingDetailScreen', () => {
     mockPrepareDownload.mockReset().mockResolvedValue({ ok: true, fileId: 'file-1', downloadUrl: 'https://signed.example/training' });
     mockOpenUrl.mockReset().mockResolvedValue(undefined);
     mockReplace.mockReset();
+    mockRefreshAssignments.mockReset().mockResolvedValue({ ok: true });
   });
 
   it('requires every checklist item and acknowledgement, then submits a stable attempt', async () => {
@@ -85,6 +88,7 @@ describe('TrainingDetailScreen', () => {
       acknowledged: true,
     }, 'token-1');
     expect(mockReplace).toHaveBeenCalledWith('/employee-hub');
+    expect(mockRefreshAssignments).toHaveBeenCalledWith({ force: true });
   });
 
   it('opens attachments through the authorized storage flow', async () => {

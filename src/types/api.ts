@@ -43,6 +43,9 @@ export interface BootstrapResponse {
   timeCorrections?: TimeCorrectionRequest[];
   employees?: Array<{ id: string }>;
   currentActiveEntryId?: string | null;
+  trainingAttentionCount?: number;
+  overdueTrainingCount?: number;
+  dueSoonTrainingCount?: number;
   activeShiftWarnings?: {
     possibleForgottenClockOut: boolean;
     thresholdHours: number;

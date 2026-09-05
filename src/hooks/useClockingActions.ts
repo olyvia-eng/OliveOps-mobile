@@ -6,6 +6,7 @@ import { isOnline } from '@/services/connectivity';
 import { useAuthStore } from '@/store/authStore';
 import { useClockingStore } from '@/store/clockingStore';
 import { useOptionalOfflineClockStore } from '@/store/offlineClockContext';
+import { useOptionalTrainingStore } from '@/store/trainingStore';
 import type { TimeEntryWorkType } from '@/types/domain';
 import { WORK_AREA_CLOCKING_CONTRACT_VERSION } from '@/types/api';
 import { ApiError } from '@/types/errors';
@@ -25,6 +26,7 @@ export function useClockingActions() {
     setTimeEntries,
   } = useClockingStore();
   const offlineClock = useOptionalOfflineClockStore();
+  const setTrainingAttentionFromBootstrap = useOptionalTrainingStore()?.setAttentionFromBootstrap;
   const submitOfflineClockIn = offlineClock?.submitClockIn;
   const submitOfflineClockOut = offlineClock?.submitClockOut;
   const submitOfflineSwitchActivity = offlineClock?.submitSwitchActivity;
@@ -61,6 +63,7 @@ export function useClockingActions() {
     setCurrentActiveEntryId(payload.currentActiveEntryId ?? null);
     setActiveShiftWarnings(payload.activeShiftWarnings);
     setActivityConfigs(payload.activityConfigs);
+    setTrainingAttentionFromBootstrap?.(payload);
     await updateEligibilityCache?.({
       jobs: scopedJobs,
       activityConfigs: payload.activityConfigs ?? [],
@@ -373,6 +376,7 @@ export function useClockingActions() {
     setJobs,
     setTimeCorrections,
     setTimeEntries,
+    setTrainingAttentionFromBootstrap,
     requiredBeforeClockInForms,
     submitOfflineClockIn,
     submitOfflineClockOut,

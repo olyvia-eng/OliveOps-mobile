@@ -16,13 +16,14 @@ import {
   resolveJobTitle,
   resolveWorkAreaName,
 } from '@/features/clocking/presentation';
+import { formatTrainingDate } from '@/features/training/presentation';
 import { useClockingActions } from '@/hooks/useClockingActions';
 import { useEffectiveClockState } from '@/hooks/useEffectiveClockState';
-import { useFormsActions } from '@/hooks/useFormsActions';
+import { useTrainingActions } from '@/hooks/useTrainingActions';
 import { useAuthStore } from '@/store/authStore';
 import { useClockingStore } from '@/store/clockingStore';
 import { useOptionalOfflineClockStore } from '@/store/offlineClockContext';
-import { useFormsStore } from '@/store/formsStore';
+import { useTrainingStore } from '@/store/trainingStore';
 import { usePendingClockInStore } from '@/store/pendingClockInStore';
 import { usePendingClockOutStore } from '@/store/pendingClockOutStore';
 import { colors } from '@/theme/colors';
@@ -34,8 +35,8 @@ export default function HomeScreen() {
   const offlineClock = useOptionalOfflineClockStore();
   const effectiveClock = useEffectiveClockState();
   const { refreshWorkContext } = useClockingActions();
-  const { refreshForms } = useFormsActions();
-  const { toDo } = useFormsStore();
+  const { refreshAssignments } = useTrainingActions();
+  const { assignments } = useTrainingStore();
   const pendingClockIn = usePendingClockInStore();
   const pendingClockOut = usePendingClockOutStore();
   const pendingClockInReady = pendingClockIn.phase.kind === 'ready_to_finalize';
@@ -55,9 +56,7 @@ export default function HomeScreen() {
     };
   }, [refreshWorkContext]);
 
-  useEffect(() => {
-    void refreshForms();
-  }, [refreshForms]);
+  useEffect(() => { void refreshAssignments(); }, [refreshAssignments]);
 
   const authoritativeActiveShift = currentActiveEntryId
     ? timeEntries.find((entry) => entry.id === currentActiveEntryId && entry.status === 'clocked_in') ?? null
@@ -96,6 +95,12 @@ export default function HomeScreen() {
   }, [activeShift, effectiveClock.shiftStartedAt, now]);
 
   const showLongShiftWarning = Boolean(activeShift && activeShiftWarnings.possibleForgottenClockOut);
+  const attentionAssignments = useMemo(() => [
+    ...assignments.filter((assignment) => assignment.presentationStatus === 'overdue'),
+    ...assignments.filter((assignment) => assignment.presentationStatus === 'due_soon'),
+  ], [assignments]);
+  const blockingAttention = pendingClockOut.workflow || showPendingClockIn;
+  const visibleAttentionCount = (blockingAttention ? 1 : 0) + attentionAssignments.length;
   const longShiftWarning = useMemo(() => {
     if (!activeShift) return '';
     return formatLongShiftWarning(effectiveClock.shiftStartedAt ?? activeShift.clockIn, now);
@@ -114,12 +119,78 @@ export default function HomeScreen() {
 
       <View style={styles.topRow}>
         <Text style={styles.brandText}>OliveOps</Text>
-        <Pressable accessibilityRole="button" onPress={() => router.push('/settings')}>
-          <Text style={styles.settingsLink}>Settings</Text>
-        </Pressable>
       </View>
 
       <ScreenHeader title={greeting} subtitle={todayLabel} />
+
+      {visibleAttentionCount > 0 ? (
+        <View style={styles.attentionSection}>
+          <SectionHeader
+            title="Needs your attention"
+            action={visibleAttentionCount > 3 ? (
+              <Pressable accessibilityRole="button" onPress={() => router.push('/employee-hub')}>
+                <Text style={styles.detailsLink}>View all</Text>
+              </Pressable>
+            ) : undefined}
+          />
+          <SectionCard testID="attention-list">
+            {blockingAttention ? (
+              <ListRow
+                testID="attention-blocking-workflow"
+                title={pendingClockOut.workflow ? 'Complete required clock-out form' : 'Complete required clock-in form'}
+                subtitle="Your clocking workflow is waiting for you"
+                onPress={() => {
+                  if (pendingClockOut.workflow && pendingClockOut.currentForm && pendingClockOut.currentRequirement) {
+                    router.push({ pathname: '/form', params: {
+                      formId: pendingClockOut.currentForm.id,
+                      trigger: 'after_clock_out',
+                      workflowOccurrenceId: pendingClockOut.workflow.workflowOccurrenceId,
+                      workflowRequirementId: pendingClockOut.currentRequirement.workflowRequirementId,
+                    } });
+                    return;
+                  }
+                  if (pendingClockInReady) {
+                    void pendingClockIn.finalize().then(async (result) => {
+                      if (result.ok) await refreshWorkContext();
+                    });
+                    return;
+                  }
+                  const workflowOccurrenceId = pendingClockIn.workflow?.workflowOccurrenceId;
+                  const workflowRequirementId = pendingClockIn.currentRequirement?.requirementId;
+                  if (pendingClockIn.currentForm && workflowOccurrenceId && workflowRequirementId) {
+                    router.push({ pathname: '/form', params: {
+                      formId: pendingClockIn.currentForm.id,
+                      trigger: 'before_clock_in',
+                      workflowOccurrenceId,
+                      workflowRequirementId,
+                    } });
+                    return;
+                  }
+                  void pendingClockIn.ensureCurrentForm().then((form) => {
+                    if (!form || !workflowOccurrenceId || !workflowRequirementId) return;
+                    router.push({ pathname: '/form', params: {
+                      formId: form.id,
+                      trigger: 'before_clock_in',
+                      workflowOccurrenceId,
+                      workflowRequirementId,
+                    } });
+                  });
+                }}
+              />
+            ) : null}
+            {attentionAssignments.slice(0, blockingAttention ? 2 : 3).map((assignment) => (
+              <ListRow
+                key={assignment.id}
+                testID={`attention-training-${assignment.id}`}
+                title={assignment.trainingTitle}
+                subtitle={`Due ${formatTrainingDate(assignment.currentDueDate)}`}
+                leading={<StatusBadge label={assignment.presentationStatus === 'overdue' ? 'Overdue' : 'Due soon'} tone={assignment.presentationStatus === 'overdue' ? 'error' : 'active'} />}
+                onPress={() => router.push({ pathname: '/training-detail', params: { assignmentId: assignment.id } })}
+              />
+            ))}
+          </SectionCard>
+        </View>
+      ) : null}
 
       {loadError && !loadError.startsWith('Offline.') ? <StatusBanner tone="error" message={loadError} /> : null}
       {pendingFormError ? <StatusBanner tone="error" message={pendingFormError} /> : null}
@@ -297,28 +368,6 @@ export default function HomeScreen() {
         <PrimaryActionButton label="Clock In" onPress={() => router.push('/clock-in')} />
       )}
 
-      <View style={styles.quickSection}>
-        <SectionHeader title="Quick Actions" />
-        <View style={styles.quickGrid}>
-          <Pressable style={styles.quickAction} onPress={() => router.push('/forms')}>
-            <Text style={styles.quickActionLabel}>Forms</Text>
-            {toDo.length > 0 ? <Text style={styles.quickActionMeta}>{`${toDo.length} due`}</Text> : null}
-          </Pressable>
-          <Pressable style={styles.quickAction} onPress={() => router.push('/employee-hub')}>
-            <Text style={styles.quickActionLabel}>Employee Hub</Text>
-            <Text style={styles.quickActionMeta}>Training</Text>
-          </Pressable>
-          <Pressable style={styles.quickAction} onPress={() => router.push('/time-off')}>
-            <Text style={styles.quickActionLabel}>Time Off</Text>
-          </Pressable>
-          <Pressable style={styles.quickAction} onPress={() => router.push('/time-history')}>
-            <Text style={styles.quickActionLabel}>Time History</Text>
-          </Pressable>
-          <Pressable style={styles.quickAction} onPress={() => router.push('/my-correction-requests')}>
-            <Text style={styles.quickActionLabel}>Corrections</Text>
-          </Pressable>
-        </View>
-      </View>
     </Screen>
   );
 }
@@ -347,15 +396,8 @@ const styles = StyleSheet.create({
   actionStack: {
     gap: 8,
   },
-  quickSection: {
-    gap: 6,
-    marginTop: 4,
-  },
+  attentionSection: { gap: 6 },
   assignedSection: { gap: 6 },
-  quickGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  quickAction: { minHeight: 42, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, paddingHorizontal: 12, paddingVertical: 9, justifyContent: 'center' },
-  quickActionLabel: { color: colors.textPrimary, fontSize: 14, fontWeight: '600' },
-  quickActionMeta: { color: colors.primary, fontSize: 11, fontWeight: '700' },
   topRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -365,11 +407,6 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     fontSize: 16,
     fontWeight: '700',
-  },
-  settingsLink: {
-    color: colors.textSecondary,
-    fontSize: 14,
-    fontWeight: '600',
   },
   warningBlock: {
     gap: 8,
