@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Linking, StyleSheet, Text, View } from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
+import { Redirect, useLocalSearchParams } from 'expo-router';
 import { loadMySopDetail } from '@/api/sopsApi';
 import { prepareDownload } from '@/api/storageApi';
 import { ErrorState } from '@/components/ErrorState';
@@ -13,6 +13,7 @@ import { isOnline } from '@/services/connectivity';
 import { loadSopCache, saveSopCache } from '@/services/sopCacheStorage';
 import { useAuthStore } from '@/store/authStore';
 import { colors, spacing, typography } from '@/theme/colors';
+import { normalizeContentMode } from '@/types/document';
 import type { SopVersion } from '@/types/sop';
 
 function identityFor(user: ReturnType<typeof useAuthStore>['user']) {
@@ -69,6 +70,9 @@ export default function SopDetailScreen() {
 
   if (loading && !sop) return <Screen><LoadingState label="Loading SOP..." /></Screen>;
   if (!sop) return <Screen><ErrorState message={error ?? 'SOP was not found.'} onRetry={() => { void load(); }} /></Screen>;
+  if (normalizeContentMode(sop.contentMode) === 'document') {
+    return <Redirect href={{ pathname: '/sop-document', params: { sopId: sop.sopId } }} />;
+  }
 
   return <Screen testID="sop-detail-screen">
     <ScreenHeader title={sop.title} subtitle={sop.shortDescription} action={<StatusBadge label={sop.category} tone="active" />} />

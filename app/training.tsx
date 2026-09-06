@@ -10,6 +10,7 @@ import { formatTrainingDate, getTrainingStatusLabel, getTrainingStatusTone } fro
 import { useTrainingActions } from '@/hooks/useTrainingActions';
 import { useTrainingStore } from '@/store/trainingStore';
 import { spacing } from '@/theme/colors';
+import { normalizeContentMode } from '@/types/document';
 
 type TrainingTab = 'assigned' | 'history';
 
@@ -52,7 +53,10 @@ export default function TrainingScreen() {
         <SectionCard>{completions.map((completion) => (
           <ListRow key={completion.id} testID={`training-completion-${completion.id}`} title={completion.trainingTitle}
             subtitle={`Completed ${formatTrainingDate(completion.completedAt, true)} · Version ${completion.completedVersion}`}
-            leading={<StatusBadge label="Completed" tone="success" />} />
+            leading={<StatusBadge label="Completed" tone="success" />}
+            onPress={normalizeContentMode(completion.contentMode) === 'document'
+              ? () => router.push({ pathname: '/training-completion', params: { completionId: completion.completionId } })
+              : undefined} />
         ))}</SectionCard>
       ) : null}
     </Screen>

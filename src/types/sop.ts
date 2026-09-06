@@ -1,8 +1,12 @@
+import type { ContentMode, PdfDocumentMetadata } from '@/types/document';
+
 export interface SopVersion {
   sopId: string;
   businessId: string;
   version: number;
   title: string;
+  contentMode?: ContentMode;
+  document?: PdfDocumentMetadata | null;
   category: string;
   shortDescription: string;
   purpose: string;

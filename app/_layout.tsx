@@ -112,8 +112,10 @@ function RootLayout() {
                             <Stack.Screen name="employee-hub" options={{ headerShown: false, gestureEnabled: false }} />
                             <Stack.Screen name="training" options={secondaryScreenOptions('Training')} />
                             <Stack.Screen name="training-detail" options={secondaryScreenOptions('Training')} />
+                            <Stack.Screen name="training-completion" options={secondaryScreenOptions('Completed Training')} />
                             <Stack.Screen name="sops" options={secondaryScreenOptions('SOP Library')} />
                             <Stack.Screen name="sop-detail" options={secondaryScreenOptions('SOP')} />
+                            <Stack.Screen name="sop-document" options={secondaryScreenOptions('SOP')} />
                             <Stack.Screen name="time-off" options={secondaryScreenOptions('Time Off')} />
                             <Stack.Screen name="request-time-off" options={secondaryScreenOptions('Request Time Off')} />
                             <Stack.Screen name="time-off-detail" options={secondaryScreenOptions('Time Off Details')} />

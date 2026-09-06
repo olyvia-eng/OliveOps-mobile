@@ -30,6 +30,8 @@
     "plugins": [
       "expo-router",
       "expo-secure-store",
+      "@config-plugins/react-native-blob-util",
+      "@config-plugins/react-native-pdf",
       [
         "expo-splash-screen",
         {

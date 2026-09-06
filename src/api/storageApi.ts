@@ -2,6 +2,7 @@ import { ENDPOINTS } from '@/api/endpoints';
 import { apiRequest } from '@/api/client';
 import { fetchWithTimeout } from '@/services/fetchWithTimeout';
 import type { PrepareUploadRequest, PrepareUploadResponse } from '@/types/api';
+import type { PrepareDownloadResponse } from '@/types/document';
 
 const FILE_READ_TIMEOUT_MS = 30_000;
 const UPLOAD_TIMEOUT_MS = 90_000;
@@ -59,8 +60,8 @@ export async function completeUpload(fileId: string, accessToken?: string): Prom
   });
 }
 
-export async function prepareDownload(fileId: string, accessToken?: string): Promise<{ ok: boolean; fileId: string; downloadUrl: string }> {
-  return apiRequest<{ ok: boolean; fileId: string; downloadUrl: string }>(ENDPOINTS.storage, {
+export async function prepareDownload(fileId: string, accessToken?: string): Promise<PrepareDownloadResponse> {
+  return apiRequest<PrepareDownloadResponse>(ENDPOINTS.storage, {
     method: 'POST',
     body: JSON.stringify({ action: 'prepare-download', fileId }),
     accessToken,

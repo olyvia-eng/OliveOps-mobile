@@ -12,6 +12,7 @@ import { isOnline } from '@/services/connectivity';
 import { loadSopCache, saveSopCache } from '@/services/sopCacheStorage';
 import { useAuthStore } from '@/store/authStore';
 import { colors, radii, spacing, typography } from '@/theme/colors';
+import { normalizeContentMode } from '@/types/document';
 import type { SopVersion } from '@/types/sop';
 
 function identityFor(user: ReturnType<typeof useAuthStore>['user']) {
@@ -100,7 +101,10 @@ export default function SopsScreen() {
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { void refresh(true); }} />}
       renderItem={({ item }) => <SectionCard><ListRow testID={`sop-row-${item.sopId}`} title={item.title}
         subtitle={item.shortDescription} detail={`v${item.version} · ${formatPublishedAt(item.publishedAt)}`}
-        onPress={() => router.push({ pathname: '/sop-detail', params: { sopId: item.sopId } })} /></SectionCard>}
+        onPress={() => router.push({
+          pathname: normalizeContentMode(item.contentMode) === 'document' ? '/sop-document' : '/sop-detail',
+          params: { sopId: item.sopId },
+        })} /></SectionCard>}
       ListEmptyComponent={<EmptyState title={query || category !== 'All' ? 'No matching SOPs' : 'No SOPs available'}
         message={query || category !== 'All' ? 'Try another search or category.' : 'Published company procedures will appear here.'}
         action={error ? <SecondaryButton label="Retry" onPress={() => { void refresh(true); }} /> : undefined} />} />

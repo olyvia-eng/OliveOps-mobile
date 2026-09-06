@@ -1,3 +1,5 @@
+import type { ContentMode, PdfDocumentMetadata } from '@/types/document';
+
 export type TrainingRecurrenceType = 'one_time' | 'annual' | 'custom_months';
 export type TrainingStatus = 'not_started' | 'due_soon' | 'overdue' | 'current' | 'revoked';
 
@@ -13,6 +15,8 @@ export interface TrainingVersion {
   trainingId: string;
   version: number;
   title: string;
+  contentMode?: ContentMode;
+  document?: PdfDocumentMetadata | null;
   shortDescription: string;
   instructions: string;
   attachmentFileId: string | null;
@@ -57,6 +61,8 @@ export interface TrainingCompletion {
   trainingId: string;
   completedVersion: number;
   trainingTitle: string;
+  contentMode?: ContentMode;
+  document?: PdfDocumentMetadata | null;
   checklistItems: Array<Pick<TrainingChecklistItem, 'itemId' | 'text' | 'required'> & { checked: true }>;
   acknowledgementStatement: string;
   acknowledged: true;

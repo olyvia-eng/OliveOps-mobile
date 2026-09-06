@@ -39,7 +39,11 @@ jest.mock('@/api/storageApi', () => ({ prepareDownload: (...args: unknown[]) => 
 jest.mock('@/store/authStore', () => ({ useAuthStore: () => ({ accessToken: 'token-1' }) }));
 jest.mock('@/hooks/useTrainingActions', () => ({ useTrainingActions: () => ({ refreshAssignments: mockRefreshAssignments }) }));
 jest.mock('@/services/requestGuards', () => ({ createRequestMeta: () => ({ idempotencyKey: 'training-attempt-1' }) }));
-jest.mock('@/components/Screen', () => ({ Screen: ({ children }: any) => require('react').createElement('screen', {}, children) }));
+jest.mock('@/components/AuthorizedPdfViewer', () => ({ AuthorizedPdfViewer: (props: any) => require('react').createElement('pdf-viewer', props) }));
+jest.mock('@/components/Screen', () => ({
+  Screen: ({ children }: any) => require('react').createElement('screen', {}, children),
+  ScreenSafeAreaView: ({ children }: any) => require('react').createElement('safe-area', {}, children),
+}));
 jest.mock('@/components/PrimaryActionButton', () => ({ PrimaryActionButton: (props: any) => require('react').createElement('primary-button', props) }));
 jest.mock('@/components/SecondaryButton', () => ({ SecondaryButton: (props: any) => require('react').createElement('secondary-button', props) }));
 jest.mock('react-native', () => {
@@ -97,6 +101,37 @@ describe('TrainingDetailScreen', () => {
     await act(async () => { await tree.root.findByType('secondary-button').props.onPress(); });
     expect(mockPrepareDownload).toHaveBeenCalledWith('file-1', 'token-1');
     expect(mockOpenUrl).toHaveBeenCalledWith('https://signed.example/training');
+  });
+
+  it('shows document Training without completing on open and preserves acknowledgement gating', async () => {
+    mockLoadDetail.mockResolvedValueOnce({
+      ...detail,
+      version: {
+        ...detail.version,
+        contentMode: 'document',
+        document: {
+          fileId: 'pdf-2', originalFileName: 'whmis-v2.pdf', mimeType: 'application/pdf', sizeBytes: 2048,
+          uploadedAt: '2026-09-01T12:00:00.000Z', status: 'ready', version: 2,
+        },
+        attachmentFileId: null,
+        checklist: [],
+      },
+    });
+    let tree: any;
+    await act(async () => { tree = create(<TrainingDetailScreen />); });
+
+    expect(tree.root.findByType('pdf-viewer').props.document.fileId).toBe('pdf-2');
+    expect(mockComplete).not.toHaveBeenCalled();
+    expect(tree.root.findByType('primary-button').props.disabled).toBe(true);
+
+    await act(async () => tree.root.findByProps({ testID: 'training-acknowledgement' }).props.onPress());
+    await act(async () => { await tree.root.findByType('primary-button').props.onPress(); });
+    expect(mockComplete).toHaveBeenCalledWith({
+      assignmentId: 'assignment-1',
+      submissionId: 'training-attempt-1',
+      checklistResponses: [],
+      acknowledged: true,
+    }, 'token-1');
   });
 
   it('treats an already completed cycle as authoritative success', async () => {

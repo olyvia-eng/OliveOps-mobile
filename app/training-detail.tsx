@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
-import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { prepareDownload } from '@/api/storageApi';
 import { completeTraining, loadMyTrainingDetail } from '@/api/trainingApi';
+import { AuthorizedPdfViewer } from '@/components/AuthorizedPdfViewer';
 import { ErrorState } from '@/components/ErrorState';
 import { InfoRow, ScreenHeader, SectionCard, SectionHeader, StatusBadge } from '@/components/MobilePrimitives';
 import { LoadingState } from '@/components/LoadingState';
 import { PrimaryActionButton } from '@/components/PrimaryActionButton';
-import { Screen } from '@/components/Screen';
+import { Screen, ScreenSafeAreaView } from '@/components/Screen';
 import { SecondaryButton } from '@/components/SecondaryButton';
 import { StatusBanner } from '@/components/StatusBanner';
 import { formatTrainingDate, getRecurrenceLabel, getTrainingStatusLabel, getTrainingStatusTone } from '@/features/training/presentation';
@@ -15,6 +16,7 @@ import { createRequestMeta } from '@/services/requestGuards';
 import { useTrainingActions } from '@/hooks/useTrainingActions';
 import { useAuthStore } from '@/store/authStore';
 import { colors, radii, spacing, typography } from '@/theme/colors';
+import { normalizeContentMode } from '@/types/document';
 import { ApiError } from '@/types/errors';
 import type { MyTrainingDetailResponse } from '@/types/training';
 
@@ -110,6 +112,63 @@ export default function TrainingDetailScreen() {
   const allChecked = detail.version.checklist.every((item) => checkedItems.has(item.itemId));
   const canComplete = allChecked && acknowledged && !submitting;
 
+  if (normalizeContentMode(detail.version.contentMode) === 'document') {
+    return (
+      <ScreenSafeAreaView testID="training-document-screen-safe-area">
+        <View testID="training-document-screen" style={styles.documentScreen}>
+          <View style={styles.documentHeader}>
+            <ScreenHeader
+              title={detail.version.title}
+              subtitle={`Assigned version ${detail.version.version}`}
+              action={<StatusBadge label={getTrainingStatusLabel(detail.assignment.presentationStatus)} tone={getTrainingStatusTone(detail.assignment.presentationStatus)} />}
+            />
+            {error ? <StatusBanner tone="error" message={error} /> : null}
+          </View>
+          {detail.version.document ? (
+            <AuthorizedPdfViewer document={detail.version.document} />
+          ) : (
+            <ErrorState message="The PDF for this Training version is unavailable." onRetry={() => { void load(); }} />
+          )}
+          {detail.version.document ? (
+            <View style={styles.completionPanel}>
+              {detail.version.checklist.length > 0 ? (
+                <ScrollView style={styles.documentChecklist} contentContainerStyle={styles.documentChecklistContent}>
+                  {detail.version.checklist.map((item) => {
+                    const checked = checkedItems.has(item.itemId);
+                    return (
+                      <Pressable
+                        key={item.itemId}
+                        testID={`training-check-${item.itemId}`}
+                        accessibilityRole="checkbox"
+                        accessibilityState={{ checked }}
+                        onPress={() => toggleItem(item.itemId)}
+                        style={({ pressed }) => [styles.checkRow, checked && styles.checkRowSelected, pressed && styles.pressed]}
+                      >
+                        <View style={[styles.checkbox, checked && styles.checkboxSelected]}><Text style={styles.checkmark}>{checked ? '✓' : ''}</Text></View>
+                        <Text style={styles.checkText}>{item.text}</Text>
+                      </Pressable>
+                    );
+                  })}
+                </ScrollView>
+              ) : null}
+              <Pressable
+                testID="training-acknowledgement"
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: acknowledged }}
+                onPress={() => setAcknowledged((value) => !value)}
+                style={({ pressed }) => [styles.acknowledgement, acknowledged && styles.checkRowSelected, pressed && styles.pressed]}
+              >
+                <View style={[styles.checkbox, acknowledged && styles.checkboxSelected]}><Text style={styles.checkmark}>{acknowledged ? '✓' : ''}</Text></View>
+                <Text style={styles.checkText}>{detail.version.acknowledgementStatement}</Text>
+              </Pressable>
+              <PrimaryActionButton label={submitting ? 'Completing...' : 'Complete Training'} disabled={!canComplete} onPress={() => { void submit(); }} />
+            </View>
+          ) : null}
+        </View>
+      </ScreenSafeAreaView>
+    );
+  }
+
   return (
     <Screen testID="training-detail-screen">
       <ScreenHeader
@@ -167,6 +226,11 @@ export default function TrainingDetailScreen() {
 }
 
 const styles = StyleSheet.create({
+  documentScreen: { flex: 1, paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.sm, gap: spacing.sm },
+  documentHeader: { gap: spacing.sm },
+  completionPanel: { gap: spacing.sm },
+  documentChecklist: { maxHeight: 144 },
+  documentChecklistContent: { gap: spacing.xs },
   section: { gap: spacing.sm },
   instructions: { color: colors.textPrimary, fontSize: typography.body, lineHeight: 23 },
   checkRow: { minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: spacing.md, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.divider, paddingVertical: spacing.sm },
