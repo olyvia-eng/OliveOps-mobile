@@ -25,5 +25,7 @@ export const ENDPOINTS = {
   trainingMyDetail: '/api/training?action=my-detail',
   trainingMyHistory: '/api/training?action=my-history',
   trainingComplete: '/api/training?action=complete',
+  sopsMyList: '/api/sops?action=my-list',
+  sopsMyDetail: '/api/sops?action=my-detail',
   storage: '/api/storage',
 } as const;

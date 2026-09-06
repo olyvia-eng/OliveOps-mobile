@@ -87,11 +87,11 @@ export default function TrainingDetailScreen() {
         acknowledged: true,
       }, accessToken);
       await refreshAssignments({ force: true });
-      router.replace('/employee-hub');
+      router.replace('/training');
     } catch (reason) {
       if (reason instanceof ApiError && reason.code === 'cycle_complete') {
         await refreshAssignments({ force: true });
-        router.replace('/employee-hub');
+        router.replace('/training');
         return;
       }
       if (reason instanceof ApiError && reason.code === 'stale_assignment') {

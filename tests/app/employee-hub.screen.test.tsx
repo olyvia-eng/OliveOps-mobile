@@ -3,7 +3,6 @@ import { act, create } from 'react-test-renderer';
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 
 const mockLoadTraining = jest.fn();
-const mockLoadHistory = jest.fn();
 const mockPush = jest.fn();
 let mockTrainingState: any;
 
@@ -12,7 +11,7 @@ jest.mock('expo-router', () => ({
   useFocusEffect: (callback: () => void) => require('react').useEffect(callback, [callback]),
 }));
 jest.mock('@/hooks/useTrainingActions', () => ({
-  useTrainingActions: () => ({ refreshAssignments: mockLoadTraining, refreshHistory: mockLoadHistory }),
+  useTrainingActions: () => ({ refreshAssignments: mockLoadTraining }),
 }));
 jest.mock('@/store/trainingStore', () => ({ useTrainingStore: () => mockTrainingState }));
 jest.mock('@/components/Screen', () => ({
@@ -43,7 +42,6 @@ describe('EmployeeHubScreen', () => {
   beforeEach(() => {
     mockPush.mockReset();
     mockLoadTraining.mockReset().mockResolvedValue({ ok: true });
-    mockLoadHistory.mockReset().mockResolvedValue({ ok: true });
     mockTrainingState = {
       overdueCount: 0,
       dueSoonCount: 1,
@@ -54,29 +52,28 @@ describe('EmployeeHubScreen', () => {
         id: 'assignment-1', assignmentId: 'assignment-1', trainingTitle: 'WHMIS',
         currentDueDate: '2026-09-10', presentationStatus: 'due_soon',
       }],
-      completions: [{
-        id: 'completion-1', completionId: 'completion-1', trainingTitle: 'Site Orientation',
-        completedAt: '2026-09-01T14:00:00.000Z', completedVersion: 3,
-      }],
+      completions: [],
     };
   });
 
   it('shows attention work and opens the exact assignment', async () => {
     let tree: any;
     await act(async () => { tree = create(<EmployeeHubScreen />); });
-    expect(textOf(tree)).toContain('1 assignment need attention.');
+    expect(textOf(tree)).toContain('Needs your attention');
     expect(textOf(tree)).toContain('WHMIS');
+    expect(textOf(tree)).toContain('Standard Operating Procedures');
     expect(tree.root.findByType('primary-screen').props.edges).toEqual(['top', 'left', 'right']);
-    await act(async () => tree.root.findByProps({ testID: 'training-row-assignment-1' }).props.onPress());
+    await act(async () => tree.root.findByProps({ testID: 'hub-training-assignment-1' }).props.onPress());
     expect(mockPush).toHaveBeenCalledWith({ pathname: '/training-detail', params: { assignmentId: 'assignment-1' } });
   });
 
-  it('shows immutable completion history separately from assignments', async () => {
+  it('opens Training and SOP resources without treating SOPs as attention', async () => {
     let tree: any;
     await act(async () => { tree = create(<EmployeeHubScreen />); });
-    await act(async () => tree.root.findByProps({ testID: 'employee-hub-tab-history' }).props.onPress());
-    expect(textOf(tree)).toContain('Site Orientation');
-    expect(textOf(tree)).toContain('Version 3');
-    expect(tree.root.findByProps({ testID: 'training-completion-completion-1' })).toBeTruthy();
+    await act(async () => tree.root.findByProps({ testID: 'hub-resource-training' }).props.onPress());
+    expect(mockPush).toHaveBeenCalledWith('/training');
+    await act(async () => tree.root.findByProps({ testID: 'hub-resource-sops' }).props.onPress());
+    expect(mockPush).toHaveBeenCalledWith('/sops');
+    expect(textOf(tree)).toContain('do not affect Training completion');
   });
 });

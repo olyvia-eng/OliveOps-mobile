@@ -87,7 +87,7 @@ describe('TrainingDetailScreen', () => {
       ],
       acknowledged: true,
     }, 'token-1');
-    expect(mockReplace).toHaveBeenCalledWith('/employee-hub');
+    expect(mockReplace).toHaveBeenCalledWith('/training');
     expect(mockRefreshAssignments).toHaveBeenCalledWith({ force: true });
   });
 
@@ -107,6 +107,6 @@ describe('TrainingDetailScreen', () => {
     await act(async () => tree.root.findByProps({ testID: 'training-check-item-2' }).props.onPress());
     await act(async () => tree.root.findByProps({ testID: 'training-acknowledgement' }).props.onPress());
     await act(async () => { await tree.root.findByType('primary-button').props.onPress(); });
-    expect(mockReplace).toHaveBeenCalledWith('/employee-hub');
+    expect(mockReplace).toHaveBeenCalledWith('/training');
   });
 });
