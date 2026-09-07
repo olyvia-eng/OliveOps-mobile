@@ -13,6 +13,7 @@ import {
   hasPendingCorrectionForEntry,
   isAuthoritativeActiveEntry,
   resolveEntryPrimaryLabel,
+  resolveServiceVisitProperty,
   resolveWorkAreaName,
 } from '@/features/clocking/presentation';
 import { useEffectiveClockState } from '@/hooks/useEffectiveClockState';
@@ -108,6 +109,7 @@ export default function TimeHistoryScreen() {
               ) : null}
             </View>
             <Text style={styles.entryRange}>{formatEntryTimeRange(item.entry, isAuthoritativeActiveEntry(item.entry.id, authoritativeActiveEntryId), businessTimeZone)}</Text>
+            {resolveServiceVisitProperty(item.entry) ? <Text style={styles.entryRange}>{resolveServiceVisitProperty(item.entry)}</Text> : null}
             {resolveWorkAreaName(item.entry) ? <Text style={styles.entryRange}>Work Area: {resolveWorkAreaName(item.entry)}</Text> : null}
           </Pressable>
         )}

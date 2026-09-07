@@ -20,8 +20,10 @@ function identityFor(user: ReturnType<typeof useAuthStore>['user']) {
 }
 
 export default function SopDocumentScreen() {
-  const params = useLocalSearchParams<{ sopId?: string | string[] }>();
+  const params = useLocalSearchParams<{ sopId?: string | string[]; expectedVersion?: string | string[] }>();
   const sopId = Array.isArray(params.sopId) ? params.sopId[0] : params.sopId ?? '';
+  const expectedVersionValue = Array.isArray(params.expectedVersion) ? params.expectedVersion[0] : params.expectedVersion;
+  const expectedVersion = expectedVersionValue ? Number(expectedVersionValue) : undefined;
   const { accessToken, user } = useAuthStore();
   const identityKey = identityFor(user);
   const identityRef = useRef(identityKey);
@@ -35,7 +37,7 @@ export default function SopDocumentScreen() {
     if (!identityKey || !sopId) { setLoading(false); setError('SOP was not found.'); return; }
     setLoading(true);
     const cache = await loadSopCache(identityKey).catch(() => null);
-    const cached = cache?.sops.find((item) => item.sopId === sopId) ?? null;
+    const cached = cache?.sops.find((item) => item.sopId === sopId && (expectedVersion === undefined || item.version === expectedVersion)) ?? null;
     if (identityRef.current !== identityKey) return;
     if (cached && normalizeContentMode(cached.contentMode) === 'document') setSop(cached);
     if (!await isOnline()) {
@@ -48,8 +50,12 @@ export default function SopDocumentScreen() {
     try {
       const payload = await loadMySopDetail(sopId, accessToken);
       if (identityRef.current !== identityKey) return;
+      if (expectedVersion !== undefined && payload.sop.version !== expectedVersion) {
+        setSop(null);
+        throw new Error('This SOP version changed. Return to the Visit and refresh before continuing.');
+      }
       if (normalizeContentMode(payload.sop.contentMode) !== 'document') {
-        router.replace({ pathname: '/sop-detail', params: { sopId } });
+        router.replace({ pathname: '/sop-detail', params: { sopId, expectedVersion: expectedVersionValue } });
         return;
       }
       setSop(payload.sop);
@@ -65,7 +71,7 @@ export default function SopDocumentScreen() {
     }
   }
 
-  useEffect(() => { void load(); }, [accessToken, identityKey, sopId]);
+  useEffect(() => { void load(); }, [accessToken, expectedVersion, identityKey, sopId]);
 
   if (loading && !sop) return <Screen><LoadingState label="Loading SOP PDF..." /></Screen>;
   if (!sop) return <Screen><ErrorState message={error ?? 'SOP was not found.'} onRetry={() => { void load(); }} /></Screen>;

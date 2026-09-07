@@ -61,6 +61,8 @@ export default function ActiveShiftScreen() {
     if (!entry) return 'No active activity';
     return getWorkTypeLabel(entry.workType);
   }, [entry]);
+  const visitLabel = entry?.serviceVisitId ? entry.serviceName?.trim() || 'Service Visit' : null;
+  const visitPlace = entry?.serviceVisitId ? entry.propertyName?.trim() : null;
 
   const unbillableCategoryLabel = useMemo(() => {
     if (!entry) return null;
@@ -104,6 +106,8 @@ export default function ActiveShiftScreen() {
             </View>
             <Text style={styles.currentWorkTitle}>Current Work</Text>
             <View style={styles.currentWorkDetails}>
+              {visitLabel ? <InfoRow label="Service" value={visitLabel} emphasis /> : null}
+              {visitPlace ? <InfoRow label="Property" value={visitPlace} /> : null}
               {entry.workType === 'job' ? <InfoRow label="Job" value={jobLabel} emphasis /> : null}
               {resolveWorkAreaName(entry) ? <InfoRow label="Work Area" value={resolveWorkAreaName(entry)!} /> : null}
               <InfoRow label="Activity" value={entry.workType === 'non_billable' ? unbillableCategoryLabel ?? activityLabel : activityLabel} />
@@ -116,6 +120,9 @@ export default function ActiveShiftScreen() {
           </SectionCard>
 
           <View style={styles.actions}>
+            {entry.serviceVisitId && entry.jobId ? (
+              <SecondaryButton label="View Visit" onPress={() => router.push({ pathname: '/service-visit', params: { jobId: entry.jobId, visitId: entry.serviceVisitId } })} />
+            ) : null}
             <SecondaryButton label="Switch Activity" onPress={() => router.push('/switch-activity')} />
             <PrimaryActionButton label="Clock Out" onPress={() => router.push('/clock-out')} />
           </View>
@@ -131,7 +138,7 @@ export default function ActiveShiftScreen() {
                   </View>
                   <View style={styles.segmentContent}>
                     <View style={styles.segmentTop}>
-                      <Text style={styles.segmentTitle}>{getWorkTypeLabel(segment.workType)}{segment.workType === 'job' ? ` — ${resolveEntryPrimaryLabel(segment, effectiveJobs)}` : ''}</Text>
+                      <Text style={styles.segmentTitle}>{segment.serviceVisitId ? segment.serviceName || 'Service Visit' : getWorkTypeLabel(segment.workType)}{segment.workType === 'job' ? ` — ${segment.propertyName || resolveEntryPrimaryLabel(segment, effectiveJobs)}` : ''}</Text>
                       <Text style={styles.segmentDuration}>{formatDurationForEntry(segment, now)}</Text>
                     </View>
                     <Text style={styles.segmentTime}>{formatEntryTimeRange(segment, segment.id === entry.id, businessTimeZone)}</Text>

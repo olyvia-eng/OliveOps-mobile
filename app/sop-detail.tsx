@@ -21,8 +21,10 @@ function identityFor(user: ReturnType<typeof useAuthStore>['user']) {
 }
 
 export default function SopDetailScreen() {
-  const params = useLocalSearchParams<{ sopId?: string | string[] }>();
+  const params = useLocalSearchParams<{ sopId?: string | string[]; expectedVersion?: string | string[] }>();
   const sopId = Array.isArray(params.sopId) ? params.sopId[0] : params.sopId ?? '';
+  const expectedVersionValue = Array.isArray(params.expectedVersion) ? params.expectedVersion[0] : params.expectedVersion;
+  const expectedVersion = expectedVersionValue ? Number(expectedVersionValue) : undefined;
   const { accessToken, user } = useAuthStore();
   const identityKey = identityFor(user);
   const identityRef = useRef(identityKey);
@@ -37,7 +39,7 @@ export default function SopDetailScreen() {
     if (!identityKey || !sopId) { setLoading(false); setError('SOP was not found.'); return; }
     setLoading(true);
     const cache = await loadSopCache(identityKey).catch(() => null);
-    const cached = cache?.sops.find((item) => item.sopId === sopId) ?? null;
+    const cached = cache?.sops.find((item) => item.sopId === sopId && (expectedVersion === undefined || item.version === expectedVersion)) ?? null;
     if (identityRef.current !== identityKey) return;
     if (cached) setSop(cached);
     if (!await isOnline()) {
@@ -47,6 +49,10 @@ export default function SopDetailScreen() {
     try {
       const payload = await loadMySopDetail(sopId, accessToken);
       if (identityRef.current !== identityKey) return;
+      if (expectedVersion !== undefined && payload.sop.version !== expectedVersion) {
+        setSop(null);
+        throw new Error('This SOP version changed. Return to the Visit and refresh before continuing.');
+      }
       setSop(payload.sop); setOffline(false); setError(null);
       const remaining = (cache?.sops ?? []).filter((item) => item.sopId !== sopId);
       await saveSopCache({ identityKey, updatedAt: new Date().toISOString(), sops: [payload.sop, ...remaining] });
@@ -56,7 +62,7 @@ export default function SopDetailScreen() {
     } finally { setLoading(false); }
   }
 
-  useEffect(() => { void load(); }, [accessToken, identityKey, sopId]);
+  useEffect(() => { void load(); }, [accessToken, expectedVersion, identityKey, sopId]);
 
   async function openAttachment(fileId: string) {
     setOpeningFileId(fileId); setError(null);
@@ -71,7 +77,7 @@ export default function SopDetailScreen() {
   if (loading && !sop) return <Screen><LoadingState label="Loading SOP..." /></Screen>;
   if (!sop) return <Screen><ErrorState message={error ?? 'SOP was not found.'} onRetry={() => { void load(); }} /></Screen>;
   if (normalizeContentMode(sop.contentMode) === 'document') {
-    return <Redirect href={{ pathname: '/sop-document', params: { sopId: sop.sopId } }} />;
+    return <Redirect href={{ pathname: '/sop-document', params: { sopId: sop.sopId, expectedVersion: expectedVersionValue } }} />;
   }
 
   return <Screen testID="sop-detail-screen">

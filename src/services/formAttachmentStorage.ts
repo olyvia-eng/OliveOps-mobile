@@ -77,6 +77,8 @@ export async function createDurableFormPhoto(input: {
   jobId?: string;
   equipmentId?: string;
   divisionId?: string;
+  serviceId?: string;
+  serviceVisitId?: string;
 }) {
   const localAttachmentId = attachmentId();
   const normalized = await manipulateAsync(
@@ -103,6 +105,8 @@ export async function createDurableFormPhoto(input: {
     jobId: input.jobId,
     equipmentId: input.equipmentId,
     divisionId: input.divisionId,
+    serviceId: input.serviceId,
+    serviceVisitId: input.serviceVisitId,
     localUri: destination.uri,
     fileName: `${localAttachmentId.replaceAll(':', '-')}.jpg`,
     mimeType: 'image/jpeg',
@@ -229,6 +233,8 @@ export async function ensureFormPhotoUploaded(record: LocalFormAttachment, acces
         jobId: current.jobId,
         equipmentId: current.equipmentId,
         divisionId: current.divisionId,
+        serviceId: current.serviceId,
+        serviceVisitId: current.serviceVisitId,
       }, accessToken);
       if (!prepared.fileId || !prepared.uploadUrl || !prepared.expiresAt) throw new Error('Photo upload could not be prepared.');
       current = await save({

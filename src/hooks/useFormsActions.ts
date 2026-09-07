@@ -26,7 +26,9 @@ function contextMatches(
 ) {
   return (!payload.jobId || completedContext?.jobId === payload.jobId)
     && (!payload.equipmentId || completedContext?.equipmentId === payload.equipmentId)
-    && (!payload.divisionId || completedContext?.divisionId === payload.divisionId);
+    && (!payload.divisionId || completedContext?.divisionId === payload.divisionId)
+    && (!payload.serviceId || completedContext?.serviceId === payload.serviceId)
+    && (!payload.serviceVisitId || completedContext?.serviceVisitId === payload.serviceVisitId);
 }
 
 function captureUnexpectedFormsError(error: unknown, operation: string) {
@@ -96,7 +98,7 @@ export function useFormsActions() {
     filters: EmployeeFormsContextFilter = {},
   ) => {
     if (!authIdentity) return { ok: false as const, error: 'Please log in to view Forms.' };
-    const key = `forms:required:${trigger}:${filters.jobId ?? ''}:${filters.equipmentId ?? ''}:${filters.divisionId ?? ''}`;
+    const key = `forms:required:${trigger}:${filters.jobId ?? ''}:${filters.equipmentId ?? ''}:${filters.divisionId ?? ''}:${filters.serviceId ?? ''}:${filters.serviceVisitId ?? ''}`;
     if (!beginRequest(key)) return { ok: false as const, error: 'Required Forms are already loading.' };
     const requestIdentity = authIdentity;
     try {
@@ -137,7 +139,7 @@ export function useFormsActions() {
 
   const submitForm = useCallback(async (payload: SubmitEmployeeFormRequest) => {
     if (!authIdentity) return { ok: false as const, error: 'Please log in to submit this form.' };
-    const key = `forms:submit:${payload.formId}:${payload.trigger}:${payload.jobId ?? ''}:${payload.equipmentId ?? ''}:${payload.divisionId ?? ''}`;
+    const key = `forms:submit:${payload.formId}:${payload.trigger}:${payload.jobId ?? ''}:${payload.equipmentId ?? ''}:${payload.divisionId ?? ''}:${payload.serviceId ?? ''}:${payload.serviceVisitId ?? ''}`;
     if (!beginRequest(key)) return { ok: false as const, error: 'This form is already being submitted.' };
 
     const requestIdentity = authIdentity;

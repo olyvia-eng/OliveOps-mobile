@@ -63,6 +63,7 @@ const mockUseAuthStore = jest.fn(() => ({
 }));
 
 let mockJobs: any[] = [];
+let mockServiceVisits: any[] = [];
 let mockCurrentActiveEntryId: string | null = null;
 let mockTimeEntries: any[] = [];
 let mockAdjustClockInTime = false;
@@ -72,6 +73,8 @@ const mockUseClockingStore = jest.fn(() => ({
   currentActiveEntryId: mockCurrentActiveEntryId,
   timeEntries: mockTimeEntries,
   jobs: mockJobs,
+  todayServiceVisits: mockServiceVisits,
+  upcomingServiceVisits: [],
 }));
 
 jest.mock('expo-router', () => ({
@@ -195,6 +198,7 @@ describe('ClockInScreen', () => {
     mockJobs = [
       { id: 'job-1', title: 'Site A', status: 'scheduled', assignedEmployeeIds: ['emp-1'] },
     ];
+    mockServiceVisits = [];
     mockCurrentActiveEntryId = null;
     mockTimeEntries = [];
     mockAdjustClockInTime = false;
@@ -417,6 +421,29 @@ describe('ClockInScreen', () => {
 
     expect(mockClockIn).toHaveBeenCalledWith('emp-1', 'job', ['job-1'], undefined, { requestId: 'req-1', idempotencyKey: 'key-1' });
     expect(router.replace).toHaveBeenCalledWith('/active-shift');
+  });
+
+  it('clocks into a Service Visit as Job Work with its immutable tuple', async () => {
+    mockServiceVisits = [{
+      id: 'visit-1', jobId: 'job-1', serviceId: 'service-1', jobName: 'Site A',
+      serviceName: 'Weekly Mowing', customerName: 'Morgan', propertyName: 'Oak Residence',
+      propertyAddress: '10 Oak Street', scheduledDate: '2026-09-07', scheduleAllDay: true,
+      status: 'scheduled', billingType: 'per_visit', hasRequiredForms: false, hasSops: false,
+    }];
+    let tree: any;
+    await act(async () => { tree = create(<ClockInScreen />); });
+    await chooseActivity(tree, 'job');
+    await act(async () => tree.root.findByProps({ testID: 'visit-option-visit-1' }).props.onPress());
+    await continueFlow(tree);
+
+    expect(mockGetRequiredForms).toHaveBeenCalledWith('before_starting_job', {
+      jobId: 'job-1', serviceId: 'service-1', serviceVisitId: 'visit-1',
+    });
+    expect(mockClockIn).toHaveBeenCalledWith(
+      'emp-1', 'job', ['job-1'], undefined, { requestId: 'req-1', idempotencyKey: 'key-1' },
+      undefined, undefined,
+      { jobId: 'job-1', serviceId: 'service-1', serviceVisitId: 'visit-1', serviceName: 'Weekly Mowing', propertyName: 'Oak Residence' },
+    );
   });
 
   it('shows Start Time only with permission and submits the selected business-time intent', async () => {

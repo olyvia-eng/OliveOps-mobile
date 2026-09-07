@@ -2,6 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import { useAuthStore } from '@/store/authStore';
 import type { ActivityConfig } from '@/types/api';
 import type { Job, TimeCorrectionRequest, TimeEntry, UnbillableCategory } from '@/types/domain';
+import type { ServiceVisitSummary } from '@/types/serviceVisit';
 import { DEFAULT_BUSINESS_TIME_ZONE, normalizeBusinessTimeZone } from '@/utils/businessTime';
 import {
   DEFAULT_CLOCKING_CAPABILITIES,
@@ -28,6 +29,9 @@ type ClockingState = {
   currentActiveEntryId: string | null;
   activeShiftWarnings: ActiveShiftWarnings;
   activityConfigs?: ActivityConfig[];
+  serviceVisitHorizonDays?: number;
+  todayServiceVisits: ServiceVisitSummary[];
+  upcomingServiceVisits: ServiceVisitSummary[];
   setBusinessTimeZone: (timeZone?: string | null) => void;
   setClockingCapabilities: (capabilities?: Partial<ClockingCapabilities> | null) => void;
   setJobs: (jobs: Job[]) => void;
@@ -40,6 +44,7 @@ type ClockingState = {
   setCurrentActiveEntryId: (entryId: string | null) => void;
   setActiveShiftWarnings: (warnings?: Partial<ActiveShiftWarnings>) => void;
   setActivityConfigs: (configs?: ActivityConfig[]) => void;
+  setServiceVisits: (horizonDays?: number, today?: ServiceVisitSummary[], upcoming?: ServiceVisitSummary[]) => void;
   upsertTimeEntry: (entry: TimeEntry) => void;
   resetClockingState: () => void;
 };
@@ -64,6 +69,9 @@ export function ClockingProvider({ children }: { children: React.ReactNode }) {
     thresholdHours: 12,
   });
   const [activityConfigs, setActivityConfigs] = useState<ActivityConfig[] | undefined>(undefined);
+  const [serviceVisitHorizonDays, setServiceVisitHorizonDays] = useState<number | undefined>(undefined);
+  const [todayServiceVisits, setTodayServiceVisits] = useState<ServiceVisitSummary[]>([]);
+  const [upcomingServiceVisits, setUpcomingServiceVisits] = useState<ServiceVisitSummary[]>([]);
   const previousIdentityRef = useRef<string | null>(null);
 
   const setActiveShiftWarnings = useCallback((next?: Partial<ActiveShiftWarnings>) => {
@@ -106,6 +114,12 @@ export function ClockingProvider({ children }: { children: React.ReactNode }) {
     setUnbillableCategoriesBusinessId(null);
   }, []);
 
+  const setServiceVisits = useCallback((horizonDays?: number, today: ServiceVisitSummary[] = [], upcoming: ServiceVisitSummary[] = []) => {
+    setServiceVisitHorizonDays(horizonDays);
+    setTodayServiceVisits(today);
+    setUpcomingServiceVisits(upcoming);
+  }, []);
+
   const resetClockingState = useCallback(() => {
     setBusinessTimeZoneState(DEFAULT_BUSINESS_TIME_ZONE);
     setClockingCapabilitiesState(DEFAULT_CLOCKING_CAPABILITIES);
@@ -123,6 +137,9 @@ export function ClockingProvider({ children }: { children: React.ReactNode }) {
       thresholdHours: 12,
     });
     setActivityConfigs(undefined);
+    setServiceVisitHorizonDays(undefined);
+    setTodayServiceVisits([]);
+    setUpcomingServiceVisits([]);
   }, []);
 
   useEffect(() => {
@@ -151,6 +168,9 @@ export function ClockingProvider({ children }: { children: React.ReactNode }) {
       currentActiveEntryId,
       activeShiftWarnings,
       activityConfigs,
+      serviceVisitHorizonDays,
+      todayServiceVisits,
+      upcomingServiceVisits,
       setBusinessTimeZone,
       setClockingCapabilities,
       setJobs,
@@ -163,6 +183,7 @@ export function ClockingProvider({ children }: { children: React.ReactNode }) {
       setCurrentActiveEntryId,
       setActiveShiftWarnings,
       setActivityConfigs,
+      setServiceVisits,
       upsertTimeEntry,
       resetClockingState,
     }),
@@ -178,14 +199,17 @@ export function ClockingProvider({ children }: { children: React.ReactNode }) {
       setActiveShiftWarnings,
       setBusinessTimeZone,
       setClockingCapabilities,
+      setServiceVisits,
       setUnbillableCategories,
       timeCorrections,
       timeEntries,
+      todayServiceVisits,
       unbillableCategories,
       unbillableCategoriesBusinessId,
       unbillableCategoriesError,
       unbillableCategoriesLoadedAt,
       unbillableCategoriesLoading,
+      upcomingServiceVisits,
       upsertTimeEntry,
     ]
   );

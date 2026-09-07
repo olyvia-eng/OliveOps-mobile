@@ -9,6 +9,8 @@ export type FormsWorkflowIntent =
     employeeId: string;
     workType: TimeEntryWorkType;
     jobIds: string[];
+    serviceId?: string;
+    serviceVisitId?: string;
     workAreaId?: string;
     unbillableCategoryId?: string;
     requestedClockInAt?: string;
@@ -19,12 +21,17 @@ export type FormsWorkflowIntent =
     activeEntryId: string;
     workType: TimeEntryWorkType;
     jobIds: string[];
+    serviceId?: string;
+    serviceVisitId?: string;
     workAreaId?: string;
     unbillableCategoryId?: string;
   }
   | {
     kind: 'clock_out_follow_up';
     recordedDurationLabel: string;
+    jobId?: string;
+    serviceId?: string;
+    serviceVisitId?: string;
   }
   | {
     kind: 'switch_activity_follow_up';

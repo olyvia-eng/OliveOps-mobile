@@ -1,8 +1,9 @@
 import type { ClockInRequest, ClockOutRequest, SwitchActivityRequest } from '@/types/api';
 import type { Job, TimeEntry, UnbillableCategory } from '@/types/domain';
+import type { ServiceVisitSummary } from '@/types/serviceVisit';
 
-export const OFFLINE_CLOCK_SCHEMA_VERSION = 2 as const;
-export const SUPPORTED_OFFLINE_CLOCK_SCHEMA_VERSIONS = new Set([1, OFFLINE_CLOCK_SCHEMA_VERSION]);
+export const OFFLINE_CLOCK_SCHEMA_VERSION = 3 as const;
+export const SUPPORTED_OFFLINE_CLOCK_SCHEMA_VERSIONS = new Set([1, 2, OFFLINE_CLOCK_SCHEMA_VERSION]);
 
 export type OfflineClockStatus = 'pending' | 'syncing' | 'needs_attention' | 'synced';
 export type EffectiveClockStatus =
@@ -26,7 +27,7 @@ export type OfflineClockOutPayload = Omit<
 };
 
 export type OfflineClockCommand = {
-  schemaVersion: 1 | typeof OFFLINE_CLOCK_SCHEMA_VERSION;
+  schemaVersion: 1 | 2 | typeof OFFLINE_CLOCK_SCHEMA_VERSION;
   id: string;
   identityKey: string;
   employeeId: string;
@@ -65,6 +66,8 @@ export type OfflineClockCache = {
   unbillableAvailable: boolean;
   requiredBeforeClockInForms?: boolean;
   requiredAfterClockOutForms?: boolean;
+  todayServiceVisits?: ServiceVisitSummary[];
+  upcomingServiceVisits?: ServiceVisitSummary[];
 };
 
 export type EffectiveClockState = {
@@ -76,7 +79,7 @@ export type EffectiveClockState = {
   currentSegmentStartedAt?: string;
   currentActivity: Pick<
     TimeEntry,
-    'workType' | 'jobId' | 'jobIds' | 'workAreaId' | 'workAreaNameSnapshot' | 'unbillableCategoryId' | 'unbillableCategoryName'
+    'workType' | 'jobId' | 'jobIds' | 'serviceId' | 'serviceVisitId' | 'serviceName' | 'propertyName' | 'workAreaId' | 'workAreaNameSnapshot' | 'unbillableCategoryId' | 'unbillableCategoryName'
   > | null;
   localShiftId: string | null;
   pendingCount: number;

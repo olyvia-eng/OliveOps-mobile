@@ -33,6 +33,22 @@ describe('clockingApi', () => {
     expect(payload.timeEntries?.[0]?.employeeId).toBe('emp-1');
   });
 
+  it('loads bounded Visit summaries and canonical active Visit context from bootstrap', async () => {
+    (global as any).fetch = jest.fn().mockResolvedValue(mockResponse(200, {
+      ok: true,
+      serviceVisitHorizonDays: 7,
+      todayServiceVisits: [{ id: 'visit-1', jobId: 'job-1', serviceId: 'service-1', serviceName: 'Mowing', propertyName: 'Smith Property', status: 'scheduled' }],
+      upcomingServiceVisits: [{ id: 'visit-2', jobId: 'job-1', serviceId: 'service-1', serviceName: 'Mowing', propertyName: 'Smith Property', status: 'scheduled' }],
+      activeTimeEntry: { id: 'entry-1', employeeId: 'emp-1', workType: 'job', jobId: 'job-1', jobIds: ['job-1'], serviceId: 'service-1', serviceVisitId: 'visit-1', serviceName: 'Mowing', propertyName: 'Smith Property', clockIn: '2026-09-07T12:00:00.000Z', breakMinutes: 0, notes: '', status: 'clocked_in' },
+    }));
+
+    const payload = await loadBootstrap('visit-token', { force: true });
+
+    expect(payload.serviceVisitHorizonDays).toBe(7);
+    expect(payload.todayServiceVisits?.[0].serviceVisitId ?? payload.todayServiceVisits?.[0].id).toBe('visit-1');
+    expect(payload.activeTimeEntry).toMatchObject({ serviceId: 'service-1', serviceVisitId: 'visit-1' });
+  });
+
   it('shares one in-flight bootstrap request for simultaneous callers', async () => {
     let resolveFetch!: (response: any) => void;
     const pendingFetch = new Promise<any>((resolve) => {
@@ -115,6 +131,19 @@ describe('clockingApi', () => {
     expect(payload.timeEntry.status).toBe('clocked_in');
   });
 
+  it('sends the canonical Service Visit tuple for Job Work', async () => {
+    const fetchMock = jest.fn().mockResolvedValue(mockResponse(200, {
+      ok: true,
+      timeEntry: { id: 'entry-visit', employeeId: 'emp-1', workType: 'job', jobId: 'job-1', jobIds: ['job-1'], serviceId: 'service-1', serviceVisitId: 'visit-1', clockIn: '2026-09-07T12:00:00.000Z', breakMinutes: 0, notes: '', status: 'clocked_in' },
+    }));
+    (global as any).fetch = fetchMock;
+
+    await clockIn({ employeeId: 'emp-1', workType: 'job', jobIds: ['job-1'], serviceId: 'service-1', serviceVisitId: 'visit-1', requestId: 'req-visit', idempotencyKey: 'key-visit' }, 'token-1');
+
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ workType: 'job', jobIds: ['job-1'], serviceId: 'service-1', serviceVisitId: 'visit-1' });
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).workAreaId).toBeUndefined();
+  });
+
   it('preserves HTTP 202 pending required-form clock-in responses without a time entry', async () => {
     (global as any).fetch = jest.fn().mockResolvedValue(mockResponse(202, {
       ok: true,
@@ -127,7 +156,7 @@ describe('clockingApi', () => {
       requiredForms: [{ requirementId: 'requirement-1', formId: 'form-1' }],
       remainingForms: [{ requirementId: 'requirement-1', formId: 'form-1' }],
       reminderForms: [],
-      clockInIntent: { employeeId: 'emp-1', workType: 'job', jobIds: ['j1'] },
+      clockInIntent: { employeeId: 'emp-1', workType: 'job', jobIds: ['j1'], serviceId: 'service-1', serviceVisitId: 'visit-1' },
     }));
 
     const payload = await clockIn({
@@ -136,6 +165,9 @@ describe('clockingApi', () => {
 
     expect(payload.status).toBe('clock_in_pending_required_forms');
     expect('timeEntry' in payload).toBe(false);
+    if (payload.status === 'clock_in_pending_required_forms') {
+      expect(payload.clockInIntent).toMatchObject({ serviceId: 'service-1', serviceVisitId: 'visit-1' });
+    }
   });
 
   it('uses dedicated pending and finalize clock-in actions without inventing a timestamp', async () => {

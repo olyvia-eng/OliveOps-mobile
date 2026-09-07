@@ -156,6 +156,8 @@ describe('useClockingActions bootstrap behavior', () => {
     expect(mockUpdateEligibilityCache).toHaveBeenCalledWith({
       jobs: bootstrapPayload().jobs,
       activityConfigs: [],
+      todayServiceVisits: [],
+      upcomingServiceVisits: [],
       requiredBeforeClockInForms: undefined,
       requiredAfterClockOutForms: undefined,
     });

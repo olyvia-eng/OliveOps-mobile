@@ -27,5 +27,6 @@ export const ENDPOINTS = {
   trainingComplete: '/api/training?action=complete',
   sopsMyList: '/api/sops?action=my-list',
   sopsMyDetail: '/api/sops?action=my-detail',
+  serviceVisits: '/api/service-visits',
   storage: '/api/storage',
 } as const;

@@ -96,6 +96,11 @@ export interface TimeEntry {
   employeeId: string;
   jobId?: string;
   jobIds?: string[];
+  serviceId?: string;
+  serviceVisitId?: string;
+  jobName?: string;
+  serviceName?: string;
+  propertyName?: string;
   workType: TimeEntryWorkType;
   workAreaId?: string | null;
   workAreaNameSnapshot?: string | null;

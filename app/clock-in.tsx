@@ -26,6 +26,7 @@ import { usePendingClockInStore } from '@/store/pendingClockInStore';
 import { usePendingClockOutStore } from '@/store/pendingClockOutStore';
 import { colors } from '@/theme/colors';
 import type { TimeEntryWorkType } from '@/types/domain';
+import type { ServiceVisitClockContext } from '@/types/serviceVisit';
 import { businessDateKey, businessLocalDateTimeToIso } from '@/utils/businessTime';
 
 type ClockInStage = 'activity' | 'job' | 'work_area' | 'category';
@@ -39,7 +40,7 @@ type ActivityOption = {
 
 export default function ClockInScreen() {
   const { user } = useAuthStore();
-  const { businessTimeZone, clockingCapabilities, currentActiveEntryId, jobs, timeEntries } = useClockingStore();
+  const { businessTimeZone, clockingCapabilities, currentActiveEntryId, jobs, timeEntries, todayServiceVisits, upcomingServiceVisits } = useClockingStore();
   const offlineClock = useOptionalOfflineClockStore();
   const effectiveClock = useEffectiveClockState();
   const { clockIn, loading, refreshWorkContext } = useClockingActions();
@@ -58,6 +59,7 @@ export default function ClockInScreen() {
   const [activityChosen, setActivityChosen] = useState(false);
   const [stage, setStage] = useState<ClockInStage>('activity');
   const [selectedJobId, setSelectedJobId] = useState('');
+  const [selectedServiceVisitId, setSelectedServiceVisitId] = useState('');
   const [selectedWorkAreaId, setSelectedWorkAreaId] = useState('');
   const [selectedUnbillableCategoryId, setSelectedUnbillableCategoryId] = useState('');
   const [selectedStartTime, setSelectedStartTime] = useState<string | null>(null);
@@ -81,6 +83,7 @@ export default function ClockInScreen() {
     setSelectedWorkType(intent.workType);
     setActivityChosen(true);
     setSelectedJobId(intent.jobIds[0] ?? '');
+    setSelectedServiceVisitId(intent.serviceVisitId ?? '');
     setSelectedWorkAreaId(intent.workAreaId ?? '');
     setSelectedUnbillableCategoryId(intent.unbillableCategoryId ?? '');
     setStage(intent.workType === 'job' ? (intent.workAreaId ? 'work_area' : 'job') : intent.workType === 'non_billable' ? 'category' : 'activity');
@@ -151,10 +154,19 @@ export default function ClockInScreen() {
     () => assignedJobs.find((job) => job.id === selectedJobId),
     [assignedJobs, selectedJobId],
   );
+  const serviceVisits = useMemo(() => {
+    const today = (todayServiceVisits?.length ?? 0) > 0 ? todayServiceVisits : offlineClock?.cache?.todayServiceVisits ?? [];
+    const upcoming = (upcomingServiceVisits?.length ?? 0) > 0 ? upcomingServiceVisits : offlineClock?.cache?.upcomingServiceVisits ?? [];
+    return [...today, ...upcoming];
+  }, [offlineClock?.cache?.todayServiceVisits, offlineClock?.cache?.upcomingServiceVisits, todayServiceVisits, upcomingServiceVisits]);
+  const selectedServiceVisit = useMemo(
+    () => serviceVisits.find((visit) => visit.id === selectedServiceVisitId),
+    [selectedServiceVisitId, serviceVisits],
+  );
 
   const requiresJobSelection = activityChosen && selectedActivity?.requiresJob === true;
   const requiresUnbillableCategory = activityChosen && selectedWorkType === 'non_billable';
-  const requiresWorkArea = selectedWorkType === 'job' && selectedJob?.hasOperationalWorkAreas === true;
+  const requiresWorkArea = selectedWorkType === 'job' && !selectedServiceVisit && selectedJob?.hasOperationalWorkAreas === true;
 
   useEffect(() => {
     if (!requiresWorkArea || !selectedJob) {
@@ -284,6 +296,7 @@ export default function ClockInScreen() {
     setSelectedWorkType(intent.workType);
     setActivityChosen(true);
     setSelectedJobId(intent.jobIds[0] ?? '');
+    setSelectedServiceVisitId(intent.serviceVisitId ?? '');
     setSelectedWorkAreaId(intent.workAreaId ?? '');
     setSelectedUnbillableCategoryId(intent.unbillableCategoryId ?? '');
     setAdvisoryForms(clockInWorkflow.forms.slice(clockInWorkflow.completedCount));
@@ -306,6 +319,8 @@ export default function ClockInScreen() {
       : (selectedJobId ? [selectedJobId] : []));
     const unbillableCategoryId = intentOverride?.unbillableCategoryId ?? selectedUnbillableCategoryId;
     const workAreaId = intentOverride?.workAreaId ?? selectedWorkAreaId;
+    const serviceId = intentOverride?.serviceId ?? selectedServiceVisit?.serviceId;
+    const serviceVisitId = intentOverride?.serviceVisitId ?? selectedServiceVisit?.id;
     const requestedClockInAt = intentOverride?.requestedClockInAt ?? (clockingCapabilities.adjustClockInTime && selectedStartTime
       ? businessLocalDateTimeToIso(businessDateKey(new Date(), businessTimeZone), selectedStartTime, businessTimeZone)
       : undefined);
@@ -370,7 +385,7 @@ export default function ClockInScreen() {
       setCheckingForms(true);
       const checks = [getRequiredForms('before_clock_in')];
       if (selectedWorkType === 'job' && selectedJobId) {
-        checks.push(getRequiredForms('before_starting_job', { jobId: selectedJobId }));
+        checks.push(getRequiredForms('before_starting_job', { jobId: selectedJobId, serviceId, serviceVisitId }));
       }
       const results = await Promise.all(checks);
       checkingFormsRef.current = false;
@@ -389,6 +404,8 @@ export default function ClockInScreen() {
             employeeId,
             workType,
             jobIds,
+            serviceId,
+            serviceVisitId,
             workAreaId: workType === 'job' ? selectedWorkArea?.id : undefined,
             unbillableCategoryId: workType === 'non_billable' ? unbillableCategoryId : undefined,
             requestedClockInAt,
@@ -401,7 +418,7 @@ export default function ClockInScreen() {
       advisoryAcceptedRef.current = true;
     }
 
-    const fingerprint = JSON.stringify({ employeeId, workType, jobIds, workAreaId: workType === 'job' ? selectedWorkArea?.id : undefined, unbillableCategoryId: workType === 'non_billable' ? unbillableCategoryId : undefined, requestedClockInAt });
+    const fingerprint = JSON.stringify({ employeeId, workType, jobIds, serviceId, serviceVisitId, workAreaId: workType === 'job' ? selectedWorkArea?.id : undefined, unbillableCategoryId: workType === 'non_billable' ? unbillableCategoryId : undefined, requestedClockInAt });
     const reusableMeta = metaOverride?.fingerprint === fingerprint
       ? metaOverride
       : retryMeta?.fingerprint === fingerprint
@@ -409,8 +426,22 @@ export default function ClockInScreen() {
         : createRequestMeta(employeeId);
     const meta = { requestId: reusableMeta.requestId, idempotencyKey: reusableMeta.idempotencyKey };
     setRetryMeta({ ...meta, fingerprint });
+    const serviceVisitContext = serviceId && serviceVisitId
+      ? { jobId: jobIds[0], serviceId, serviceVisitId, serviceName: selectedServiceVisit?.serviceName, propertyName: selectedServiceVisit?.propertyName }
+      : undefined;
 
-    const result = selectedWorkArea
+    const result = serviceVisitContext
+      ? await clockIn(
+        employeeId,
+        workType,
+        jobIds,
+        undefined,
+        meta,
+        undefined,
+        requestedClockInAt,
+        serviceVisitContext,
+      )
+      : selectedWorkArea
       ? requestedClockInAt
         ? await clockIn(
           employeeId,
@@ -503,6 +534,7 @@ export default function ClockInScreen() {
               setSelectedWorkType(type);
               setActivityChosen(true);
               setSelectedJobId('');
+              setSelectedServiceVisitId('');
               setSelectedWorkAreaId('');
               setSelectedUnbillableCategoryId('');
               setAdvisoryForms([]);
@@ -524,9 +556,33 @@ export default function ClockInScreen() {
                   : 'No assigned active jobs available. You can continue without a job context.'}
               />
             ) : (
+              <>
+              {serviceVisits.length > 0 ? (
+                <View style={styles.progressiveSection}>
+                  <SectionHeader title="Service Visits" />
+                  <SectionCard>
+                    {serviceVisits.filter((visit) => ['scheduled', 'in_progress'].includes(visit.status)).map((visit) => (
+                      <ListRow
+                        key={visit.id}
+                        testID={`visit-option-${visit.id}`}
+                        title={visit.propertyName || visit.customerName || visit.jobName}
+                        subtitle={visit.serviceName}
+                        selected={selectedServiceVisitId === visit.id}
+                        onPress={() => {
+                          setSelectedJobId(visit.jobId);
+                          setSelectedServiceVisitId(visit.id);
+                          setSelectedWorkAreaId('');
+                          setAdvisoryForms([]);
+                          advisoryAcceptedRef.current = false;
+                        }}
+                      />
+                    ))}
+                  </SectionCard>
+                </View>
+              ) : null}
               <SectionCard>
                 {assignedJobs.map((job) => {
-                  const selected = selectedJobId === job.id;
+                  const selected = selectedJobId === job.id && !selectedServiceVisitId;
                   return (
                     <ListRow
                       key={job.id}
@@ -536,6 +592,7 @@ export default function ClockInScreen() {
                       selected={selected}
                       onPress={() => {
                         setSelectedJobId(job.id);
+                        setSelectedServiceVisitId('');
                         setSelectedWorkAreaId('');
                         setAdvisoryForms([]);
                         advisoryAcceptedRef.current = false;
@@ -544,6 +601,7 @@ export default function ClockInScreen() {
                   );
                 })}
               </SectionCard>
+              </>
             )}
           </View>
         ) : null}
@@ -641,6 +699,7 @@ export default function ClockInScreen() {
                   list: 'todo', formId: form.id, trigger: form.trigger,
                   jobId: form.context?.jobId, equipmentId: form.context?.equipmentId,
                   divisionId: form.context?.divisionId, workflowId: activeWorkflow.id,
+                  serviceId: form.context?.serviceId, serviceVisitId: form.context?.serviceVisitId,
                 },
               });
               return;

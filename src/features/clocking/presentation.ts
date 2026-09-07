@@ -77,7 +77,13 @@ export function resolveWorkAreaName(entry: Pick<TimeEntry, 'workType' | 'workAre
 export function resolveEntryPrimaryLabel(entry: TimeEntry, jobs: Job[]) {
   const unbillableCategoryName = resolveUnbillableCategoryName(entry);
   if (unbillableCategoryName) return unbillableCategoryName;
+  if (entry.serviceVisitId && entry.serviceName?.trim()) return entry.serviceName.trim();
   return resolveJobTitle(entry, jobs);
+}
+
+export function resolveServiceVisitProperty(entry: Pick<TimeEntry, 'serviceVisitId' | 'propertyName'>) {
+  if (!entry.serviceVisitId || !entry.propertyName?.trim()) return null;
+  return entry.propertyName.trim();
 }
 
 export function formatElapsedClock(clockIn: string, nowMs = Date.now()) {

@@ -34,7 +34,7 @@ type ActivityOption = {
 
 export default function SwitchActivityScreen() {
   const { user } = useAuthStore();
-  const { jobs } = useClockingStore();
+  const { jobs, todayServiceVisits, upcomingServiceVisits } = useClockingStore();
   const offlineClock = useOptionalOfflineClockStore();
   const effectiveClock = useEffectiveClockState();
   const { loading, refreshWorkContext, switchActivity } = useClockingActions();
@@ -50,6 +50,7 @@ export default function SwitchActivityScreen() {
   const [selectedWorkType, setSelectedWorkType] = useState<TimeEntryWorkType>('job');
   const [activityChosen, setActivityChosen] = useState(false);
   const [selectedJobId, setSelectedJobId] = useState('');
+  const [selectedServiceVisitId, setSelectedServiceVisitId] = useState('');
   const [selectedWorkAreaId, setSelectedWorkAreaId] = useState('');
   const [selectedUnbillableCategoryId, setSelectedUnbillableCategoryId] = useState('');
   const [retryMeta, setRetryMeta] = useState<{ requestId: string; idempotencyKey: string; fingerprint: string } | null>(null);
@@ -111,11 +112,20 @@ export default function SwitchActivityScreen() {
     () => assignedJobs.find((job) => job.id === selectedJobId),
     [assignedJobs, selectedJobId],
   );
+  const serviceVisits = useMemo(() => {
+    const today = (todayServiceVisits?.length ?? 0) > 0 ? todayServiceVisits : offlineClock?.cache?.todayServiceVisits ?? [];
+    const upcoming = (upcomingServiceVisits?.length ?? 0) > 0 ? upcomingServiceVisits : offlineClock?.cache?.upcomingServiceVisits ?? [];
+    return [...today, ...upcoming];
+  }, [offlineClock?.cache?.todayServiceVisits, offlineClock?.cache?.upcomingServiceVisits, todayServiceVisits, upcomingServiceVisits]);
+  const selectedServiceVisit = useMemo(
+    () => serviceVisits.find((visit) => visit.id === selectedServiceVisitId),
+    [selectedServiceVisitId, serviceVisits],
+  );
 
   const showJobSelection = activityChosen && selectedWorkType === 'job';
   const requiresJobSelection = activityChosen && selectedActivity?.requiresJob === true;
   const requiresUnbillableCategory = activityChosen && selectedWorkType === 'non_billable';
-  const requiresWorkArea = selectedWorkType === 'job' && selectedJob?.hasOperationalWorkAreas === true;
+  const requiresWorkArea = selectedWorkType === 'job' && !selectedServiceVisit && selectedJob?.hasOperationalWorkAreas === true;
 
   useEffect(() => {
     if (!requiresWorkArea || !selectedJob) {
@@ -190,6 +200,7 @@ export default function SwitchActivityScreen() {
     setSelectedWorkType(intent.workType);
     setActivityChosen(true);
     setSelectedJobId(intent.jobIds[0] ?? '');
+    setSelectedServiceVisitId(intent.serviceVisitId ?? '');
     setSelectedWorkAreaId(intent.workAreaId ?? '');
     setSelectedUnbillableCategoryId(intent.unbillableCategoryId ?? '');
     setAdvisoryForms(preSwitchWorkflow.forms.slice(preSwitchWorkflow.completedCount));
@@ -212,6 +223,8 @@ export default function SwitchActivityScreen() {
       : (selectedJobId ? [selectedJobId] : []));
     const unbillableCategoryId = intentOverride?.unbillableCategoryId ?? selectedUnbillableCategoryId;
     const workAreaId = intentOverride?.workAreaId ?? selectedWorkAreaId;
+    const serviceId = intentOverride?.serviceId ?? selectedServiceVisit?.serviceId;
+    const serviceVisitId = intentOverride?.serviceVisitId ?? selectedServiceVisit?.id;
     const targetJob = assignedJobs.find((job) => job.id === jobIds[0]);
     const selectedWorkArea = targetJob?.eligibleOperationalWorkAreas?.find((workArea) => workArea.id === workAreaId);
 
@@ -271,7 +284,7 @@ export default function SwitchActivityScreen() {
       if (checkingFormsRef.current) return;
       checkingFormsRef.current = true;
       setCheckingForms(true);
-      const advisory = await getRequiredForms('before_starting_job', { jobId: nextJobId });
+      const advisory = await getRequiredForms('before_starting_job', { jobId: nextJobId, serviceId, serviceVisitId });
       checkingFormsRef.current = false;
       setCheckingForms(false);
       if (advisory.ok && advisory.forms.length > 0) {
@@ -285,6 +298,8 @@ export default function SwitchActivityScreen() {
             activeEntryId: activeEntry.id,
             workType,
             jobIds,
+            serviceId,
+            serviceVisitId,
             workAreaId: workType === 'job' ? selectedWorkArea?.id : undefined,
             unbillableCategoryId: workType === 'non_billable' ? unbillableCategoryId : undefined,
           },
@@ -296,7 +311,7 @@ export default function SwitchActivityScreen() {
       advisoryAcceptedRef.current = true;
     }
 
-    const fingerprint = JSON.stringify({ employeeId, activeEntryId: activeEntry.id, workType, jobIds, workAreaId: workType === 'job' ? selectedWorkArea?.id : undefined, unbillableCategoryId: workType === 'non_billable' ? unbillableCategoryId : undefined });
+    const fingerprint = JSON.stringify({ employeeId, activeEntryId: activeEntry.id, workType, jobIds, serviceId, serviceVisitId, workAreaId: workType === 'job' ? selectedWorkArea?.id : undefined, unbillableCategoryId: workType === 'non_billable' ? unbillableCategoryId : undefined });
     const reusableMeta = metaOverride?.fingerprint === fingerprint
       ? metaOverride
       : retryMeta?.fingerprint === fingerprint
@@ -304,8 +319,13 @@ export default function SwitchActivityScreen() {
         : createRequestMeta(employeeId);
     const meta = { requestId: reusableMeta.requestId, idempotencyKey: reusableMeta.idempotencyKey };
     setRetryMeta({ ...meta, fingerprint });
+    const serviceVisitContext = serviceId && serviceVisitId
+      ? { jobId: jobIds[0], serviceId, serviceVisitId, serviceName: selectedServiceVisit?.serviceName, propertyName: selectedServiceVisit?.propertyName }
+      : undefined;
 
-    const result = selectedWorkArea
+    const result = serviceVisitContext
+      ? await switchActivity(workType, jobIds, undefined, meta, undefined, serviceVisitContext)
+      : selectedWorkArea
       ? await switchActivity(
           workType,
           jobIds,
@@ -327,7 +347,11 @@ export default function SwitchActivityScreen() {
     setRetryMeta(null);
     setStatus('pendingSync' in result && result.pendingSync ? 'Activity change saved on this device. It will sync when online.' : 'Activity switched successfully.');
     if (previousJobId && previousJobId !== nextJobId) {
-      const advisory = await getRequiredForms('after_leaving_job', { jobId: previousJobId });
+      const advisory = await getRequiredForms('after_leaving_job', {
+        jobId: previousJobId,
+        serviceId: activeEntry.serviceId,
+        serviceVisitId: activeEntry.serviceVisitId,
+      });
       if (advisory.ok && advisory.forms.length > 0) {
         startWorkflow({
           originRoute: '/switch-activity',
@@ -411,6 +435,7 @@ export default function SwitchActivityScreen() {
                 setSelectedWorkType(type);
                 setActivityChosen(true);
                 setSelectedJobId('');
+                setSelectedServiceVisitId('');
                 setSelectedWorkAreaId('');
                 setSelectedUnbillableCategoryId('');
                 setAdvisoryForms([]);
@@ -429,9 +454,33 @@ export default function SwitchActivityScreen() {
                       : 'No assigned active jobs available. You can continue without a job context.'}
                   />
                 ) : (
+                  <>
+                  {serviceVisits.length > 0 ? (
+                    <View style={styles.progressiveSection}>
+                      <SectionHeader title="Service Visits" />
+                      <SectionCard>
+                        {serviceVisits.filter((visit) => ['scheduled', 'in_progress'].includes(visit.status)).map((visit) => (
+                          <ListRow
+                            key={visit.id}
+                            testID={`switch-visit-option-${visit.id}`}
+                            title={visit.propertyName || visit.customerName || visit.jobName}
+                            subtitle={visit.serviceName}
+                            selected={selectedServiceVisitId === visit.id}
+                            onPress={() => {
+                              setSelectedJobId(visit.jobId);
+                              setSelectedServiceVisitId(visit.id);
+                              setSelectedWorkAreaId('');
+                              setAdvisoryForms([]);
+                              advisoryAcceptedRef.current = false;
+                            }}
+                          />
+                        ))}
+                      </SectionCard>
+                    </View>
+                  ) : null}
                   <SectionCard>
                     {assignedJobs.map((job) => {
-                      const selected = selectedJobId === job.id;
+                      const selected = selectedJobId === job.id && !selectedServiceVisitId;
                       return (
                         <ListRow
                           key={job.id}
@@ -441,6 +490,7 @@ export default function SwitchActivityScreen() {
                           selected={selected}
                           onPress={() => {
                             setSelectedJobId(job.id);
+                            setSelectedServiceVisitId('');
                             setSelectedWorkAreaId('');
                             setAdvisoryForms([]);
                             advisoryAcceptedRef.current = false;
@@ -449,6 +499,7 @@ export default function SwitchActivityScreen() {
                       );
                     })}
                   </SectionCard>
+                  </>
                 )}
               </View>
             ) : null}

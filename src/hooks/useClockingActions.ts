@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import * as clockingApi from '@/api/clockingApi';
 import { scopeJobsForSession, scopeTimeEntriesForSession } from '@/features/clocking/scoping';
+import { mergeAuthoritativeActiveEntry } from '@/features/clocking/bootstrap';
 import { beginRequest, createRequestMeta, endRequest } from '@/services/requestGuards';
 import { isOnline } from '@/services/connectivity';
 import { useAuthStore } from '@/store/authStore';
@@ -8,6 +9,7 @@ import { useClockingStore } from '@/store/clockingStore';
 import { useOptionalOfflineClockStore } from '@/store/offlineClockContext';
 import { useOptionalTrainingStore } from '@/store/trainingStore';
 import type { TimeEntryWorkType } from '@/types/domain';
+import type { ServiceVisitClockContext } from '@/types/serviceVisit';
 import { WORK_AREA_CLOCKING_CONTRACT_VERSION } from '@/types/api';
 import { ApiError } from '@/types/errors';
 import { toUserFacingError } from '@/utils/userFacingError';
@@ -22,6 +24,7 @@ export function useClockingActions() {
     setClockingCapabilities,
     setCurrentActiveEntryId,
     setJobs,
+    setServiceVisits,
     setTimeCorrections,
     setTimeEntries,
   } = useClockingStore();
@@ -58,15 +61,22 @@ export function useClockingActions() {
     setJobs(scopedJobs);
     setBusinessTimeZone(payload.timezone);
     setClockingCapabilities(payload.capabilities);
-    setTimeEntries(scopeTimeEntriesForSession(payload.timeEntries ?? [], user));
+    const scopedEntries = scopeTimeEntriesForSession(payload.timeEntries ?? [], user);
+    const scopedActiveEntry = payload.activeTimeEntry
+      ? scopeTimeEntriesForSession([payload.activeTimeEntry], user)[0]
+      : undefined;
+    setTimeEntries(mergeAuthoritativeActiveEntry(scopedEntries, scopedActiveEntry));
     setTimeCorrections(payload.timeCorrections ?? []);
-    setCurrentActiveEntryId(payload.currentActiveEntryId ?? null);
+    setCurrentActiveEntryId(scopedActiveEntry?.id ?? payload.currentActiveEntryId ?? null);
     setActiveShiftWarnings(payload.activeShiftWarnings);
     setActivityConfigs(payload.activityConfigs);
+    setServiceVisits(payload.serviceVisitHorizonDays, payload.todayServiceVisits, payload.upcomingServiceVisits);
     setTrainingAttentionFromBootstrap?.(payload);
     await updateEligibilityCache?.({
       jobs: scopedJobs,
       activityConfigs: payload.activityConfigs ?? [],
+      todayServiceVisits: payload.todayServiceVisits ?? [],
+      upcomingServiceVisits: payload.upcomingServiceVisits ?? [],
       requiredAfterClockOutForms: payload.capabilities
         ? payload.capabilities.requiredAfterClockOutForms === true
         : undefined,
@@ -85,6 +95,7 @@ export function useClockingActions() {
       requestMeta?: { requestId: string; idempotencyKey: string },
       workArea?: { id: string; name: string },
       requestedClockInAt?: string,
+      serviceVisit?: ServiceVisitClockContext,
     ) {
       const meta = requestMeta ?? createRequestMeta(employeeId);
       const online = await isOnline();
@@ -110,6 +121,8 @@ export function useClockingActions() {
             workAreaId: workType === 'job' ? workArea?.id : undefined,
             workAreaNameSnapshot: workType === 'job' ? workArea?.name : undefined,
             clockingContractVersion: WORK_AREA_CLOCKING_CONTRACT_VERSION,
+            serviceId: workType === 'job' ? serviceVisit?.serviceId : undefined,
+            serviceVisitId: workType === 'job' ? serviceVisit?.serviceVisitId : undefined,
             unbillableCategoryId: typeof unbillableCategoryId === 'string' && unbillableCategoryId.trim()
               ? unbillableCategoryId.trim()
               : undefined,
@@ -135,6 +148,8 @@ export function useClockingActions() {
           jobIds,
           workAreaId: workType === 'job' ? workArea?.id : undefined,
           clockingContractVersion: WORK_AREA_CLOCKING_CONTRACT_VERSION,
+          serviceId: workType === 'job' ? serviceVisit?.serviceId : undefined,
+          serviceVisitId: workType === 'job' ? serviceVisit?.serviceVisitId : undefined,
           unbillableCategoryId: typeof unbillableCategoryId === 'string' && unbillableCategoryId.trim()
             ? unbillableCategoryId.trim()
             : undefined,
@@ -283,6 +298,7 @@ export function useClockingActions() {
       unbillableCategoryId?: string,
       requestMeta?: { requestId: string; idempotencyKey: string },
       workArea?: { id: string; name: string },
+      serviceVisit?: ServiceVisitClockContext,
     ) {
       const employeeId = user?.employeeId;
       if (!employeeId) {
@@ -299,6 +315,8 @@ export function useClockingActions() {
             workAreaId: workType === 'job' ? workArea?.id : undefined,
             workAreaNameSnapshot: workType === 'job' ? workArea?.name : undefined,
             clockingContractVersion: WORK_AREA_CLOCKING_CONTRACT_VERSION,
+            serviceId: workType === 'job' ? serviceVisit?.serviceId : undefined,
+            serviceVisitId: workType === 'job' ? serviceVisit?.serviceVisitId : undefined,
             unbillableCategoryId: typeof unbillableCategoryId === 'string' && unbillableCategoryId.trim()
               ? unbillableCategoryId.trim()
               : undefined,
@@ -324,6 +342,8 @@ export function useClockingActions() {
           jobIds,
           workAreaId: workType === 'job' ? workArea?.id : undefined,
           clockingContractVersion: WORK_AREA_CLOCKING_CONTRACT_VERSION,
+          serviceId: workType === 'job' ? serviceVisit?.serviceId : undefined,
+          serviceVisitId: workType === 'job' ? serviceVisit?.serviceVisitId : undefined,
           unbillableCategoryId: typeof unbillableCategoryId === 'string' && unbillableCategoryId.trim()
             ? unbillableCategoryId.trim()
             : undefined,

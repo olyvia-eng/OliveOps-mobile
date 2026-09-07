@@ -66,6 +66,9 @@ export interface EmployeeFormContext {
   equipmentName?: string;
   divisionId?: string;
   divisionName?: string;
+  serviceId?: string;
+  serviceName?: string;
+  serviceVisitId?: string;
 }
 
 export interface EmployeeFormSubmissionState {
@@ -136,6 +139,8 @@ export interface LocalFormAttachment {
   jobId?: string;
   equipmentId?: string;
   divisionId?: string;
+  serviceId?: string;
+  serviceVisitId?: string;
   localUri: string;
   fileName: string;
   mimeType: 'image/jpeg';
@@ -157,6 +162,8 @@ export interface SubmitEmployeeFormRequest {
   jobId?: string;
   equipmentId?: string;
   divisionId?: string;
+  serviceId?: string;
+  serviceVisitId?: string;
   workflowOccurrenceId?: string;
   workflowRequirementId?: string;
   responses: EmployeeFormResponse[];
@@ -212,4 +219,6 @@ export interface EmployeeFormsContextFilter {
   jobId?: string;
   equipmentId?: string;
   divisionId?: string;
+  serviceId?: string;
+  serviceVisitId?: string;
 }

@@ -14,6 +14,7 @@ import {
   type OfflineSwitchPayload,
 } from '@/features/offlineClocking/types';
 import { getCurrentShiftSegments, resolveCurrentActiveEntry } from '@/features/clocking/presentation';
+import { mergeAuthoritativeActiveEntry } from '@/features/clocking/bootstrap';
 import { scopeJobsForSession, scopeTimeEntriesForSession } from '@/features/clocking/scoping';
 import { beginRequest, endRequest } from '@/services/requestGuards';
 import {
@@ -145,6 +146,8 @@ export function OfflineClockProvider({ children }: { children: React.ReactNode }
     jobs?: typeof clocking.jobs;
     unbillableCategories?: typeof clocking.unbillableCategories;
     activityConfigs?: NonNullable<typeof clocking.activityConfigs>;
+    todayServiceVisits?: typeof clocking.todayServiceVisits;
+    upcomingServiceVisits?: typeof clocking.upcomingServiceVisits;
     requiredBeforeClockInForms?: boolean;
     requiredAfterClockOutForms?: boolean;
   }) => {
@@ -183,6 +186,8 @@ export function OfflineClockProvider({ children }: { children: React.ReactNode }
         ?? previous?.requiredBeforeClockInForms,
       requiredAfterClockOutForms: update.requiredAfterClockOutForms
         ?? previous?.requiredAfterClockOutForms,
+      todayServiceVisits: update.todayServiceVisits ?? previous?.todayServiceVisits ?? [],
+      upcomingServiceVisits: update.upcomingServiceVisits ?? previous?.upcomingServiceVisits ?? [],
     };
     cacheRef.current = next;
     setCache(next);
@@ -241,14 +246,21 @@ export function OfflineClockProvider({ children }: { children: React.ReactNode }
               clocking.setJobs(scopeJobsForSession(payload.jobs ?? [], user));
               clocking.setBusinessTimeZone(payload.timezone);
               clocking.setClockingCapabilities(payload.capabilities);
-              clocking.setTimeEntries(scopeTimeEntriesForSession(payload.timeEntries ?? [], user));
+              const scopedEntries = scopeTimeEntriesForSession(payload.timeEntries ?? [], user);
+              const scopedActiveEntry = payload.activeTimeEntry
+                ? scopeTimeEntriesForSession([payload.activeTimeEntry], user)[0]
+                : undefined;
+              clocking.setTimeEntries(mergeAuthoritativeActiveEntry(scopedEntries, scopedActiveEntry));
               clocking.setTimeCorrections(payload.timeCorrections ?? []);
-              clocking.setCurrentActiveEntryId(payload.currentActiveEntryId ?? null);
+              clocking.setCurrentActiveEntryId(scopedActiveEntry?.id ?? payload.currentActiveEntryId ?? null);
               clocking.setActiveShiftWarnings(payload.activeShiftWarnings);
               clocking.setActivityConfigs(payload.activityConfigs);
+              clocking.setServiceVisits(payload.serviceVisitHorizonDays, payload.todayServiceVisits, payload.upcomingServiceVisits);
               await updateEligibilityCache({
                 jobs: scopeJobsForSession(payload.jobs ?? [], user),
                 activityConfigs: payload.activityConfigs ?? [],
+                todayServiceVisits: payload.todayServiceVisits ?? [],
+                upcomingServiceVisits: payload.upcomingServiceVisits ?? [],
                 requiredBeforeClockInForms: payload.capabilities
                   ? payload.capabilities.requiredBeforeClockInForms === true
                   : undefined,

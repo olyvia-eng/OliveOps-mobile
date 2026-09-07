@@ -118,13 +118,16 @@ const SAFE_CLOCK_IN_FINALIZE_ERROR_CODES = new Set([
 ]);
 
 function activeEntryMatchesIntent(bootstrap: BootstrapResponse, workflow: PendingClockInWorkflow) {
-  const activeEntry = bootstrap.timeEntries?.find((entry) => entry.id === bootstrap.currentActiveEntryId);
+  const activeEntry = bootstrap.activeTimeEntry
+    ?? bootstrap.timeEntries?.find((entry) => entry.id === bootstrap.currentActiveEntryId);
   if (!activeEntry || activeEntry.employeeId !== workflow.clockInIntent.employeeId) return false;
   const expectedJobs = [...workflow.clockInIntent.jobIds].sort();
   const actualJobs = [...(activeEntry.jobIds?.length ? activeEntry.jobIds : activeEntry.jobId ? [activeEntry.jobId] : [])].sort();
   return activeEntry.workType === workflow.clockInIntent.workType
     && JSON.stringify(actualJobs) === JSON.stringify(expectedJobs)
-    && (activeEntry.workAreaId ?? null) === (workflow.clockInIntent.workAreaId ?? null);
+    && (activeEntry.workAreaId ?? null) === (workflow.clockInIntent.workAreaId ?? null)
+    && (activeEntry.serviceId ?? null) === (workflow.clockInIntent.serviceId ?? null)
+    && (activeEntry.serviceVisitId ?? null) === (workflow.clockInIntent.serviceVisitId ?? null);
 }
 
 export function PendingClockInProvider({ children }: { children: React.ReactNode }) {
@@ -265,7 +268,11 @@ export function PendingClockInProvider({ children }: { children: React.ReactNode
     const currentRequirement = enrichedWorkflow.remainingForms[0] ?? null;
     if (currentRequirement && !pendingClockInRequirementForm(currentRequirement)) {
       try {
-        const response = await loadRequiredForms('before_clock_in', accessToken);
+        const response = await loadRequiredForms('before_clock_in', accessToken, {
+          jobId: enrichedWorkflow.clockInIntent.jobIds[0],
+          serviceId: enrichedWorkflow.clockInIntent.serviceId,
+          serviceVisitId: enrichedWorkflow.clockInIntent.serviceVisitId,
+        });
         const formsById = new Map(response.forms.map((form) => [form.id, form]));
         const enrich = (requirement: PendingClockInRequirement) => ({
           ...requirement,

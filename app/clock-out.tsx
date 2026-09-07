@@ -19,6 +19,7 @@ import {
   getWorkTypeLabel,
   resolveEntryPrimaryLabel,
   resolveJobTitle,
+  resolveServiceVisitProperty,
 } from '@/features/clocking/presentation';
 import { useClockingActions } from '@/hooks/useClockingActions';
 import { useEffectiveClockState } from '@/hooks/useEffectiveClockState';
@@ -152,6 +153,12 @@ export default function ClockOutScreen() {
   const remainingPostActionForms = clockOutWorkflow
     ? clockOutWorkflow.forms.slice(clockOutWorkflow.completedCount)
     : postActionForms;
+  const clockOutDestination = activeEntry?.serviceVisitId && (activeEntry.jobIds?.[0] ?? activeEntry.jobId)
+    ? { pathname: '/service-visit' as const, params: { jobId: activeEntry.jobIds?.[0] ?? activeEntry.jobId!, visitId: activeEntry.serviceVisitId } }
+    : '/home' as const;
+  const workflowDestination = clockOutWorkflow?.intent.serviceVisitId && clockOutWorkflow.intent.jobId
+    ? { pathname: '/service-visit' as const, params: { jobId: clockOutWorkflow.intent.jobId, visitId: clockOutWorkflow.intent.serviceVisitId } }
+    : '/home' as const;
 
   useEffect(() => {
     if (!clockingCapabilities.editShiftWorkAreas || !activeEntry || !shiftSegments.some((segment) => segment.workType === 'job')) {
@@ -456,6 +463,11 @@ export default function ClockOutScreen() {
           params: {
             formId: form.id,
             trigger: 'after_clock_out',
+            ...(activeEntry.serviceVisitId ? {
+              jobId: form.context?.jobId ?? activeEntry.jobIds?.[0] ?? activeEntry.jobId,
+              serviceId: form.context?.serviceId ?? activeEntry.serviceId,
+              serviceVisitId: form.context?.serviceVisitId ?? activeEntry.serviceVisitId,
+            } : {}),
             workflowOccurrenceId: result.pendingWorkflow.workflowOccurrenceId,
             workflowRequirementId: requirement.workflowRequirementId,
           },
@@ -472,13 +484,17 @@ export default function ClockOutScreen() {
     submittedRef.current = true;
     setSuccess(pendingSync ? 'Clock-out saved on this device. It will sync when online.' : 'Clock-out submitted successfully.');
     if (pendingSync) {
-      returnToParentOrReplace('/home');
+      returnToParentOrReplace(clockOutDestination);
       return;
     }
     const leavingJobId = activeEntry.jobIds?.[0] ?? activeEntry.jobId;
     const checks = [getRequiredForms('after_clock_out')];
     if (leavingJobId) {
-      checks.push(getRequiredForms('after_leaving_job', { jobId: leavingJobId }));
+      checks.push(getRequiredForms('after_leaving_job', {
+        jobId: leavingJobId,
+        serviceId: activeEntry.serviceId,
+        serviceVisitId: activeEntry.serviceVisitId,
+      }));
     }
     const results = await Promise.all(checks);
     const forms = results.flatMap((advisory) => advisory.ok ? advisory.forms : []);
@@ -490,13 +506,16 @@ export default function ClockOutScreen() {
         intent: {
           kind: 'clock_out_follow_up',
           recordedDurationLabel: formatDurationMinutes(totalShiftMinutes),
+          jobId: leavingJobId,
+          serviceId: activeEntry.serviceId,
+          serviceVisitId: activeEntry.serviceVisitId,
         },
         forms,
       });
       setPostActionForms(forms);
       return;
     }
-    returnToParentOrReplace('/home');
+    returnToParentOrReplace(clockOutDestination);
   }
 
   function onConfirmClockOut() {
@@ -557,7 +576,7 @@ export default function ClockOutScreen() {
               label="Done"
               onPress={() => {
                 clearWorkflow();
-                returnToParentOrReplace('/home');
+                returnToParentOrReplace(workflowDestination);
               }}
             />
           </>
@@ -575,12 +594,13 @@ export default function ClockOutScreen() {
               params: {
                 list: 'todo', formId: form.id, trigger: form.trigger,
                 jobId: form.context?.jobId, equipmentId: form.context?.equipmentId,
-                divisionId: form.context?.divisionId, workflowId: clockOutWorkflow.id,
+                divisionId: form.context?.divisionId, serviceId: form.context?.serviceId,
+                serviceVisitId: form.context?.serviceVisitId, workflowId: clockOutWorkflow.id,
               },
             })}
             onSkip={() => {
               clearWorkflow();
-              returnToParentOrReplace('/home');
+              returnToParentOrReplace(workflowDestination);
             }}
           />
         )}
@@ -609,6 +629,7 @@ export default function ClockOutScreen() {
                     <Text style={styles.segmentDuration}>{formatDurationForEntry(segment)}</Text>
                   </View>
                   {segment.workType !== 'drive_time' ? <Text style={styles.segmentMeta}>{resolveEntryPrimaryLabel(segment, jobs)}</Text> : null}
+                  {resolveServiceVisitProperty(segment) ? <Text style={styles.segmentMeta}>{resolveServiceVisitProperty(segment)}</Text> : null}
                 </View>
               </View>
             ))}
@@ -734,13 +755,14 @@ export default function ClockOutScreen() {
               params: {
                 list: 'todo', formId: form.id, trigger: form.trigger,
                 jobId: form.context?.jobId, equipmentId: form.context?.equipmentId,
-                divisionId: form.context?.divisionId, workflowId: activeWorkflow.id,
+                divisionId: form.context?.divisionId, serviceId: form.context?.serviceId,
+                serviceVisitId: form.context?.serviceVisitId, workflowId: activeWorkflow.id,
               },
             });
           }}
           onSkip={() => {
             clearWorkflow();
-            returnToParentOrReplace('/home');
+            returnToParentOrReplace(workflowDestination);
           }}
         />
       ) : null}

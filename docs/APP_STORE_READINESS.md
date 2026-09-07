@@ -106,7 +106,7 @@ Production branding paths are configured in `app.json`. The approved iOS source 
 - Confirmed expired or invalid sessions are cleared and routed safely to Login.
 - Transient network, backend, or SecureStore verification failures show a retryable startup state rather than deleting a potentially valid session.
 - A top-level error boundary prevents unexpected render failures from leaving a blank screen; user-facing fallback text never includes exception details.
-- Login and destructive clocking/correction flows fail closed while offline. No offline queue is implemented or implied.
+- Login and time-correction submission fail closed while offline. Clocking and Service Visit operations use tenant- and employee-scoped durable queues with server-authoritative replay and conflict handling.
 - Failed prepared photo uploads are cleaned up best-effort, and clock-out remains blocked while any retained attachment is uploading or failed.
 
 ### Web Favicon

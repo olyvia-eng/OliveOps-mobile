@@ -51,6 +51,22 @@ describe('storageApi', () => {
     expect(done.ok).toBe(true);
   });
 
+  it('prepares a photo for the canonical Service Visit tuple', async () => {
+    const fetchMock = jest.fn().mockResolvedValue(mockJsonResponse(200, {
+      ok: true, fileId: 'visit-photo-1', uploadUrl: 'https://upload.example/visit-photo-1', expiresAt: '2026-09-07T13:00:00.000Z',
+    }));
+    (global as any).fetch = fetchMock;
+
+    await prepareUpload({
+      action: 'prepare-upload', fileName: 'visit.jpg', mimeType: 'image/jpeg', sizeBytes: 200,
+      entityType: 'service-visit', entityId: 'visit-1', category: 'photo', jobId: 'job-1', serviceId: 'service-1', serviceVisitId: 'visit-1',
+    });
+
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({
+      entityType: 'service-visit', entityId: 'visit-1', jobId: 'job-1', serviceId: 'service-1', serviceVisitId: 'visit-1',
+    });
+  });
+
   it('fails when direct S3 upload fails', async () => {
     (global as any).fetch = jest.fn().mockResolvedValue({ ok: false, status: 403 });
     await expect(uploadToS3('https://upload.example/bad', new Blob(['x']), {})).rejects.toThrow('Direct S3 upload failed.');

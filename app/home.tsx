@@ -17,6 +17,7 @@ import {
   resolveWorkAreaName,
 } from '@/features/clocking/presentation';
 import { formatTrainingDate } from '@/features/training/presentation';
+import { serviceVisitPlaceLabel, serviceVisitStatusLabel, serviceVisitTimeLabel } from '@/features/serviceVisits/presentation';
 import { useClockingActions } from '@/hooks/useClockingActions';
 import { useEffectiveClockState } from '@/hooks/useEffectiveClockState';
 import { useTrainingActions } from '@/hooks/useTrainingActions';
@@ -31,7 +32,16 @@ import { formatBusinessDate, formatBusinessTime } from '@/utils/businessTime';
 
 export default function HomeScreen() {
   const { user } = useAuthStore();
-  const { activeShiftWarnings, businessTimeZone, currentActiveEntryId, jobs, timeEntries } = useClockingStore();
+  const {
+    activeShiftWarnings,
+    businessTimeZone,
+    currentActiveEntryId,
+    jobs,
+    timeEntries,
+    todayServiceVisits = [],
+    upcomingServiceVisits = [],
+  } = useClockingStore();
+  const [visitWindow, setVisitWindow] = useState<'today' | 'upcoming'>('today');
   const offlineClock = useOptionalOfflineClockStore();
   const effectiveClock = useEffectiveClockState();
   const { refreshWorkContext } = useClockingActions();
@@ -197,6 +207,33 @@ export default function HomeScreen() {
       {showPendingClockIn && pendingClockInReady && pendingClockIn.error
         ? <StatusBanner tone="error" message={pendingClockIn.error} />
         : null}
+
+      <View style={styles.assignedSection}>
+        <SectionHeader
+          title="Service Visits"
+          action={upcomingServiceVisits.length > 0 ? (
+            <Pressable accessibilityRole="button" onPress={() => setVisitWindow((current) => current === 'today' ? 'upcoming' : 'today')}>
+              <Text style={styles.detailsLink}>{visitWindow === 'today' ? 'Upcoming' : 'Today'}</Text>
+            </Pressable>
+          ) : undefined}
+        />
+        {(visitWindow === 'today' ? todayServiceVisits : upcomingServiceVisits).length === 0 ? (
+          <Text style={styles.emptyVisits}>{visitWindow === 'today' ? 'No Service Visits Today' : 'No Upcoming Service Visits'}</Text>
+        ) : (
+          <SectionCard testID={`service-visits-${visitWindow}`}>
+            {(visitWindow === 'today' ? todayServiceVisits : upcomingServiceVisits).map((visit) => (
+              <ListRow
+                key={visit.id}
+                testID={`service-visit-${visit.id}`}
+                title={serviceVisitPlaceLabel(visit)}
+                subtitle={[visit.serviceName, visit.propertyAddress].filter(Boolean).join('\n')}
+                detail={`${serviceVisitTimeLabel(visit, businessTimeZone)} · ${serviceVisitStatusLabel(visit.status)}`}
+                onPress={() => router.push({ pathname: '/service-visit', params: { jobId: visit.jobId, visitId: visit.id } })}
+              />
+            ))}
+          </SectionCard>
+        )}
+      </View>
 
       {pendingClockOut.workflow ? (
         <ActionCard>
@@ -398,6 +435,7 @@ const styles = StyleSheet.create({
   },
   attentionSection: { gap: 6 },
   assignedSection: { gap: 6 },
+  emptyVisits: { color: colors.textSecondary, fontSize: 14, paddingVertical: 8 },
   topRow: {
     flexDirection: 'row',
     alignItems: 'center',

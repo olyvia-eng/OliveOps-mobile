@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { AppState, Pressable, StyleSheet, Text, View, type AppStateStatus } from 'react-native';
 import { router, Stack } from 'expo-router';
 import * as Sentry from '@sentry/react-native';
+import NetInfo from '@react-native-community/netinfo';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AppErrorBoundary } from '@/components/AppErrorBoundary';
 import { PrimaryNavigation } from '@/components/PrimaryNavigation';
@@ -18,6 +19,7 @@ import { PendingClockOutProvider } from '@/store/pendingClockOutStore';
 import { TimeOffProvider } from '@/store/timeOffStore';
 import { TrainingProvider } from '@/store/trainingStore';
 import { colors } from '@/theme/colors';
+import { replayServiceVisitOutbox } from '@/services/serviceVisitOutbox';
 
 function CompactBackButton() {
   if (!router.canGoBack()) return null;
@@ -44,10 +46,21 @@ function secondaryScreenOptions(title: string) {
 }
 
 function AppLifecycleSync() {
-  const { status } = useAuthStore();
+  const { accessToken, status, user } = useAuthStore();
   const { refreshWorkContext } = useClockingActions();
   const { refreshAssignments } = useTrainingActions();
   const previousStateRef = useRef<AppStateStatus>(AppState.currentState);
+  const identityKey = user?.employeeId ? `${user.businessId}:${user.id}:${user.employeeId}` : null;
+
+  useEffect(() => {
+    if (status !== 'authenticated' || !identityKey) return;
+    void replayServiceVisitOutbox(identityKey, accessToken);
+    return NetInfo.addEventListener((state) => {
+      if (state.isConnected && state.isInternetReachable !== false) {
+        void replayServiceVisitOutbox(identityKey, accessToken);
+      }
+    });
+  }, [accessToken, identityKey, status]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextState) => {
@@ -58,11 +71,12 @@ function AppLifecycleSync() {
       if (nextState === 'active' && wasBackgrounded && status === 'authenticated') {
         void refreshWorkContext();
         void refreshAssignments();
+        if (identityKey) void replayServiceVisitOutbox(identityKey, accessToken);
       }
     });
 
     return () => subscription.remove();
-  }, [refreshAssignments, refreshWorkContext, status]);
+  }, [accessToken, identityKey, refreshAssignments, refreshWorkContext, status]);
 
   return null;
 }
@@ -99,6 +113,7 @@ function RootLayout() {
                             <Stack.Screen name="clock-in" options={secondaryScreenOptions('Clock In')} />
                             <Stack.Screen name="switch-activity" options={secondaryScreenOptions('Switch Activity')} />
                             <Stack.Screen name="active-shift" options={secondaryScreenOptions('Active Shift')} />
+                            <Stack.Screen name="service-visit" options={secondaryScreenOptions('Service Visit')} />
                             <Stack.Screen name="clock-out" options={secondaryScreenOptions('Clock Out')} />
                             <Stack.Screen name="edit-work-areas" options={secondaryScreenOptions('Edit Work Areas')} />
                             <Stack.Screen name="time-history" options={secondaryScreenOptions('Time History')} />

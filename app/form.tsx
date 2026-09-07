@@ -54,11 +54,13 @@ function matchesParams(form: EmployeeForm, params: Record<string, string | strin
     && form.trigger === params.trigger
     && (params.jobId ?? '') === (form.context?.jobId ?? '')
     && (params.equipmentId ?? '') === (form.context?.equipmentId ?? '')
-    && (params.divisionId ?? '') === (form.context?.divisionId ?? '');
+    && (params.divisionId ?? '') === (form.context?.divisionId ?? '')
+    && (params.serviceId ?? '') === (form.context?.serviceId ?? '')
+    && (params.serviceVisitId ?? '') === (form.context?.serviceVisitId ?? '');
 }
 
 export default function FormScreen() {
-  const params = useLocalSearchParams<{ list?: string; formId?: string; trigger?: string; jobId?: string; equipmentId?: string; divisionId?: string; returnTo?: string; workflowId?: string; workflowOccurrenceId?: string; workflowRequirementId?: string }>();
+  const params = useLocalSearchParams<{ list?: string; formId?: string; trigger?: string; jobId?: string; equipmentId?: string; divisionId?: string; serviceId?: string; serviceVisitId?: string; returnTo?: string; workflowId?: string; workflowOccurrenceId?: string; workflowRequirementId?: string }>();
   const navigation = useNavigation();
   const { user, accessToken } = useAuthStore();
   const { businessTimeZone } = useClockingStore();
@@ -127,7 +129,7 @@ export default function FormScreen() {
     [candidates, mandatoryRouteKey, params, stableMandatoryForm, workflowForm],
   );
   const formRouteIdentity = mandatoryRouteKey
-    ?? `${params.list ?? ''}:${params.workflowId ?? ''}:${params.formId ?? ''}:${params.trigger ?? ''}:${params.jobId ?? ''}:${params.equipmentId ?? ''}:${params.divisionId ?? ''}`;
+    ?? `${params.list ?? ''}:${params.workflowId ?? ''}:${params.formId ?? ''}:${params.trigger ?? ''}:${params.jobId ?? ''}:${params.equipmentId ?? ''}:${params.divisionId ?? ''}:${params.serviceId ?? ''}:${params.serviceVisitId ?? ''}`;
   const formSnapshotRef = useRef<{ identity: string; form: EmployeeForm } | null>(null);
   const submissionInProgressRef = useRef(false);
   if (formSnapshotRef.current?.identity !== formRouteIdentity) formSnapshotRef.current = null;
@@ -138,6 +140,9 @@ export default function FormScreen() {
   const form = stableMandatoryForm
     ?? matchedForm
     ?? (submissionInProgressRef.current || mandatorySubmissionAccepted ? formSnapshotRef.current?.form ?? null : null);
+  const clockOutDestination = form?.context?.serviceVisitId && form.context.jobId
+    ? { pathname: '/service-visit' as const, params: { jobId: form.context.jobId, visitId: form.context.serviceVisitId } }
+    : '/home' as const;
   const orderedFields = useMemo(
     () => [...(form?.fields ?? [])].sort((left, right) => left.order - right.order),
     [form],
@@ -179,7 +184,7 @@ export default function FormScreen() {
   const refreshedMissingRef = useRef<string | null>(null);
   const submissionFailure = mandatoryKind ? mandatoryStore.submissionFailure : null;
   const submissionIdentity = form && user
-    ? `${user.businessId}:${user.id}:${user.employeeId ?? ''}:${mandatoryRouteKey ?? ''}:${form.id}:${form.trigger}:${form.context?.jobId ?? ''}:${form.context?.equipmentId ?? ''}:${form.context?.divisionId ?? ''}`
+    ? `${user.businessId}:${user.id}:${user.employeeId ?? ''}:${mandatoryRouteKey ?? ''}:${form.id}:${form.trigger}:${form.context?.jobId ?? ''}:${form.context?.equipmentId ?? ''}:${form.context?.divisionId ?? ''}:${form.context?.serviceId ?? ''}:${form.context?.serviceVisitId ?? ''}`
     : '';
   const attachmentIdentityKey = user?.employeeId ? `${user.businessId}:${user.id}:${user.employeeId}` : '';
 
@@ -289,7 +294,7 @@ export default function FormScreen() {
       <Screen>
         <ScreenHeader title="Clocked out" subtitle="Your required forms were submitted and your shift is complete." />
         <StatusBanner tone="success" message="Clock-out submitted successfully." />
-        <PrimaryActionButton label="Done" onPress={() => returnToParentOrReplace('/home')} />
+        <PrimaryActionButton label="Done" onPress={() => returnToParentOrReplace(clockOutDestination)} />
       </Screen>
     );
   }
@@ -361,6 +366,8 @@ export default function FormScreen() {
         jobId: form.context?.jobId,
         equipmentId: form.context?.equipmentId,
         divisionId: form.context?.divisionId,
+        serviceId: form.context?.serviceId,
+        serviceVisitId: form.context?.serviceVisitId,
       });
       setPhotoAttachments((current) => ({ ...current, [fieldId]: next }));
       setValues((current) => ({ ...current, [fieldId]: next.localAttachmentId }));
@@ -473,6 +480,8 @@ export default function FormScreen() {
       jobId: form.context?.jobId,
       equipmentId: form.context?.equipmentId,
       divisionId: form.context?.divisionId,
+      serviceId: form.context?.serviceId,
+      serviceVisitId: form.context?.serviceVisitId,
       ...(mandatoryKind && params.workflowOccurrenceId && params.workflowRequirementId ? {
         workflowOccurrenceId: params.workflowOccurrenceId,
         workflowRequirementId: params.workflowRequirementId,

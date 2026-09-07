@@ -108,6 +108,23 @@ describe('offline clock SQLite persistence', () => {
     expect(await loadOfflineCommands('biz:user:employee')).toHaveLength(4);
   });
 
+  it('keeps schema-v2 Service Visit commands replayable after the schema-v3 cache migration', async () => {
+    const legacyVisit = {
+      ...command('command-1'),
+      schemaVersion: 2 as const,
+      logicalPayload: {
+        employeeId: 'employee',
+        workType: 'job' as const,
+        jobIds: ['job-1'],
+        serviceId: 'service-1',
+        serviceVisitId: 'visit-1',
+      },
+    };
+    await insertOfflineCommand(legacyVisit);
+
+    expect(await loadOfflineCommands('biz:user:employee')).toEqual([legacyVisit]);
+  });
+
   it('excludes server-confirmed synced rows from every active queue load', async () => {
     const commands = [1, 2, 3, 4].map((number) => command(`command-${number}`));
     for (const item of commands) await insertOfflineCommand(item);
