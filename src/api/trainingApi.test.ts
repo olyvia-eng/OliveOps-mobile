@@ -39,6 +39,7 @@ describe('trainingApi', () => {
       submissionId: 'training-attempt-1',
       checklistResponses: [{ itemId: 'item-1', checked: true }],
       acknowledged: true,
+      signatureName: 'Alex Worker',
     }, 'token-1');
 
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
@@ -48,6 +49,7 @@ describe('trainingApi', () => {
       submissionId: 'training-attempt-1',
       checklistResponses: [{ itemId: 'item-1', checked: true }],
       acknowledged: true,
+      signatureName: 'Alex Worker',
     });
     expect(body).not.toHaveProperty('businessId');
     expect(body).not.toHaveProperty('employeeId');

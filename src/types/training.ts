@@ -10,6 +10,14 @@ export interface TrainingChecklistItem {
   sortOrder: number;
 }
 
+export interface TrainingSection {
+  sectionId: string;
+  title: string;
+  description: string;
+  sortOrder: number;
+  checklistItems: TrainingChecklistItem[];
+}
+
 export interface TrainingVersion {
   businessId: string;
   trainingId: string;
@@ -21,6 +29,7 @@ export interface TrainingVersion {
   instructions: string;
   attachmentFileId: string | null;
   checklist: TrainingChecklistItem[];
+  trainingSections?: TrainingSection[];
   acknowledgementStatement: string;
   recurrenceType: TrainingRecurrenceType;
   recurrenceMonths: number | null;
@@ -66,6 +75,8 @@ export interface TrainingCompletion {
   checklistItems: Array<Pick<TrainingChecklistItem, 'itemId' | 'text' | 'required'> & { checked: true }>;
   acknowledgementStatement: string;
   acknowledged: true;
+  signatureName: string;
+  signedAt: string;
   completedAt: string;
   nextDueDate: string | null;
   submissionId: string;
@@ -93,6 +104,7 @@ export interface CompleteTrainingRequest {
   submissionId: string;
   checklistResponses: Array<{ itemId: string; checked: true }>;
   acknowledged: true;
+  signatureName: string;
 }
 
 export interface CompleteTrainingResponse {

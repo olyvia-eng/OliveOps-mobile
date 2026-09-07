@@ -23,6 +23,19 @@ const detail = {
       { itemId: 'item-1', text: 'Read the labels', required: true, sortOrder: 0 },
       { itemId: 'item-2', text: 'Review the SDS', required: true, sortOrder: 1 },
     ],
+    trainingSections: [
+      {
+        sectionId: 'section-info', title: 'Test header', description: 'this is some text without a checklist', sortOrder: 0,
+        checklistItems: [],
+      },
+      {
+        sectionId: 'section-checklist', title: 'Safety checks', description: 'Confirm each item before completing.', sortOrder: 1,
+        checklistItems: [
+          { itemId: 'item-1', text: 'Read the labels', required: true, sortOrder: 0 },
+          { itemId: 'item-2', text: 'Review the SDS', required: true, sortOrder: 1 },
+        ],
+      },
+    ],
     acknowledgementStatement: 'I understand this training.', recurrenceType: 'annual', recurrenceMonths: null,
   },
 };
@@ -36,7 +49,7 @@ jest.mock('@/api/trainingApi', () => ({
   completeTraining: (...args: unknown[]) => mockComplete(...args),
 }));
 jest.mock('@/api/storageApi', () => ({ prepareDownload: (...args: unknown[]) => mockPrepareDownload(...args) }));
-jest.mock('@/store/authStore', () => ({ useAuthStore: () => ({ accessToken: 'token-1' }) }));
+jest.mock('@/store/authStore', () => ({ useAuthStore: () => ({ accessToken: 'token-1', user: { name: 'Alex Worker' } }) }));
 jest.mock('@/hooks/useTrainingActions', () => ({ useTrainingActions: () => ({ refreshAssignments: mockRefreshAssignments }) }));
 jest.mock('@/services/requestGuards', () => ({ createRequestMeta: () => ({ idempotencyKey: 'training-attempt-1' }) }));
 jest.mock('@/components/AuthorizedPdfViewer', () => ({ AuthorizedPdfViewer: (props: any) => require('react').createElement('pdf-viewer', props) }));
@@ -55,6 +68,8 @@ jest.mock('react-native', () => {
     ActivityIndicator: (props: any) => ReactModule.createElement('activity-indicator', props),
     View: ({ children, ...props }: any) => ReactModule.createElement('view', props, children),
     Text: ({ children, ...props }: any) => ReactModule.createElement('text', props, children),
+    TextInput: (props: any) => ReactModule.createElement('text-input', props),
+    ScrollView: ({ children, ...props }: any) => ReactModule.createElement('scroll-view', props, children),
     Pressable: ({ children, onPress, style, ...props }: any) => ReactModule.createElement('pressable', { onPress, style: typeof style === 'function' ? style({ pressed: false }) : style, ...props }, children),
   };
 });
@@ -71,7 +86,22 @@ describe('TrainingDetailScreen', () => {
     mockRefreshAssignments.mockReset().mockResolvedValue({ ok: true });
   });
 
-  it('requires every checklist item and acknowledgement, then submits a stable attempt', async () => {
+  it('renders every section in backend order, including an informational section with no checklist', async () => {
+    let tree: any;
+    await act(async () => { tree = create(<TrainingDetailScreen />); });
+
+    const sections = tree.root.findAllByType('view').filter((node: any) => typeof node.props.testID === 'string' && node.props.testID.startsWith('training-section-') && !node.props.testID.includes('description'));
+    expect(sections.map((node: any) => node.props.testID)).toEqual([
+      'training-section-section-info',
+      'training-section-section-checklist',
+    ]);
+    expect(tree.root.findByProps({ testID: 'training-section-description-section-info' }).children).toEqual(['this is some text without a checklist']);
+    expect(tree.root.findByProps({ testID: 'training-section-description-section-checklist' }).children).toEqual(['Confirm each item before completing.']);
+    expect(tree.root.findAll((node: any) => node.props.testID === 'training-check-item-1')).toHaveLength(1);
+    expect(tree.root.findAll((node: any) => node.props.testID === 'training-check-item-2')).toHaveLength(1);
+  });
+
+  it('does not gate on zero-item sections and requires the canonical employee signature', async () => {
     let tree: any;
     await act(async () => { tree = create(<TrainingDetailScreen />); });
 
@@ -79,6 +109,10 @@ describe('TrainingDetailScreen', () => {
     await act(async () => tree.root.findByProps({ testID: 'training-check-item-1' }).props.onPress());
     await act(async () => tree.root.findByProps({ testID: 'training-check-item-2' }).props.onPress());
     await act(async () => tree.root.findByProps({ testID: 'training-acknowledgement' }).props.onPress());
+    expect(tree.root.findByType('primary-button').props.disabled).toBe(true);
+    await act(async () => tree.root.findByProps({ testID: 'training-signature-input' }).props.onChangeText('Another Employee'));
+    expect(tree.root.findByType('primary-button').props.disabled).toBe(true);
+    await act(async () => tree.root.findByProps({ testID: 'training-signature-input' }).props.onChangeText('  alex   worker  '));
     expect(tree.root.findByType('primary-button').props.disabled).toBe(false);
 
     await act(async () => { await tree.root.findByType('primary-button').props.onPress(); });
@@ -90,6 +124,7 @@ describe('TrainingDetailScreen', () => {
         { itemId: 'item-2', checked: true },
       ],
       acknowledged: true,
+      signatureName: 'Alex Worker',
     }, 'token-1');
     expect(mockReplace).toHaveBeenCalledWith('/training');
     expect(mockRefreshAssignments).toHaveBeenCalledWith({ force: true });
@@ -125,12 +160,14 @@ describe('TrainingDetailScreen', () => {
     expect(tree.root.findByType('primary-button').props.disabled).toBe(true);
 
     await act(async () => tree.root.findByProps({ testID: 'training-acknowledgement' }).props.onPress());
+    await act(async () => tree.root.findByProps({ testID: 'training-signature-input' }).props.onChangeText('Alex Worker'));
     await act(async () => { await tree.root.findByType('primary-button').props.onPress(); });
     expect(mockComplete).toHaveBeenCalledWith({
       assignmentId: 'assignment-1',
       submissionId: 'training-attempt-1',
       checklistResponses: [],
       acknowledged: true,
+      signatureName: 'Alex Worker',
     }, 'token-1');
   });
 
@@ -141,6 +178,7 @@ describe('TrainingDetailScreen', () => {
     await act(async () => tree.root.findByProps({ testID: 'training-check-item-1' }).props.onPress());
     await act(async () => tree.root.findByProps({ testID: 'training-check-item-2' }).props.onPress());
     await act(async () => tree.root.findByProps({ testID: 'training-acknowledgement' }).props.onPress());
+    await act(async () => tree.root.findByProps({ testID: 'training-signature-input' }).props.onChangeText('Alex Worker'));
     await act(async () => { await tree.root.findByType('primary-button').props.onPress(); });
     expect(mockReplace).toHaveBeenCalledWith('/training');
   });
