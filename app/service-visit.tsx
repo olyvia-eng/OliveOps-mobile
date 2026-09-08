@@ -37,7 +37,7 @@ const COMPLETION_MESSAGES: Partial<Record<ServiceVisitErrorCode, string>> = {
 export default function ServiceVisitScreen() {
   const { jobId = '', visitId = '' } = useLocalSearchParams<{ jobId?: string; visitId?: string }>();
   const { accessToken, user } = useAuthStore();
-  const { businessTimeZone, currentActiveEntryId, timeEntries, todayServiceVisits, upcomingServiceVisits } = useClockingStore();
+  const { businessTimeZone, companyFeatures, currentActiveEntryId, timeEntries, todayServiceVisits, upcomingServiceVisits } = useClockingStore();
   const { clockIn, loading: clocking } = useClockingActions();
   const pendingClockIn = usePendingClockInStore();
   const [detail, setDetail] = useState<ServiceVisitDetailResponse | null>(null);
@@ -57,6 +57,7 @@ export default function ServiceVisitScreen() {
     ? timeEntries.find((entry) => entry.id === currentActiveEntryId && entry.status === 'clocked_in')
     : undefined;
   const thisVisitActive = activeEntry?.serviceVisitId === visitId;
+  const featureAvailable = companyFeatures?.recurringServices === true || thisVisitActive;
   const identityKey = user?.employeeId ? `${user.businessId}:${user.id}:${user.employeeId}` : null;
 
   const refreshOutbox = useCallback(async () => {
@@ -67,7 +68,7 @@ export default function ServiceVisitScreen() {
   }, [identityKey, visitId]);
 
   const refresh = useCallback(async () => {
-    if (!jobId || !visitId) return;
+    if (!featureAvailable || !jobId || !visitId) return;
     setLoading(true);
     setError(null);
     try {
@@ -85,7 +86,7 @@ export default function ServiceVisitScreen() {
     } finally {
       setLoading(false);
     }
-  }, [accessToken, identityKey, jobId, refreshOutbox, summary?.serviceId, visitId]);
+  }, [accessToken, featureAvailable, identityKey, jobId, refreshOutbox, summary?.serviceId, visitId]);
 
   useEffect(() => { void refresh(); }, [refresh]);
 
@@ -181,6 +182,7 @@ export default function ServiceVisitScreen() {
     }
   }
 
+  if (!featureAvailable) return <Screen><ScreenHeader title="Service Visit" /><EmptyState title="Visit unavailable" message="Service Visits are not available for this company." /></Screen>;
   if (loading && !detail) return <Screen><ScreenHeader title="Service Visit" /><StatusBanner tone="info" message="Loading Visit..." /></Screen>;
   if (!detail) return <Screen><ScreenHeader title="Service Visit" />{error ? <StatusBanner tone="error" message={error} /> : null}<EmptyState title="Visit unavailable" message="This Visit could not be loaded." action={<PrimaryActionButton label="Retry" onPress={() => void refresh()} />} /></Screen>;
 

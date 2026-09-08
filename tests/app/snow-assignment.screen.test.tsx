@@ -8,6 +8,7 @@ const mockLoadOutbox = jest.fn();
 const mockQueueCommand = jest.fn();
 const mockReplayOutbox = jest.fn();
 const mockStopTracking = jest.fn();
+let mockSnowOperationsEnabled = true;
 
 jest.mock('@/api/snowOperationsApi', () => ({
   loadMyActiveSnowRoute: (...args: unknown[]) => mockLoadAssignment(...args),
@@ -30,6 +31,11 @@ jest.mock('@/store/authStore', () => ({
   useAuthStore: () => ({
     accessToken: 'token-1',
     user: { id: 'user-1', businessId: 'business-1', employeeId: 'employee-1' },
+  }),
+}));
+jest.mock('@/store/clockingStore', () => ({
+  useClockingStore: () => ({
+    companyFeatures: { projects: true, recurringServices: true, snowOperations: mockSnowOperationsEnabled },
   }),
 }));
 jest.mock('@/components/Screen', () => ({
@@ -76,6 +82,7 @@ describe('SnowAssignmentScreen', () => {
   let tree: any;
 
   beforeEach(() => {
+    mockSnowOperationsEnabled = true;
     mockLoadAssignment.mockReset().mockResolvedValue({
       ok: true,
       event: { id: 'event-1', title: 'January Storm', status: 'active' },
@@ -102,5 +109,16 @@ describe('SnowAssignmentScreen', () => {
       payload: { clientSubmissionId: 'start-route:device-1' },
     });
     expect(mockReplayOutbox).toHaveBeenCalledWith('business-1:user-1:employee-1', 'token-1');
+  });
+
+  it('does not load or expose Snow workflow when Snow Operations is disabled', async () => {
+    mockSnowOperationsEnabled = false;
+
+    await act(async () => { tree = create(<SnowAssignmentScreen />); });
+
+    expect(tree.root.findByType('empty-state').props.title).toBe('Snow Operations unavailable');
+    expect(mockLoadAssignment).not.toHaveBeenCalled();
+    expect(mockLoadServiceTypes).not.toHaveBeenCalled();
+    expect(tree.root.findAllByType('primary-button')).toHaveLength(0);
   });
 });

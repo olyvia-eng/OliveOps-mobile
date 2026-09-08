@@ -12,6 +12,8 @@ const mockLoadOutbox = jest.fn();
 const mockClockIn = jest.fn();
 const mockAcceptWorkflow = jest.fn();
 const mockCreateRequestMeta = jest.fn(() => ({ requestId: 'request-1', idempotencyKey: 'key-1' }));
+let mockRecurringServicesEnabled = true;
+let mockActiveEntry: Record<string, unknown> | undefined;
 
 const summary = {
   id: 'visit-1', jobId: 'job-1', serviceId: 'service-1', jobName: 'Oak Residence',
@@ -67,7 +69,9 @@ jest.mock('@/store/authStore', () => ({
 }));
 jest.mock('@/store/clockingStore', () => ({
   useClockingStore: () => ({
-    businessTimeZone: 'America/Toronto', currentActiveEntryId: null, timeEntries: [],
+    businessTimeZone: 'America/Toronto',
+    companyFeatures: { projects: true, recurringServices: mockRecurringServicesEnabled, snowOperations: false },
+    currentActiveEntryId: mockActiveEntry?.id ?? null, timeEntries: mockActiveEntry ? [mockActiveEntry] : [],
     todayServiceVisits: [summary], upcomingServiceVisits: [],
   }),
 }));
@@ -108,6 +112,8 @@ async function renderScreen() {
 
 describe('ServiceVisitScreen', () => {
   beforeEach(() => {
+    mockRecurringServicesEnabled = true;
+    mockActiveEntry = undefined;
     mockLoadDetail.mockReset().mockResolvedValue(detail());
     mockLoadForms.mockReset().mockResolvedValue({ ok: true, timezone: 'America/Toronto', generatedAt: '', toDo: [], available: [], completed: [] });
     mockQueueCompletion.mockReset().mockResolvedValue({});
@@ -133,6 +139,31 @@ describe('ServiceVisitScreen', () => {
       { jobId: 'job-1', serviceId: 'service-1', serviceVisitId: 'visit-1', serviceName: 'Weekly Lawn Care', propertyName: 'Oak Residence' },
     );
     expect(router.replace).toHaveBeenCalledWith('/active-shift');
+  });
+
+  it('does not load or expose a disabled Service Visit from a stale link', async () => {
+    mockRecurringServicesEnabled = false;
+
+    const tree = await renderScreen();
+
+    const renderedText = tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ');
+    expect(renderedText).toContain('Visit unavailable');
+    expect(mockLoadDetail).not.toHaveBeenCalled();
+    expect(mockLoadForms).not.toHaveBeenCalled();
+    expect(tree.root.findAllByProps({ label: 'Start Work' })).toHaveLength(0);
+  });
+
+  it('keeps the active Visit route available after Recurring Services is disabled', async () => {
+    mockRecurringServicesEnabled = false;
+    mockActiveEntry = {
+      id: 'entry-1', employeeId: 'emp-1', status: 'clocked_in', serviceVisitId: 'visit-1',
+    };
+
+    const tree = await renderScreen();
+
+    expect(mockLoadDetail).toHaveBeenCalled();
+    expect(tree.root.findByProps({ label: 'View Active Shift' })).toBeTruthy();
+    expect(tree.root.findAllByProps({ label: 'Start Work' })).toHaveLength(0);
   });
 
   it('keeps explicit completion disabled while Visit requirements are outstanding', async () => {

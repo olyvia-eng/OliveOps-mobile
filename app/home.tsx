@@ -38,6 +38,7 @@ export default function HomeScreen() {
   const {
     activeShiftWarnings,
     businessTimeZone,
+    companyFeatures,
     currentActiveEntryId,
     jobs,
     timeEntries,
@@ -72,12 +73,16 @@ export default function HomeScreen() {
   useEffect(() => { void refreshAssignments(); }, [refreshAssignments]);
 
   useEffect(() => {
+    if (companyFeatures?.snowOperations !== true) {
+      setSnowAssignment(null);
+      return;
+    }
     let mounted = true;
     void loadMyActiveSnowRoute(accessToken).then((payload) => {
       if (mounted) setSnowAssignment(payload);
     }).catch(() => undefined);
     return () => { mounted = false; };
-  }, [accessToken]);
+  }, [accessToken, companyFeatures?.snowOperations]);
 
   const authoritativeActiveShift = currentActiveEntryId
     ? timeEntries.find((entry) => entry.id === currentActiveEntryId && entry.status === 'clocked_in') ?? null
@@ -144,7 +149,7 @@ export default function HomeScreen() {
 
       <ScreenHeader title={greeting} subtitle={todayLabel} />
 
-      {snowAssignment?.route ? (
+      {companyFeatures?.snowOperations === true && snowAssignment?.route ? (
         <View style={styles.assignedSection}>
           <SectionHeader title="Snow Operations" />
           <SectionCard testID="snow-assignment-card">
@@ -234,7 +239,7 @@ export default function HomeScreen() {
         ? <StatusBanner tone="error" message={pendingClockIn.error} />
         : null}
 
-      <View style={styles.assignedSection}>
+      {companyFeatures?.recurringServices === true ? <View style={styles.assignedSection}>
         <SectionHeader
           title="Service Visits"
           action={upcomingServiceVisits.length > 0 ? (
@@ -259,7 +264,7 @@ export default function HomeScreen() {
             ))}
           </SectionCard>
         )}
-      </View>
+      </View> : null}
 
       {pendingClockOut.workflow ? (
         <ActionCard>
@@ -320,7 +325,7 @@ export default function HomeScreen() {
         </ActionCard>
       )}
 
-      {!activeShift && !showPendingClockIn && !pendingClockOut.workflow && effectiveJobs.length > 0 ? (
+      {companyFeatures?.projects === true && !activeShift && !showPendingClockIn && !pendingClockOut.workflow && effectiveJobs.length > 0 ? (
         <View style={styles.assignedSection}>
           <SectionHeader title="Assigned Jobs" />
           <SectionCard>

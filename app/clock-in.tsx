@@ -40,7 +40,7 @@ type ActivityOption = {
 
 export default function ClockInScreen() {
   const { user } = useAuthStore();
-  const { businessTimeZone, clockingCapabilities, currentActiveEntryId, jobs, timeEntries, todayServiceVisits, upcomingServiceVisits } = useClockingStore();
+  const { businessTimeZone, clockingCapabilities, companyFeatures, currentActiveEntryId, jobs, timeEntries, todayServiceVisits, upcomingServiceVisits } = useClockingStore();
   const offlineClock = useOptionalOfflineClockStore();
   const effectiveClock = useEffectiveClockState();
   const { clockIn, loading, refreshWorkContext } = useClockingActions();
@@ -118,12 +118,13 @@ export default function ClockInScreen() {
   }, [authoritativeActiveShift, effectiveClock.activeEntry, effectiveClock.effectiveStatus, effectiveClock.hydrated, pendingClockIn.reconcileActiveShift, pendingClockIn.workflow]));
 
   const assignedJobs = useMemo(() => {
+    if (companyFeatures?.projects !== true) return [];
     const employeeId = user?.employeeId;
     const availableJobs = jobs.length > 0
       ? jobs
       : (offlineClock?.cache?.jobs ?? []).map((job) => ({ ...job, assignedEmployeeIds: employeeId ? [employeeId] : [] }));
     return scopeJobsForSession(availableJobs, user);
-  }, [jobs, offlineClock?.cache?.jobs, user]);
+  }, [companyFeatures?.projects, jobs, offlineClock?.cache?.jobs, user]);
 
   const activityOptions = useMemo<ActivityOption[]>(() => [
       {
@@ -155,10 +156,11 @@ export default function ClockInScreen() {
     [assignedJobs, selectedJobId],
   );
   const serviceVisits = useMemo(() => {
+    if (companyFeatures?.recurringServices !== true) return [];
     const today = (todayServiceVisits?.length ?? 0) > 0 ? todayServiceVisits : offlineClock?.cache?.todayServiceVisits ?? [];
     const upcoming = (upcomingServiceVisits?.length ?? 0) > 0 ? upcomingServiceVisits : offlineClock?.cache?.upcomingServiceVisits ?? [];
     return [...today, ...upcoming];
-  }, [offlineClock?.cache?.todayServiceVisits, offlineClock?.cache?.upcomingServiceVisits, todayServiceVisits, upcomingServiceVisits]);
+  }, [companyFeatures?.recurringServices, offlineClock?.cache?.todayServiceVisits, offlineClock?.cache?.upcomingServiceVisits, todayServiceVisits, upcomingServiceVisits]);
   const selectedServiceVisit = useMemo(
     () => serviceVisits.find((visit) => visit.id === selectedServiceVisitId),
     [selectedServiceVisitId, serviceVisits],
@@ -530,6 +532,9 @@ export default function ClockInScreen() {
             heading="What are you doing?"
             helper="Select your current activity."
             selectedType={activityChosen ? selectedWorkType : null}
+            allowedTypes={companyFeatures?.projects === true || companyFeatures?.recurringServices === true
+              ? undefined
+              : ['drive_time', 'non_billable']}
             onSelect={(type) => {
               setSelectedWorkType(type);
               setActivityChosen(true);
@@ -548,7 +553,7 @@ export default function ClockInScreen() {
           <View style={styles.progressiveSection}>
             <SectionHeader title="Select a Job" />
             <Text style={styles.helper}>Choose the job you'll be working on.</Text>
-            {assignedJobs.length === 0 ? (
+            {assignedJobs.length === 0 && serviceVisits.length === 0 ? (
               <StatusBanner
                 tone={requiresJobSelection ? 'error' : 'info'}
                 message={requiresJobSelection
@@ -580,7 +585,7 @@ export default function ClockInScreen() {
                   </SectionCard>
                 </View>
               ) : null}
-              <SectionCard>
+              {assignedJobs.length > 0 ? <SectionCard>
                 {assignedJobs.map((job) => {
                   const selected = selectedJobId === job.id && !selectedServiceVisitId;
                   return (
@@ -600,7 +605,7 @@ export default function ClockInScreen() {
                     />
                   );
                 })}
-              </SectionCard>
+              </SectionCard> : null}
               </>
             )}
           </View>

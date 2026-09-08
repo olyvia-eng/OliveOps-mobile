@@ -50,7 +50,9 @@ const mockUseAuthStore = jest.fn(() => ({
 
 let mockJobs: any[] = [];
 let mockServiceVisits: any[] = [];
+let mockCompanyFeatures = { projects: true, recurringServices: true, snowOperations: false };
 const mockUseClockingStore = jest.fn(() => ({
+  companyFeatures: mockCompanyFeatures,
   currentActiveEntryId: 'entry-1',
   jobs: mockJobs,
   todayServiceVisits: mockServiceVisits,
@@ -164,6 +166,7 @@ import { router } from 'expo-router';
 
 describe('SwitchActivityScreen', () => {
   beforeEach(() => {
+    mockCompanyFeatures = { projects: true, recurringServices: true, snowOperations: false };
     mockJobs = [
       { id: 'job-1', title: 'Site A', status: 'scheduled', assignedEmployeeIds: ['emp-1'] },
       { id: 'job-2', title: 'Warehouse', status: 'scheduled', assignedEmployeeIds: ['emp-1'] },

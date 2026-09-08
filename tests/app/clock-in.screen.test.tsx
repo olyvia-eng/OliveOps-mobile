@@ -67,8 +67,10 @@ let mockServiceVisits: any[] = [];
 let mockCurrentActiveEntryId: string | null = null;
 let mockTimeEntries: any[] = [];
 let mockAdjustClockInTime = false;
+let mockCompanyFeatures = { projects: true, recurringServices: true, snowOperations: false };
 const mockUseClockingStore = jest.fn(() => ({
   businessTimeZone: 'America/Toronto',
+  companyFeatures: mockCompanyFeatures,
   clockingCapabilities: { adjustClockInTime: mockAdjustClockInTime, editShiftWorkAreas: false },
   currentActiveEntryId: mockCurrentActiveEntryId,
   timeEntries: mockTimeEntries,
@@ -195,6 +197,7 @@ async function continueFlow(tree: any) {
 
 describe('ClockInScreen', () => {
   beforeEach(() => {
+    mockCompanyFeatures = { projects: true, recurringServices: true, snowOperations: false };
     mockJobs = [
       { id: 'job-1', title: 'Site A', status: 'scheduled', assignedEmployeeIds: ['emp-1'] },
     ];
@@ -444,6 +447,47 @@ describe('ClockInScreen', () => {
       undefined, undefined,
       { jobId: 'job-1', serviceId: 'service-1', serviceVisitId: 'visit-1', serviceName: 'Weekly Mowing', propertyName: 'Oak Residence' },
     );
+  });
+
+  it('shows recurring Visit work but hides ordinary project jobs when Projects is disabled', async () => {
+    mockCompanyFeatures = { projects: false, recurringServices: true, snowOperations: false };
+    mockServiceVisits = [{
+      id: 'visit-1', jobId: 'job-1', serviceId: 'service-1', jobName: 'Site A',
+      serviceName: 'Weekly Mowing', scheduledDate: '2026-09-07', scheduleAllDay: true,
+      status: 'scheduled', billingType: 'recurring',
+    }];
+    let tree: any;
+    await act(async () => { tree = create(<ClockInScreen />); });
+
+    expect(tree.root.findAllByProps({ testID: 'activity-option-job' }).length).toBeGreaterThan(0);
+    await chooseActivity(tree, 'job');
+    expect(tree.root.findAllByProps({ testID: 'visit-option-visit-1' }).length).toBeGreaterThan(0);
+    expect(tree.root.findAllByProps({ testID: 'job-option-job-1' })).toHaveLength(0);
+  });
+
+  it('shows project jobs but hides recurring Visits when Recurring Services is disabled', async () => {
+    mockCompanyFeatures = { projects: true, recurringServices: false, snowOperations: false };
+    mockServiceVisits = [{
+      id: 'visit-1', jobId: 'job-1', serviceId: 'service-1', jobName: 'Site A',
+      serviceName: 'Weekly Mowing', scheduledDate: '2026-09-07', scheduleAllDay: true,
+      status: 'scheduled', billingType: 'recurring',
+    }];
+    let tree: any;
+    await act(async () => { tree = create(<ClockInScreen />); });
+    await chooseActivity(tree, 'job');
+
+    expect(tree.root.findAllByProps({ testID: 'job-option-job-1' }).length).toBeGreaterThan(0);
+    expect(tree.root.findAllByProps({ testID: 'visit-option-visit-1' })).toHaveLength(0);
+  });
+
+  it('removes Job Work when both Projects and Recurring Services are disabled', async () => {
+    mockCompanyFeatures = { projects: false, recurringServices: false, snowOperations: false };
+    let tree: any;
+    await act(async () => { tree = create(<ClockInScreen />); });
+
+    expect(tree.root.findAllByProps({ testID: 'activity-option-job' })).toHaveLength(0);
+    expect(tree.root.findAllByProps({ testID: 'activity-option-drive_time' }).length).toBeGreaterThan(0);
+    expect(tree.root.findAllByProps({ testID: 'activity-option-non_billable' }).length).toBeGreaterThan(0);
   });
 
   it('shows Start Time only with permission and submits the selected business-time intent', async () => {

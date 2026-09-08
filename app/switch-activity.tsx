@@ -34,7 +34,7 @@ type ActivityOption = {
 
 export default function SwitchActivityScreen() {
   const { user } = useAuthStore();
-  const { jobs, todayServiceVisits, upcomingServiceVisits } = useClockingStore();
+  const { companyFeatures, jobs, todayServiceVisits, upcomingServiceVisits } = useClockingStore();
   const offlineClock = useOptionalOfflineClockStore();
   const effectiveClock = useEffectiveClockState();
   const { loading, refreshWorkContext, switchActivity } = useClockingActions();
@@ -76,12 +76,13 @@ export default function SwitchActivityScreen() {
   }, [effectiveClock.effectiveStatus, effectiveClock.hydrated]);
 
   const assignedJobs = useMemo(() => {
+    if (companyFeatures?.projects !== true) return [];
     const employeeId = user?.employeeId;
     const availableJobs = jobs.length > 0
       ? jobs
       : (offlineClock?.cache?.jobs ?? []).map((job) => ({ ...job, assignedEmployeeIds: employeeId ? [employeeId] : [] }));
     return scopeJobsForSession(availableJobs, user);
-  }, [jobs, offlineClock?.cache?.jobs, user]);
+  }, [companyFeatures?.projects, jobs, offlineClock?.cache?.jobs, user]);
 
   const activityOptions = useMemo<ActivityOption[]>(() => [
       {
@@ -113,10 +114,11 @@ export default function SwitchActivityScreen() {
     [assignedJobs, selectedJobId],
   );
   const serviceVisits = useMemo(() => {
+    if (companyFeatures?.recurringServices !== true) return [];
     const today = (todayServiceVisits?.length ?? 0) > 0 ? todayServiceVisits : offlineClock?.cache?.todayServiceVisits ?? [];
     const upcoming = (upcomingServiceVisits?.length ?? 0) > 0 ? upcomingServiceVisits : offlineClock?.cache?.upcomingServiceVisits ?? [];
     return [...today, ...upcoming];
-  }, [offlineClock?.cache?.todayServiceVisits, offlineClock?.cache?.upcomingServiceVisits, todayServiceVisits, upcomingServiceVisits]);
+  }, [companyFeatures?.recurringServices, offlineClock?.cache?.todayServiceVisits, offlineClock?.cache?.upcomingServiceVisits, todayServiceVisits, upcomingServiceVisits]);
   const selectedServiceVisit = useMemo(
     () => serviceVisits.find((visit) => visit.id === selectedServiceVisitId),
     [selectedServiceVisitId, serviceVisits],
@@ -431,6 +433,9 @@ export default function SwitchActivityScreen() {
               heading="What are you switching to?"
               testIDPrefix="switch-activity-option"
               selectedType={activityChosen ? selectedWorkType : null}
+              allowedTypes={companyFeatures?.projects === true || companyFeatures?.recurringServices === true
+                ? undefined
+                : ['drive_time', 'non_billable']}
               onSelect={(type) => {
                 setSelectedWorkType(type);
                 setActivityChosen(true);
@@ -446,7 +451,7 @@ export default function SwitchActivityScreen() {
             {showJobSelection ? (
               <View style={styles.progressiveSection}>
                 <SectionHeader title="Which job?" />
-                {assignedJobs.length === 0 ? (
+                {assignedJobs.length === 0 && serviceVisits.length === 0 ? (
                   <StatusBanner
                     tone={requiresJobSelection ? 'error' : 'info'}
                     message={requiresJobSelection
@@ -478,7 +483,7 @@ export default function SwitchActivityScreen() {
                       </SectionCard>
                     </View>
                   ) : null}
-                  <SectionCard>
+                  {assignedJobs.length > 0 ? <SectionCard>
                     {assignedJobs.map((job) => {
                       const selected = selectedJobId === job.id && !selectedServiceVisitId;
                       return (
@@ -498,7 +503,7 @@ export default function SwitchActivityScreen() {
                         />
                       );
                     })}
-                  </SectionCard>
+                  </SectionCard> : null}
                   </>
                 )}
               </View>

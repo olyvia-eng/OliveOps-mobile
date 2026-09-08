@@ -27,6 +27,7 @@ const mockUseAuthStore = jest.fn(() => ({
 }));
 
 const mockClockingState = {
+  companyFeatures: { projects: true, recurringServices: true, snowOperations: true },
   currentActiveEntryId: 'entry-1',
   activeShiftWarnings: {
     possibleForgottenClockOut: false,
@@ -37,6 +38,12 @@ const mockClockingState = {
     { id: 'job-1', title: 'Front Walkway', status: 'scheduled', assignedEmployeeIds: ['emp-1'] },
     { id: 'job-2', title: 'Warehouse', status: 'scheduled', assignedEmployeeIds: ['emp-1'] },
   ],
+  todayServiceVisits: [{
+    id: 'visit-1', jobId: 'job-1', serviceId: 'service-1', jobName: 'Front Walkway',
+    serviceName: 'Weekly Lawn Care', scheduledDate: '2026-08-07', scheduleAllDay: true,
+    status: 'scheduled', billingType: 'recurring',
+  }],
+  upcomingServiceVisits: [],
   timeEntries: [
     {
       id: 'entry-2',
@@ -158,7 +165,18 @@ describe('HomeScreen', () => {
     mockRefreshTraining.mockClear();
     mockTrainingAssignments = [];
     mockLoadSnowAssignment.mockReset().mockResolvedValue({ ok: true, event: null, route: null, stops: [] });
+    mockClockingState.companyFeatures = { projects: true, recurringServices: true, snowOperations: true };
     mockClockingState.currentActiveEntryId = 'entry-1';
+    mockClockingState.timeEntries = [
+      {
+        id: 'entry-2', employeeId: 'emp-1', jobId: 'job-2', workType: 'job',
+        clockIn: '2026-08-07T10:10:00.000Z', breakMinutes: 0, notes: '', status: 'clocked_in',
+      },
+      {
+        id: 'entry-1', employeeId: 'emp-1', jobId: 'job-1', workType: 'job',
+        clockIn: '2026-08-07T10:00:00.000Z', breakMinutes: 0, notes: '', status: 'clocked_in',
+      },
+    ];
     mockOfflineClock = undefined;
     mockClockingState.activeShiftWarnings.possibleForgottenClockOut = false;
     mockPendingClockOut = {
@@ -215,6 +233,34 @@ describe('HomeScreen', () => {
     await act(async () => tree.root.findByProps({ testID: 'snow-assignment-link' }).props.onPress());
 
     expect(router.push).toHaveBeenCalledWith('/snow-assignment');
+  });
+
+  it('hides disabled Service Visits, Snow Operations, and Projects without loading Snow', async () => {
+    mockClockingState.companyFeatures = { projects: false, recurringServices: false, snowOperations: false };
+    mockClockingState.currentActiveEntryId = null;
+
+    await act(async () => { tree = create(<HomeScreen />); });
+
+    expect(textOf(tree.root)).not.toContain('Service Visits');
+    expect(textOf(tree.root)).not.toContain('Assigned Jobs');
+    expect(tree.root.findAllByProps({ testID: 'snow-assignment-card' })).toHaveLength(0);
+    expect(mockLoadSnowAssignment).not.toHaveBeenCalled();
+  });
+
+  it('keeps an active Service Visit shift visible and clock-out available after the feature is disabled', async () => {
+    mockClockingState.companyFeatures = { projects: false, recurringServices: false, snowOperations: false };
+    mockClockingState.currentActiveEntryId = 'entry-1';
+    mockClockingState.timeEntries = [{
+      id: 'entry-1', employeeId: 'emp-1', jobId: 'job-1', jobIds: ['job-1'], workType: 'job',
+      serviceId: 'service-1', serviceVisitId: 'visit-1', serviceName: 'Weekly Lawn Care',
+      clockIn: '2026-08-07T10:00:00.000Z', breakMinutes: 0, notes: '', status: 'clocked_in',
+    }];
+
+    await act(async () => { tree = create(<HomeScreen />); });
+
+    expect(textOf(tree.root)).toContain("You're clocked in");
+    expect(tree.root.findAllByType('primary-button').map((node: any) => node.props.label)).toContain('Clock Out');
+    expect(textOf(tree.root)).not.toContain('Service Visits');
   });
 
   it('orders overdue before due-soon Training and caps attention at three rows', async () => {

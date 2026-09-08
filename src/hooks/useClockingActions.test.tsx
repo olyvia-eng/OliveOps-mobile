@@ -84,6 +84,7 @@ function activeEntry(id = 'entry-1') {
 function bootstrapPayload(entry = activeEntry()) {
   return {
     ok: true,
+    companyFeatures: { projects: true, recurringServices: true, snowOperations: false },
     jobs: [{ id: 'job-1', title: 'Job 1', status: 'scheduled', assignedEmployeeIds: ['emp-1'] }],
     timeEntries: [entry],
     timeCorrections: [],
@@ -161,6 +162,21 @@ describe('useClockingActions bootstrap behavior', () => {
       requiredBeforeClockInForms: undefined,
       requiredAfterClockOutForms: undefined,
     });
+
+    mockUpdateEligibilityCache.mockClear();
+    mockLoadBootstrap.mockResolvedValueOnce({
+      ...bootstrapPayload(),
+      companyFeatures: { projects: false, recurringServices: false, snowOperations: false },
+      todayServiceVisits: [{ id: 'visit-1' }],
+    });
+    await act(async () => {
+      await currentActions.refreshWorkContext();
+    });
+    expect(mockUpdateEligibilityCache).toHaveBeenCalledWith(expect.objectContaining({
+      jobs: [],
+      todayServiceVisits: [],
+      upcomingServiceVisits: [],
+    }));
 
     mockUpdateEligibilityCache.mockClear();
     mockLoadBootstrap.mockRejectedValueOnce(new TypeError('offline'));

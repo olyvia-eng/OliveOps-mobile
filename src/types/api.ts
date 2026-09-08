@@ -36,8 +36,15 @@ export interface AuthSessionResponse {
   expiresAt?: string;
 }
 
+export interface CompanyFeatures {
+  projects: boolean;
+  recurringServices: boolean;
+  snowOperations: boolean;
+}
+
 export interface BootstrapResponse {
   ok: boolean;
+  companyFeatures: CompanyFeatures;
   timezone?: string;
   jobs?: Job[];
   timeEntries?: TimeEntry[];

@@ -22,6 +22,7 @@ export function useClockingActions() {
     setActivityConfigs,
     setBusinessTimeZone,
     setClockingCapabilities,
+    setCompanyFeatures,
     setCurrentActiveEntryId,
     setJobs,
     setServiceVisits,
@@ -56,8 +57,12 @@ export function useClockingActions() {
     ) {
       return;
     }
+    if (!payload.companyFeatures) {
+      throw new Error('Mobile bootstrap did not include company feature configuration.');
+    }
 
     const scopedJobs = scopeJobsForSession(payload.jobs ?? [], user);
+    setCompanyFeatures(payload.companyFeatures);
     setJobs(scopedJobs);
     setBusinessTimeZone(payload.timezone);
     setClockingCapabilities(payload.capabilities);
@@ -70,13 +75,17 @@ export function useClockingActions() {
     setCurrentActiveEntryId(scopedActiveEntry?.id ?? payload.currentActiveEntryId ?? null);
     setActiveShiftWarnings(payload.activeShiftWarnings);
     setActivityConfigs(payload.activityConfigs);
-    setServiceVisits(payload.serviceVisitHorizonDays, payload.todayServiceVisits, payload.upcomingServiceVisits);
+    setServiceVisits(
+      payload.serviceVisitHorizonDays,
+      payload.companyFeatures.recurringServices ? payload.todayServiceVisits : [],
+      payload.companyFeatures.recurringServices ? payload.upcomingServiceVisits : [],
+    );
     setTrainingAttentionFromBootstrap?.(payload);
     await updateEligibilityCache?.({
-      jobs: scopedJobs,
+      jobs: payload.companyFeatures.projects ? scopedJobs : [],
       activityConfigs: payload.activityConfigs ?? [],
-      todayServiceVisits: payload.todayServiceVisits ?? [],
-      upcomingServiceVisits: payload.upcomingServiceVisits ?? [],
+      todayServiceVisits: payload.companyFeatures.recurringServices ? payload.todayServiceVisits ?? [] : [],
+      upcomingServiceVisits: payload.companyFeatures.recurringServices ? payload.upcomingServiceVisits ?? [] : [],
       requiredAfterClockOutForms: payload.capabilities
         ? payload.capabilities.requiredAfterClockOutForms === true
         : undefined,

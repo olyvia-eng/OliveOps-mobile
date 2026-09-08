@@ -10,6 +10,7 @@ import { captureSnowPosition, startSnowBackgroundTracking, stopSnowBackgroundTra
 import { loadSnowOutbox, queueSnowCommand, queueSnowPhoto, replaySnowOutbox, snowSubmissionId, type SnowOutboxOperation } from '@/services/snowOperationsOutbox';
 import { pickSinglePhoto } from '@/services/photoPicker';
 import { useAuthStore } from '@/store/authStore';
+import { useClockingStore } from '@/store/clockingStore';
 import { colors, spacing, typography } from '@/theme/colors';
 import type { SnowAssignmentResponse, SnowCommandContext, SnowFieldAction, SnowOccurrence, SnowServiceType, SnowStop } from '@/types/snowOperations';
 
@@ -20,6 +21,7 @@ const stopLabels: Record<SnowStop['status'], string> = {
 
 export default function SnowAssignmentScreen() {
   const { accessToken, user } = useAuthStore();
+  const { companyFeatures } = useClockingStore();
   const identityKey = user?.employeeId ? `${user.businessId}:${user.id}:${user.employeeId}` : null;
   const [assignment, setAssignment] = useState<SnowAssignmentResponse | null>(null);
   const [serviceTypes, setServiceTypes] = useState<SnowServiceType[]>([]);
@@ -29,7 +31,7 @@ export default function SnowAssignmentScreen() {
   const [message, setMessage] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    if (!identityKey) return;
+    if (companyFeatures?.snowOperations !== true || !identityKey) return;
     try {
       const [routePayload, typesPayload, queued] = await Promise.all([
         loadMyActiveSnowRoute(accessToken), loadSnowServiceTypes(accessToken), loadSnowOutbox(identityKey),
@@ -42,7 +44,7 @@ export default function SnowAssignmentScreen() {
       setMessage(error instanceof Error ? error.message : 'Could not load your Snow assignment.');
       setPending(await loadSnowOutbox(identityKey));
     }
-  }, [accessToken, identityKey]);
+  }, [accessToken, companyFeatures?.snowOperations, identityKey]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -127,6 +129,10 @@ export default function SnowAssignmentScreen() {
     const url = Platform.OS === 'ios' ? `http://maps.apple.com/?q=${address}` : `geo:0,0?q=${address}`;
     if (await Linking.canOpenURL(url)) await Linking.openURL(url);
   };
+
+  if (companyFeatures?.snowOperations !== true) {
+    return <PrimaryScreen><ScreenHeader title="Snow Assignment" /><EmptyState title="Snow Operations unavailable" message="Snow Operations are not available for this company." /></PrimaryScreen>;
+  }
 
   if (!assignment?.route) {
     return <PrimaryScreen><ScreenHeader title="Snow Assignment" /><EmptyState title="No active Snow Route" message="You do not have an active Snow Route assigned right now." action={<SecondaryButton label="Check Again" onPress={() => void load()} />} />{message ? <StatusBanner tone="error" message={message} /> : null}</PrimaryScreen>;
