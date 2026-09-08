@@ -28,5 +28,6 @@ export const ENDPOINTS = {
   sopsMyList: '/api/sops?action=my-list',
   sopsMyDetail: '/api/sops?action=my-detail',
   serviceVisits: '/api/service-visits',
+  snowOperations: '/api/snow-operations',
   storage: '/api/storage',
 } as const;

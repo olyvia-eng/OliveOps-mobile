@@ -29,9 +29,12 @@ import { usePendingClockInStore } from '@/store/pendingClockInStore';
 import { usePendingClockOutStore } from '@/store/pendingClockOutStore';
 import { colors } from '@/theme/colors';
 import { formatBusinessDate, formatBusinessTime } from '@/utils/businessTime';
+import { loadMyActiveSnowRoute } from '@/api/snowOperationsApi';
+import type { SnowAssignmentResponse } from '@/types/snowOperations';
 
 export default function HomeScreen() {
-  const { user } = useAuthStore();
+  const { accessToken, user } = useAuthStore();
+  const [snowAssignment, setSnowAssignment] = useState<SnowAssignmentResponse | null>(null);
   const {
     activeShiftWarnings,
     businessTimeZone,
@@ -67,6 +70,14 @@ export default function HomeScreen() {
   }, [refreshWorkContext]);
 
   useEffect(() => { void refreshAssignments(); }, [refreshAssignments]);
+
+  useEffect(() => {
+    let mounted = true;
+    void loadMyActiveSnowRoute(accessToken).then((payload) => {
+      if (mounted) setSnowAssignment(payload);
+    }).catch(() => undefined);
+    return () => { mounted = false; };
+  }, [accessToken]);
 
   const authoritativeActiveShift = currentActiveEntryId
     ? timeEntries.find((entry) => entry.id === currentActiveEntryId && entry.status === 'clocked_in') ?? null
@@ -132,6 +143,21 @@ export default function HomeScreen() {
       </View>
 
       <ScreenHeader title={greeting} subtitle={todayLabel} />
+
+      {snowAssignment?.route ? (
+        <View style={styles.assignedSection}>
+          <SectionHeader title="Snow Operations" />
+          <SectionCard testID="snow-assignment-card">
+            <ListRow
+              testID="snow-assignment-link"
+              title={snowAssignment.route.name}
+              subtitle={snowAssignment.event?.title}
+              detail={`${snowAssignment.progress?.completed ?? 0} of ${snowAssignment.progress?.total ?? snowAssignment.stops.length}`}
+              onPress={() => router.push('/snow-assignment')}
+            />
+          </SectionCard>
+        </View>
+      ) : null}
 
       {visibleAttentionCount > 0 ? (
         <View style={styles.attentionSection}>

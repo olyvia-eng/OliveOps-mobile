@@ -286,9 +286,9 @@ export interface PrepareUploadRequest {
   fileName: string;
   mimeType: string;
   sizeBytes: number;
-  entityType: 'time-entry' | 'form-attachment' | 'service-visit';
+  entityType: 'time-entry' | 'form-attachment' | 'service-visit' | 'snow-occurrence';
   entityId: string;
-  category: 'clock-in-photo' | 'clock-out-photo' | 'photo';
+  category: 'clock-in-photo' | 'clock-out-photo' | 'photo' | 'before-photo' | 'after-photo';
   formId?: string;
   fieldId?: string;
   clientSubmissionId?: string;
@@ -299,6 +299,9 @@ export interface PrepareUploadRequest {
   divisionId?: string;
   serviceId?: string;
   serviceVisitId?: string;
+  snowEventId?: string;
+  snowRouteId?: string;
+  routeStopId?: string;
 }
 
 export interface PrepareUploadResponse {

@@ -20,6 +20,8 @@ import { TimeOffProvider } from '@/store/timeOffStore';
 import { TrainingProvider } from '@/store/trainingStore';
 import { colors } from '@/theme/colors';
 import { replayServiceVisitOutbox } from '@/services/serviceVisitOutbox';
+import { replaySnowOutbox } from '@/services/snowOperationsOutbox';
+import '@/services/snowLocation';
 
 function CompactBackButton() {
   if (!router.canGoBack()) return null;
@@ -55,9 +57,11 @@ function AppLifecycleSync() {
   useEffect(() => {
     if (status !== 'authenticated' || !identityKey) return;
     void replayServiceVisitOutbox(identityKey, accessToken);
+    void replaySnowOutbox(identityKey, accessToken);
     return NetInfo.addEventListener((state) => {
       if (state.isConnected && state.isInternetReachable !== false) {
         void replayServiceVisitOutbox(identityKey, accessToken);
+        void replaySnowOutbox(identityKey, accessToken);
       }
     });
   }, [accessToken, identityKey, status]);
@@ -72,6 +76,7 @@ function AppLifecycleSync() {
         void refreshWorkContext();
         void refreshAssignments();
         if (identityKey) void replayServiceVisitOutbox(identityKey, accessToken);
+        if (identityKey) void replaySnowOutbox(identityKey, accessToken);
       }
     });
 
@@ -114,6 +119,7 @@ function RootLayout() {
                             <Stack.Screen name="switch-activity" options={secondaryScreenOptions('Switch Activity')} />
                             <Stack.Screen name="active-shift" options={secondaryScreenOptions('Active Shift')} />
                             <Stack.Screen name="service-visit" options={secondaryScreenOptions('Service Visit')} />
+                            <Stack.Screen name="snow-assignment" options={secondaryScreenOptions('Snow Assignment')} />
                             <Stack.Screen name="clock-out" options={secondaryScreenOptions('Clock Out')} />
                             <Stack.Screen name="edit-work-areas" options={secondaryScreenOptions('Edit Work Areas')} />
                             <Stack.Screen name="time-history" options={secondaryScreenOptions('Time History')} />

@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals
 
 const mockRefresh = jest.fn().mockResolvedValue({ ok: true });
 const mockRefreshTraining = jest.fn().mockResolvedValue({ ok: true });
+const mockLoadSnowAssignment = jest.fn();
 let mockPendingClockOut: any;
 let mockPendingClockIn: any;
 let mockOfflineClock: any;
@@ -75,6 +76,10 @@ jest.mock('expo-router', () => ({
 
 jest.mock('@/hooks/useClockingActions', () => ({
   useClockingActions: () => mockUseClockingActions(),
+}));
+
+jest.mock('@/api/snowOperationsApi', () => ({
+  loadMyActiveSnowRoute: (...args: unknown[]) => mockLoadSnowAssignment(...args),
 }));
 
 jest.mock('@/hooks/useTrainingActions', () => ({
@@ -152,6 +157,7 @@ describe('HomeScreen', () => {
     mockRefresh.mockClear();
     mockRefreshTraining.mockClear();
     mockTrainingAssignments = [];
+    mockLoadSnowAssignment.mockReset().mockResolvedValue({ ok: true, event: null, route: null, stops: [] });
     mockClockingState.currentActiveEntryId = 'entry-1';
     mockOfflineClock = undefined;
     mockClockingState.activeShiftWarnings.possibleForgottenClockOut = false;
@@ -194,6 +200,21 @@ describe('HomeScreen', () => {
     expect(renderedText).toContain('Front Walkway');
     expect(renderedText).not.toContain('Current job: Warehouse');
     expect(tree.root.findByType('primary-screen').props.edges).toEqual(['top', 'left', 'right']);
+  });
+
+  it('opens the employee Snow assignment when an active Route is assigned', async () => {
+    mockLoadSnowAssignment.mockResolvedValue({
+      ok: true,
+      event: { id: 'event-1', title: 'January Storm' },
+      route: { id: 'route-1', name: 'North Route' },
+      stops: [{ id: 'stop-1' }, { id: 'stop-2' }],
+      progress: { total: 2, completed: 1, needsAttention: 0, currentStopId: 'stop-2' },
+    });
+    await act(async () => { tree = create(React.createElement(HomeScreen)); });
+
+    await act(async () => tree.root.findByProps({ testID: 'snow-assignment-link' }).props.onPress());
+
+    expect(router.push).toHaveBeenCalledWith('/snow-assignment');
   });
 
   it('orders overdue before due-soon Training and caps attention at three rows', async () => {
