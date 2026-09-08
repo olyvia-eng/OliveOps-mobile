@@ -18,6 +18,7 @@ import {
 } from '@/features/clocking/presentation';
 import { formatTrainingDate } from '@/features/training/presentation';
 import { serviceVisitPlaceLabel, serviceVisitStatusLabel, serviceVisitTimeLabel } from '@/features/serviceVisits/presentation';
+import { normalizeCompanyFeatures } from '@/features/companyFeatures';
 import { useClockingActions } from '@/hooks/useClockingActions';
 import { useEffectiveClockState } from '@/hooks/useEffectiveClockState';
 import { useTrainingActions } from '@/hooks/useTrainingActions';
@@ -45,6 +46,7 @@ export default function HomeScreen() {
     todayServiceVisits = [],
     upcomingServiceVisits = [],
   } = useClockingStore();
+  const effectiveCompanyFeatures = normalizeCompanyFeatures(companyFeatures);
   const [visitWindow, setVisitWindow] = useState<'today' | 'upcoming'>('today');
   const offlineClock = useOptionalOfflineClockStore();
   const effectiveClock = useEffectiveClockState();
@@ -73,7 +75,7 @@ export default function HomeScreen() {
   useEffect(() => { void refreshAssignments(); }, [refreshAssignments]);
 
   useEffect(() => {
-    if (companyFeatures?.snowOperations !== true) {
+    if (!effectiveCompanyFeatures.snowOperations) {
       setSnowAssignment(null);
       return;
     }
@@ -82,7 +84,7 @@ export default function HomeScreen() {
       if (mounted) setSnowAssignment(payload);
     }).catch(() => undefined);
     return () => { mounted = false; };
-  }, [accessToken, companyFeatures?.snowOperations]);
+  }, [accessToken, effectiveCompanyFeatures.snowOperations]);
 
   const authoritativeActiveShift = currentActiveEntryId
     ? timeEntries.find((entry) => entry.id === currentActiveEntryId && entry.status === 'clocked_in') ?? null
@@ -149,7 +151,7 @@ export default function HomeScreen() {
 
       <ScreenHeader title={greeting} subtitle={todayLabel} />
 
-      {companyFeatures?.snowOperations === true && snowAssignment?.route ? (
+      {effectiveCompanyFeatures.snowOperations && snowAssignment?.route ? (
         <View style={styles.assignedSection}>
           <SectionHeader title="Snow Operations" />
           <SectionCard testID="snow-assignment-card">
@@ -239,7 +241,7 @@ export default function HomeScreen() {
         ? <StatusBanner tone="error" message={pendingClockIn.error} />
         : null}
 
-      {companyFeatures?.recurringServices === true ? <View style={styles.assignedSection}>
+      {effectiveCompanyFeatures.recurringServices ? <View style={styles.assignedSection}>
         <SectionHeader
           title="Service Visits"
           action={upcomingServiceVisits.length > 0 ? (
@@ -325,7 +327,7 @@ export default function HomeScreen() {
         </ActionCard>
       )}
 
-      {companyFeatures?.projects === true && !activeShift && !showPendingClockIn && !pendingClockOut.workflow && effectiveJobs.length > 0 ? (
+      {effectiveCompanyFeatures.projects && !activeShift && !showPendingClockIn && !pendingClockOut.workflow && effectiveJobs.length > 0 ? (
         <View style={styles.assignedSection}>
           <SectionHeader title="Assigned Jobs" />
           <SectionCard>

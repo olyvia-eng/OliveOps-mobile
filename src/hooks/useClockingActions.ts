@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from 'react';
 import * as clockingApi from '@/api/clockingApi';
 import { scopeJobsForSession, scopeTimeEntriesForSession } from '@/features/clocking/scoping';
 import { mergeAuthoritativeActiveEntry } from '@/features/clocking/bootstrap';
+import { normalizeCompanyFeatures } from '@/features/companyFeatures';
 import { beginRequest, createRequestMeta, endRequest } from '@/services/requestGuards';
 import { isOnline } from '@/services/connectivity';
 import { useAuthStore } from '@/store/authStore';
@@ -57,12 +58,10 @@ export function useClockingActions() {
     ) {
       return;
     }
-    if (!payload.companyFeatures) {
-      throw new Error('Mobile bootstrap did not include company feature configuration.');
-    }
 
+    const companyFeatures = normalizeCompanyFeatures(payload.companyFeatures);
     const scopedJobs = scopeJobsForSession(payload.jobs ?? [], user);
-    setCompanyFeatures(payload.companyFeatures);
+    setCompanyFeatures(companyFeatures);
     setJobs(scopedJobs);
     setBusinessTimeZone(payload.timezone);
     setClockingCapabilities(payload.capabilities);
@@ -77,15 +76,15 @@ export function useClockingActions() {
     setActivityConfigs(payload.activityConfigs);
     setServiceVisits(
       payload.serviceVisitHorizonDays,
-      payload.companyFeatures.recurringServices ? payload.todayServiceVisits : [],
-      payload.companyFeatures.recurringServices ? payload.upcomingServiceVisits : [],
+      companyFeatures.recurringServices ? payload.todayServiceVisits : [],
+      companyFeatures.recurringServices ? payload.upcomingServiceVisits : [],
     );
     setTrainingAttentionFromBootstrap?.(payload);
     await updateEligibilityCache?.({
-      jobs: payload.companyFeatures.projects ? scopedJobs : [],
+      jobs: companyFeatures.projects ? scopedJobs : [],
       activityConfigs: payload.activityConfigs ?? [],
-      todayServiceVisits: payload.companyFeatures.recurringServices ? payload.todayServiceVisits ?? [] : [],
-      upcomingServiceVisits: payload.companyFeatures.recurringServices ? payload.upcomingServiceVisits ?? [] : [],
+      todayServiceVisits: companyFeatures.recurringServices ? payload.todayServiceVisits ?? [] : [],
+      upcomingServiceVisits: companyFeatures.recurringServices ? payload.upcomingServiceVisits ?? [] : [],
       requiredAfterClockOutForms: payload.capabilities
         ? payload.capabilities.requiredAfterClockOutForms === true
         : undefined,

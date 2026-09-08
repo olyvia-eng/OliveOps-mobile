@@ -50,7 +50,9 @@ const mockUseAuthStore = jest.fn(() => ({
 
 let mockJobs: any[] = [];
 let mockServiceVisits: any[] = [];
-let mockCompanyFeatures = { projects: true, recurringServices: true, snowOperations: false };
+let mockCompanyFeatures: { projects: boolean; recurringServices: boolean; snowOperations: boolean } | null = {
+  projects: true, recurringServices: true, snowOperations: false,
+};
 const mockUseClockingStore = jest.fn(() => ({
   companyFeatures: mockCompanyFeatures,
   currentActiveEntryId: 'entry-1',
@@ -202,6 +204,15 @@ describe('SwitchActivityScreen', () => {
       retry: jest.fn(),
     });
     mockSwitchActivity.mockResolvedValue({ ok: true });
+  });
+
+  it('keeps project job choices available while company features are unhydrated', async () => {
+    mockCompanyFeatures = null;
+    let tree: any;
+    await act(async () => { tree = create(<SwitchActivityScreen />); });
+
+    await act(async () => tree.root.findByProps({ testID: 'switch-activity-option-job' }).props.onPress());
+    expect(tree.root.findAllByProps({ testID: 'switch-job-option-job-1' }).length).toBeGreaterThan(0);
   });
 
   it('marks the chosen job with the shared selected state', async () => {

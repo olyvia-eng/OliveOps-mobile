@@ -8,7 +8,9 @@ const mockLoadOutbox = jest.fn();
 const mockQueueCommand = jest.fn();
 const mockReplayOutbox = jest.fn();
 const mockStopTracking = jest.fn();
-let mockSnowOperationsEnabled = true;
+let mockCompanyFeatures: { projects: boolean; recurringServices: boolean; snowOperations: boolean } | null = {
+  projects: true, recurringServices: true, snowOperations: true,
+};
 
 jest.mock('@/api/snowOperationsApi', () => ({
   loadMyActiveSnowRoute: (...args: unknown[]) => mockLoadAssignment(...args),
@@ -35,7 +37,7 @@ jest.mock('@/store/authStore', () => ({
 }));
 jest.mock('@/store/clockingStore', () => ({
   useClockingStore: () => ({
-    companyFeatures: { projects: true, recurringServices: true, snowOperations: mockSnowOperationsEnabled },
+    companyFeatures: mockCompanyFeatures,
   }),
 }));
 jest.mock('@/components/Screen', () => ({
@@ -82,7 +84,7 @@ describe('SnowAssignmentScreen', () => {
   let tree: any;
 
   beforeEach(() => {
-    mockSnowOperationsEnabled = true;
+    mockCompanyFeatures = { projects: true, recurringServices: true, snowOperations: true };
     mockLoadAssignment.mockReset().mockResolvedValue({
       ok: true,
       event: { id: 'event-1', title: 'January Storm', status: 'active' },
@@ -112,7 +114,7 @@ describe('SnowAssignmentScreen', () => {
   });
 
   it('does not load or expose Snow workflow when Snow Operations is disabled', async () => {
-    mockSnowOperationsEnabled = false;
+    mockCompanyFeatures = { projects: true, recurringServices: true, snowOperations: false };
 
     await act(async () => { tree = create(<SnowAssignmentScreen />); });
 
@@ -120,5 +122,14 @@ describe('SnowAssignmentScreen', () => {
     expect(mockLoadAssignment).not.toHaveBeenCalled();
     expect(mockLoadServiceTypes).not.toHaveBeenCalled();
     expect(tree.root.findAllByType('primary-button')).toHaveLength(0);
+  });
+
+  it('keeps Snow Operations off while feature state is unhydrated', async () => {
+    mockCompanyFeatures = null;
+
+    await act(async () => { tree = create(<SnowAssignmentScreen />); });
+
+    expect(tree.root.findByType('empty-state').props.title).toBe('Snow Operations unavailable');
+    expect(mockLoadAssignment).not.toHaveBeenCalled();
   });
 });

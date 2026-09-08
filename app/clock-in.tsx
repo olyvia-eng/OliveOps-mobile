@@ -13,6 +13,7 @@ import { ActivitySelector } from '@/components/ActivitySelector';
 import { StartTimeField } from '@/components/StartTimeField';
 import { ListRow, ScreenHeader, SectionCard, SectionHeader } from '@/components/MobilePrimitives';
 import { scopeJobsForSession } from '@/features/clocking/scoping';
+import { normalizeCompanyFeatures } from '@/features/companyFeatures';
 import { useClockingActions } from '@/hooks/useClockingActions';
 import { useEffectiveClockState } from '@/hooks/useEffectiveClockState';
 import { useFormsActions } from '@/hooks/useFormsActions';
@@ -41,6 +42,7 @@ type ActivityOption = {
 export default function ClockInScreen() {
   const { user } = useAuthStore();
   const { businessTimeZone, clockingCapabilities, companyFeatures, currentActiveEntryId, jobs, timeEntries, todayServiceVisits, upcomingServiceVisits } = useClockingStore();
+  const effectiveCompanyFeatures = normalizeCompanyFeatures(companyFeatures);
   const offlineClock = useOptionalOfflineClockStore();
   const effectiveClock = useEffectiveClockState();
   const { clockIn, loading, refreshWorkContext } = useClockingActions();
@@ -118,13 +120,13 @@ export default function ClockInScreen() {
   }, [authoritativeActiveShift, effectiveClock.activeEntry, effectiveClock.effectiveStatus, effectiveClock.hydrated, pendingClockIn.reconcileActiveShift, pendingClockIn.workflow]));
 
   const assignedJobs = useMemo(() => {
-    if (companyFeatures?.projects !== true) return [];
+    if (!effectiveCompanyFeatures.projects) return [];
     const employeeId = user?.employeeId;
     const availableJobs = jobs.length > 0
       ? jobs
       : (offlineClock?.cache?.jobs ?? []).map((job) => ({ ...job, assignedEmployeeIds: employeeId ? [employeeId] : [] }));
     return scopeJobsForSession(availableJobs, user);
-  }, [companyFeatures?.projects, jobs, offlineClock?.cache?.jobs, user]);
+  }, [effectiveCompanyFeatures.projects, jobs, offlineClock?.cache?.jobs, user]);
 
   const activityOptions = useMemo<ActivityOption[]>(() => [
       {
@@ -156,11 +158,11 @@ export default function ClockInScreen() {
     [assignedJobs, selectedJobId],
   );
   const serviceVisits = useMemo(() => {
-    if (companyFeatures?.recurringServices !== true) return [];
+    if (!effectiveCompanyFeatures.recurringServices) return [];
     const today = (todayServiceVisits?.length ?? 0) > 0 ? todayServiceVisits : offlineClock?.cache?.todayServiceVisits ?? [];
     const upcoming = (upcomingServiceVisits?.length ?? 0) > 0 ? upcomingServiceVisits : offlineClock?.cache?.upcomingServiceVisits ?? [];
     return [...today, ...upcoming];
-  }, [companyFeatures?.recurringServices, offlineClock?.cache?.todayServiceVisits, offlineClock?.cache?.upcomingServiceVisits, todayServiceVisits, upcomingServiceVisits]);
+  }, [effectiveCompanyFeatures.recurringServices, offlineClock?.cache?.todayServiceVisits, offlineClock?.cache?.upcomingServiceVisits, todayServiceVisits, upcomingServiceVisits]);
   const selectedServiceVisit = useMemo(
     () => serviceVisits.find((visit) => visit.id === selectedServiceVisitId),
     [selectedServiceVisitId, serviceVisits],
@@ -532,7 +534,7 @@ export default function ClockInScreen() {
             heading="What are you doing?"
             helper="Select your current activity."
             selectedType={activityChosen ? selectedWorkType : null}
-            allowedTypes={companyFeatures?.projects === true || companyFeatures?.recurringServices === true
+            allowedTypes={effectiveCompanyFeatures.projects || effectiveCompanyFeatures.recurringServices
               ? undefined
               : ['drive_time', 'non_billable']}
             onSelect={(type) => {

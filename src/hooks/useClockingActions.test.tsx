@@ -52,7 +52,7 @@ let currentActions: ReturnType<typeof useClockingActions>;
 
 function ActionsProbe({ refreshOnMount = false }: { refreshOnMount?: boolean }) {
   currentActions = useClockingActions();
-  const { currentActiveEntryId, jobs, timeEntries } = useClockingStore();
+  const { companyFeatures, currentActiveEntryId, jobs, timeEntries } = useClockingStore();
 
   useEffect(() => {
     if (refreshOnMount) {
@@ -65,6 +65,7 @@ function ActionsProbe({ refreshOnMount = false }: { refreshOnMount?: boolean }) 
     activeClockIn: timeEntries.find((entry) => entry.id === currentActiveEntryId)?.clockIn,
     jobIds: jobs.map((job) => job.id),
     jobStatuses: jobs.map((job) => job.status),
+    companyFeatures,
   });
 }
 
@@ -141,6 +142,61 @@ describe('useClockingActions bootstrap behavior', () => {
     });
 
     expect(mockLoadBootstrap).toHaveBeenCalledTimes(1);
+  });
+
+  it('loads legacy bootstrap jobs and active time state when companyFeatures is absent', async () => {
+    const legacyPayload = bootstrapPayload();
+    delete (legacyPayload as Partial<typeof legacyPayload>).companyFeatures;
+    mockLoadBootstrap.mockResolvedValueOnce(legacyPayload);
+    await act(async () => {
+      tree = create(React.createElement(ClockingProvider, null, React.createElement(ActionsProbe)));
+    });
+
+    let result: Awaited<ReturnType<typeof currentActions.refreshWorkContext>> | undefined;
+    await act(async () => { result = await currentActions.refreshWorkContext(); });
+
+    const probe = tree.root.findByType('actions-probe');
+    expect(result).toEqual({ ok: true });
+    expect(probe.props.companyFeatures).toEqual({
+      projects: true,
+      recurringServices: true,
+      snowOperations: false,
+    });
+    expect(probe.props.jobIds).toEqual(['job-1']);
+    expect(probe.props.currentActiveEntryId).toBe('entry-1');
+    expect(probe.props.activeClockIn).toBe('2026-08-17T10:00:00.000Z');
+  });
+
+  it('loads core bootstrap state when companyFeatures is partial or malformed', async () => {
+    mockLoadBootstrap
+      .mockResolvedValueOnce({
+        ...bootstrapPayload(),
+        companyFeatures: { snowOperations: true },
+      })
+      .mockResolvedValueOnce({
+        ...bootstrapPayload(activeEntry('entry-2')),
+        companyFeatures: { projects: 'invalid', recurringServices: 0, snowOperations: null },
+      });
+    await act(async () => {
+      tree = create(React.createElement(ClockingProvider, null, React.createElement(ActionsProbe)));
+    });
+
+    await act(async () => { await currentActions.refreshWorkContext(); });
+    expect(tree.root.findByType('actions-probe').props.companyFeatures).toEqual({
+      projects: true,
+      recurringServices: true,
+      snowOperations: true,
+    });
+
+    await act(async () => { await currentActions.refreshWorkContext(); });
+    const probe = tree.root.findByType('actions-probe');
+    expect(probe.props.companyFeatures).toEqual({
+      projects: true,
+      recurringServices: true,
+      snowOperations: false,
+    });
+    expect(probe.props.jobIds).toEqual(['job-1']);
+    expect(probe.props.currentActiveEntryId).toBe('entry-2');
   });
 
   it('updates offline eligibility only after a successful bootstrap', async () => {

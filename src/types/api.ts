@@ -42,9 +42,13 @@ export interface CompanyFeatures {
   snowOperations: boolean;
 }
 
+export type CompanyFeaturesInput = Partial<{
+  [Key in keyof CompanyFeatures]: unknown;
+}> | null;
+
 export interface BootstrapResponse {
   ok: boolean;
-  companyFeatures: CompanyFeatures;
+  companyFeatures?: CompanyFeaturesInput;
   timezone?: string;
   jobs?: Job[];
   timeEntries?: TimeEntry[];

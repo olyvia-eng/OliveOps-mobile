@@ -9,6 +9,7 @@ import { StatusBanner } from '@/components/StatusBanner';
 import { captureSnowPosition, startSnowBackgroundTracking, stopSnowBackgroundTracking } from '@/services/snowLocation';
 import { loadSnowOutbox, queueSnowCommand, queueSnowPhoto, replaySnowOutbox, snowSubmissionId, type SnowOutboxOperation } from '@/services/snowOperationsOutbox';
 import { pickSinglePhoto } from '@/services/photoPicker';
+import { normalizeCompanyFeatures } from '@/features/companyFeatures';
 import { useAuthStore } from '@/store/authStore';
 import { useClockingStore } from '@/store/clockingStore';
 import { colors, spacing, typography } from '@/theme/colors';
@@ -22,6 +23,7 @@ const stopLabels: Record<SnowStop['status'], string> = {
 export default function SnowAssignmentScreen() {
   const { accessToken, user } = useAuthStore();
   const { companyFeatures } = useClockingStore();
+  const effectiveCompanyFeatures = normalizeCompanyFeatures(companyFeatures);
   const identityKey = user?.employeeId ? `${user.businessId}:${user.id}:${user.employeeId}` : null;
   const [assignment, setAssignment] = useState<SnowAssignmentResponse | null>(null);
   const [serviceTypes, setServiceTypes] = useState<SnowServiceType[]>([]);
@@ -31,7 +33,7 @@ export default function SnowAssignmentScreen() {
   const [message, setMessage] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    if (companyFeatures?.snowOperations !== true || !identityKey) return;
+    if (!effectiveCompanyFeatures.snowOperations || !identityKey) return;
     try {
       const [routePayload, typesPayload, queued] = await Promise.all([
         loadMyActiveSnowRoute(accessToken), loadSnowServiceTypes(accessToken), loadSnowOutbox(identityKey),
@@ -44,7 +46,7 @@ export default function SnowAssignmentScreen() {
       setMessage(error instanceof Error ? error.message : 'Could not load your Snow assignment.');
       setPending(await loadSnowOutbox(identityKey));
     }
-  }, [accessToken, companyFeatures?.snowOperations, identityKey]);
+  }, [accessToken, effectiveCompanyFeatures.snowOperations, identityKey]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -130,7 +132,7 @@ export default function SnowAssignmentScreen() {
     if (await Linking.canOpenURL(url)) await Linking.openURL(url);
   };
 
-  if (companyFeatures?.snowOperations !== true) {
+  if (!effectiveCompanyFeatures.snowOperations) {
     return <PrimaryScreen><ScreenHeader title="Snow Assignment" /><EmptyState title="Snow Operations unavailable" message="Snow Operations are not available for this company." /></PrimaryScreen>;
   }
 

@@ -9,6 +9,7 @@ import { SecondaryButton } from '@/components/SecondaryButton';
 import { Screen } from '@/components/Screen';
 import { StatusBanner } from '@/components/StatusBanner';
 import { serviceVisitPlaceLabel, serviceVisitStatusLabel, serviceVisitStatusTone, serviceVisitTimeLabel } from '@/features/serviceVisits/presentation';
+import { normalizeCompanyFeatures } from '@/features/companyFeatures';
 import { useClockingActions } from '@/hooks/useClockingActions';
 import { pickSinglePhoto, type PhotoSource } from '@/services/photoPicker';
 import { loadServiceVisitOutbox, queueServiceVisitCompletion, queueServiceVisitNote, queueServiceVisitPhoto, replayServiceVisitOutbox, type ServiceVisitOutboxOperation } from '@/services/serviceVisitOutbox';
@@ -38,6 +39,7 @@ export default function ServiceVisitScreen() {
   const { jobId = '', visitId = '' } = useLocalSearchParams<{ jobId?: string; visitId?: string }>();
   const { accessToken, user } = useAuthStore();
   const { businessTimeZone, companyFeatures, currentActiveEntryId, timeEntries, todayServiceVisits, upcomingServiceVisits } = useClockingStore();
+  const effectiveCompanyFeatures = normalizeCompanyFeatures(companyFeatures);
   const { clockIn, loading: clocking } = useClockingActions();
   const pendingClockIn = usePendingClockInStore();
   const [detail, setDetail] = useState<ServiceVisitDetailResponse | null>(null);
@@ -57,7 +59,7 @@ export default function ServiceVisitScreen() {
     ? timeEntries.find((entry) => entry.id === currentActiveEntryId && entry.status === 'clocked_in')
     : undefined;
   const thisVisitActive = activeEntry?.serviceVisitId === visitId;
-  const featureAvailable = companyFeatures?.recurringServices === true || thisVisitActive;
+  const featureAvailable = effectiveCompanyFeatures.recurringServices || thisVisitActive;
   const identityKey = user?.employeeId ? `${user.businessId}:${user.id}:${user.employeeId}` : null;
 
   const refreshOutbox = useCallback(async () => {

@@ -26,7 +26,7 @@ const mockUseAuthStore = jest.fn(() => ({
   },
 }));
 
-const mockClockingState = {
+const mockClockingState: any = {
   companyFeatures: { projects: true, recurringServices: true, snowOperations: true },
   currentActiveEntryId: 'entry-1',
   activeShiftWarnings: {
@@ -244,6 +244,18 @@ describe('HomeScreen', () => {
     expect(textOf(tree.root)).not.toContain('Service Visits');
     expect(textOf(tree.root)).not.toContain('Assigned Jobs');
     expect(tree.root.findAllByProps({ testID: 'snow-assignment-card' })).toHaveLength(0);
+    expect(mockLoadSnowAssignment).not.toHaveBeenCalled();
+  });
+
+  it('uses legacy Projects and Recurring defaults while feature state is unhydrated', async () => {
+    mockClockingState.companyFeatures = null;
+    mockClockingState.currentActiveEntryId = null;
+    mockClockingState.timeEntries = [];
+
+    await act(async () => { tree = create(<HomeScreen />); });
+
+    expect(textOf(tree.root)).toContain('Service Visits');
+    expect(textOf(tree.root)).toContain('Assigned Jobs');
     expect(mockLoadSnowAssignment).not.toHaveBeenCalled();
   });
 

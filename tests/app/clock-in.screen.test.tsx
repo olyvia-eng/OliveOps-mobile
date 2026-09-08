@@ -67,7 +67,9 @@ let mockServiceVisits: any[] = [];
 let mockCurrentActiveEntryId: string | null = null;
 let mockTimeEntries: any[] = [];
 let mockAdjustClockInTime = false;
-let mockCompanyFeatures = { projects: true, recurringServices: true, snowOperations: false };
+let mockCompanyFeatures: { projects: boolean; recurringServices: boolean; snowOperations: boolean } | null = {
+  projects: true, recurringServices: true, snowOperations: false,
+};
 const mockUseClockingStore = jest.fn(() => ({
   businessTimeZone: 'America/Toronto',
   companyFeatures: mockCompanyFeatures,
@@ -410,6 +412,16 @@ describe('ClockInScreen', () => {
 
     const enabledSubmit = tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Continue');
     expect(enabledSubmit?.props.disabled).toBe(false);
+  });
+
+  it('keeps Job Work and assigned jobs available while company features are unhydrated', async () => {
+    mockCompanyFeatures = null;
+    let tree: any;
+    await act(async () => { tree = create(<ClockInScreen />); });
+
+    expect(tree.root.findAllByProps({ testID: 'activity-option-job' }).length).toBeGreaterThan(0);
+    await chooseActivity(tree, 'job');
+    expect(tree.root.findAllByProps({ testID: 'job-option-job-1' }).length).toBeGreaterThan(0);
   });
 
   it('submits selected job and navigates to active shift', async () => {
