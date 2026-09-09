@@ -20,6 +20,22 @@ let mockEffectiveClockOverride: any = null;
 let mockRouteFocused = true;
 let mockEditShiftWorkAreas = false;
 
+function mockPendingClockOutFormTarget(workflow: any) {
+  const requirement = workflow?.requirements?.find((item: any) => !item.completed)
+    ?? workflow?.requiredForms?.find((item: any) => !item.completed);
+  const form = requirement?.form ?? requirement?.formPackage
+    ?? (requirement?.fields && (requirement.formId || requirement.id)
+      ? { ...requirement, id: requirement.formId ?? requirement.id }
+      : null);
+  return requirement && form?.id && form.name && Array.isArray(form.fields)
+    ? {
+        form,
+        workflowOccurrenceId: workflow.workflowOccurrenceId,
+        workflowRequirementId: requirement.workflowRequirementId,
+      }
+    : null;
+}
+
 const mockUseClockingActions = jest.fn(() => ({
   clockOut: mockClockOut,
   loading: false,
@@ -131,6 +147,7 @@ jest.mock('@/store/formsWorkflowStore', () => ({
 
 jest.mock('@/store/pendingClockOutStore', () => ({
   usePendingClockOutStore: () => mockPendingClockOut,
+  pendingClockOutFormTarget: (workflow: any) => mockPendingClockOutFormTarget(workflow),
 }));
 
 jest.mock('@/services/requestGuards', () => ({
@@ -229,6 +246,7 @@ describe('ClockOutScreen', () => {
       busy: false,
       error: null,
       acceptWorkflow: mockAcceptPendingWorkflow,
+      recover: jest.fn().mockResolvedValue(null),
     };
     mockAcceptPendingWorkflow.mockClear();
     (prepareUpload as jest.Mock).mockReset();
@@ -463,6 +481,36 @@ describe('ClockOutScreen', () => {
       },
     });
     expect(router.replace).not.toHaveBeenCalledWith('/request-time-correction');
+  });
+
+  it('keeps a pending clock-out recoverable when its persisted snapshot is missing', async () => {
+    const pendingWorkflow = {
+      ok: true,
+      status: 'clock_out_pending_required_forms',
+      blocked: true,
+      workflowOccurrenceId: 'occurrence-1',
+      intendedClockOutAt: '2026-08-06T14:00:00.000Z',
+      requirements: [{ workflowRequirementId: 'requirement-1', formId: 'form-1', completed: false }],
+    };
+    mockClockOut.mockResolvedValue({ ok: true, pendingWorkflow });
+    mockAcceptPendingWorkflow.mockImplementationOnce(async () => {
+      mockPendingClockOut = {
+        ...mockPendingClockOut,
+        workflow: pendingWorkflow,
+        currentRequirement: pendingWorkflow.requirements[0],
+      };
+    });
+    (Alert.alert as jest.Mock).mockImplementation(
+      (_title: string, _message: string, actions: Array<{ onPress?: () => void }>) => actions?.[1]?.onPress?.(),
+    );
+    let tree: any;
+    await act(async () => { tree = create(<ClockOutScreen />); });
+    await act(async () => tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Clock Out').props.onPress());
+
+    expect(mockAcceptPendingWorkflow).toHaveBeenCalledWith(pendingWorkflow);
+    expect(router.push).not.toHaveBeenCalledWith(expect.objectContaining({ pathname: '/form' }));
+    expect(tree.root.findByType('primary-button').props.label).toBe('Retry Required Form');
+    expect(tree.root.findAllByType('status-banner').map((node: any) => node.props.message).join(' ')).toContain('contact your supervisor or administrator');
   });
 
   it('opens the exact post-clock Form after clock-out succeeds', async () => {

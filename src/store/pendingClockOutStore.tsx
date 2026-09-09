@@ -60,13 +60,17 @@ export function workflowRequirements(workflow: PendingClockOutWorkflow | null): 
   });
 }
 
+function isRenderableFormSnapshot(form: EmployeeForm | undefined): form is EmployeeForm {
+  return Boolean(form?.id && form.name && Array.isArray(form.fields));
+}
+
 export function requirementForm(requirement: PendingClockOutRequirement | null): EmployeeForm | null {
   if (!requirement) return null;
-  if (requirement.form) return {
+  if (isRenderableFormSnapshot(requirement.form)) return {
     ...requirement.form,
     context: requirement.context ?? requirement.form.context,
   };
-  if (requirement.formPackage) return {
+  if (isRenderableFormSnapshot(requirement.formPackage)) return {
     ...requirement.formPackage,
     context: requirement.context ?? requirement.formPackage.context,
   };
@@ -82,6 +86,18 @@ export function requirementForm(requirement: PendingClockOutRequirement | null):
     context: requirement.context,
     fields: requirement.fields,
     submissionState: requirement.submissionState ?? { completed: Boolean(requirement.completed) },
+  };
+}
+
+export function pendingClockOutFormTarget(workflow: PendingClockOutWorkflow | null) {
+  if (!workflow) return null;
+  const requirement = workflowRequirements(workflow).find((item) => !item.completed) ?? null;
+  const form = requirementForm(requirement);
+  if (!requirement || !form) return null;
+  return {
+    form,
+    workflowOccurrenceId: workflow.workflowOccurrenceId,
+    workflowRequirementId: requirement.workflowRequirementId,
   };
 }
 

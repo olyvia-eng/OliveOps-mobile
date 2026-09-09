@@ -10,6 +10,22 @@ let mockPendingClockIn: any;
 let mockOfflineClock: any;
 let mockTrainingAssignments: any[];
 
+function mockPendingClockOutFormTarget(workflow: any) {
+  const requirement = workflow?.requirements?.find((item: any) => !item.completed)
+    ?? workflow?.requiredForms?.find((item: any) => !item.completed);
+  const form = requirement?.form ?? requirement?.formPackage
+    ?? (requirement?.fields && (requirement.formId || requirement.id)
+      ? { ...requirement, id: requirement.formId ?? requirement.id }
+      : null);
+  return requirement && form?.id && form.name && Array.isArray(form.fields)
+    ? {
+        form,
+        workflowOccurrenceId: workflow.workflowOccurrenceId,
+        workflowRequirementId: requirement.workflowRequirementId,
+      }
+    : null;
+}
+
 const mockUseClockingActions = jest.fn(() => ({
   refreshWorkContext: mockRefresh,
 }));
@@ -107,6 +123,7 @@ jest.mock('@/store/trainingStore', () => ({
 
 jest.mock('@/store/pendingClockOutStore', () => ({
   usePendingClockOutStore: () => mockPendingClockOut,
+  pendingClockOutFormTarget: (workflow: any) => mockPendingClockOutFormTarget(workflow),
 }));
 
 jest.mock('@/store/pendingClockInStore', () => ({
@@ -185,6 +202,9 @@ describe('HomeScreen', () => {
       currentForm: null,
       completedCount: 0,
       totalCount: 0,
+      busy: false,
+      error: null,
+      recover: jest.fn().mockResolvedValue(null),
     };
     mockPendingClockIn = {
       workflow: null,
@@ -313,12 +333,21 @@ describe('HomeScreen', () => {
   });
 
   it('shows a distinct resume action and suppresses a second clock-out while forms are pending', async () => {
+    const form = { id: 'form-1', name: 'End of Shift Report', fields: [] };
+    const workflow = {
+      workflowOccurrenceId: 'occurrence-1',
+      requirements: [{ workflowRequirementId: 'requirement-1', completed: false, form }],
+    };
+    const recover = jest.fn().mockResolvedValue(workflow);
     mockPendingClockOut = {
-      workflow: { workflowOccurrenceId: 'occurrence-1' },
+      workflow,
       currentRequirement: { workflowRequirementId: 'requirement-1' },
-      currentForm: { id: 'form-1' },
+      currentForm: form,
       completedCount: 1,
       totalCount: 3,
+      busy: false,
+      error: null,
+      recover,
     };
     await act(async () => { tree = create(<HomeScreen />); });
 
@@ -328,6 +357,102 @@ describe('HomeScreen', () => {
     const renderedText = textOf(tree.root);
     expect(renderedText).toContain('Clock out pending');
     expect(renderedText).toContain('Required form 2 of 3');
+
+    await act(async () => tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Resume Required Form').props.onPress());
+
+    expect(recover).toHaveBeenCalledTimes(1);
+    expect(router.push).toHaveBeenCalledWith({
+      pathname: '/form',
+      params: {
+        formId: 'form-1', trigger: 'after_clock_out', workflowOccurrenceId: 'occurrence-1',
+        workflowRequirementId: 'requirement-1',
+      },
+    });
+  });
+
+  it('replaces stale local clock-out state with a reconciled canonical response', async () => {
+    mockClockingState.currentActiveEntryId = null;
+    mockClockingState.timeEntries = [];
+    const recover = jest.fn().mockImplementation(async () => {
+      mockPendingClockOut = { ...mockPendingClockOut, workflow: null, currentRequirement: null, currentForm: null };
+      return null;
+    });
+    mockPendingClockOut = {
+      workflow: { workflowOccurrenceId: 'stale-occurrence' },
+      currentRequirement: { workflowRequirementId: 'stale-requirement' },
+      currentForm: { id: 'stale-form', name: 'Old Report', fields: [] },
+      completedCount: 0,
+      totalCount: 1,
+      busy: false,
+      error: null,
+      recover,
+    };
+    await act(async () => { tree = create(<HomeScreen />); });
+
+    await act(async () => tree.root.findByType('primary-button').props.onPress());
+    await act(async () => tree.update(<HomeScreen />));
+
+    expect(recover).toHaveBeenCalledTimes(1);
+    expect(router.push).not.toHaveBeenCalledWith(expect.objectContaining({ pathname: '/form' }));
+    expect(tree.root.findAllByType('primary-button').map((node: any) => node.props.label)).toContain('Clock In');
+    expect(textOf(tree.root)).not.toContain('Clock out pending');
+  });
+
+  it('keeps a missing required snapshot enforced and offers canonical Retry', async () => {
+    mockPendingClockOut = {
+      workflow: {
+        workflowOccurrenceId: 'occurrence-1',
+        requirements: [{ workflowRequirementId: 'requirement-1', completed: false, formId: 'form-1' }],
+      },
+      currentRequirement: { workflowRequirementId: 'requirement-1', formId: 'form-1' },
+      currentForm: null,
+      completedCount: 0,
+      totalCount: 1,
+      busy: false,
+      error: null,
+      recover: jest.fn().mockResolvedValue({
+        workflowOccurrenceId: 'occurrence-1',
+        requirements: [{ workflowRequirementId: 'requirement-1', completed: false, formId: 'form-1' }],
+      }),
+    };
+    await act(async () => { tree = create(<HomeScreen />); });
+
+    expect(tree.root.findByType('primary-button').props.label).toBe('Retry Required Form');
+    await act(async () => tree.root.findByType('primary-button').props.onPress());
+
+    expect(tree.root.findAllByType('status-banner').map((node: any) => node.props.message).join(' ')).toContain('contact your supervisor or administrator');
+    expect(router.push).not.toHaveBeenCalledWith(expect.objectContaining({ pathname: '/form' }));
+    expect(tree.root.findAllByType('primary-button').map((node: any) => node.props.label)).not.toContain('Clock In');
+  });
+
+  it('opens a persisted snapshot when Retry returns a repaired pending workflow', async () => {
+    const recoveredWorkflow = {
+      workflowOccurrenceId: 'occurrence-1',
+      requirements: [{
+        workflowRequirementId: 'requirement-1', completed: false,
+        formPackage: { id: 'form-1', name: 'Historical Report', fields: [] },
+      }],
+    };
+    const recover = jest.fn().mockResolvedValue(recoveredWorkflow);
+    mockPendingClockOut = {
+      workflow: { workflowOccurrenceId: 'occurrence-1' },
+      currentRequirement: { workflowRequirementId: 'requirement-1' },
+      currentForm: null,
+      completedCount: 0,
+      totalCount: 1,
+      busy: false,
+      error: null,
+      recover,
+    };
+    await act(async () => { tree = create(<HomeScreen />); });
+
+    await act(async () => tree.root.findByType('primary-button').props.onPress());
+
+    expect(recover).toHaveBeenCalledTimes(1);
+    expect(router.push).toHaveBeenCalledWith(expect.objectContaining({
+      pathname: '/form',
+      params: expect.objectContaining({ formId: 'form-1', workflowRequirementId: 'requirement-1' }),
+    }));
   });
 
   it('restores pending clock-in as a resume action without showing an active shift', async () => {

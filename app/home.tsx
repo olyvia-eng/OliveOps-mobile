@@ -27,7 +27,7 @@ import { useClockingStore } from '@/store/clockingStore';
 import { useOptionalOfflineClockStore } from '@/store/offlineClockContext';
 import { useTrainingStore } from '@/store/trainingStore';
 import { usePendingClockInStore } from '@/store/pendingClockInStore';
-import { usePendingClockOutStore } from '@/store/pendingClockOutStore';
+import { pendingClockOutFormTarget, usePendingClockOutStore } from '@/store/pendingClockOutStore';
 import { colors } from '@/theme/colors';
 import { formatBusinessDate, formatBusinessTime } from '@/utils/businessTime';
 import { loadMyActiveSnowRoute } from '@/api/snowOperationsApi';
@@ -58,6 +58,7 @@ export default function HomeScreen() {
   const pendingClockInReady = pendingClockIn.phase.kind === 'ready_to_finalize';
   const [loadError, setLoadError] = useState<string | null>(null);
   const [pendingFormError, setPendingFormError] = useState<string | null>(null);
+  const [recoveringRequiredForm, setRecoveringRequiredForm] = useState(false);
   const [now, setNow] = useState(Date.now());
 
   useEffect(() => {
@@ -140,6 +141,34 @@ export default function HomeScreen() {
     [businessTimeZone, now]
   );
 
+  async function recoverAndOpenRequiredClockOutForm() {
+    setPendingFormError(null);
+    setRecoveringRequiredForm(true);
+    try {
+      const canonicalWorkflow = await pendingClockOut.recover();
+      if (!canonicalWorkflow) {
+        await refreshWorkContext();
+        return;
+      }
+      const target = pendingClockOutFormTarget(canonicalWorkflow);
+      if (!target) {
+        setPendingFormError('Required form details are unavailable. Retry to refresh them. If this continues, contact your supervisor or administrator to resolve the clock-out requirement.');
+        return;
+      }
+      router.push({
+        pathname: '/form',
+        params: {
+          formId: target.form.id,
+          trigger: 'after_clock_out',
+          workflowOccurrenceId: target.workflowOccurrenceId,
+          workflowRequirementId: target.workflowRequirementId,
+        },
+      });
+    } finally {
+      setRecoveringRequiredForm(false);
+    }
+  }
+
   return (
     <PrimaryScreen testID="home-scroll">
       <OfflineNotice />
@@ -183,13 +212,8 @@ export default function HomeScreen() {
                 title={pendingClockOut.workflow ? 'Complete required clock-out form' : 'Complete required clock-in form'}
                 subtitle="Your clocking workflow is waiting for you"
                 onPress={() => {
-                  if (pendingClockOut.workflow && pendingClockOut.currentForm && pendingClockOut.currentRequirement) {
-                    router.push({ pathname: '/form', params: {
-                      formId: pendingClockOut.currentForm.id,
-                      trigger: 'after_clock_out',
-                      workflowOccurrenceId: pendingClockOut.workflow.workflowOccurrenceId,
-                      workflowRequirementId: pendingClockOut.currentRequirement.workflowRequirementId,
-                    } });
+                  if (pendingClockOut.workflow) {
+                    void recoverAndOpenRequiredClockOutForm();
                     return;
                   }
                   if (pendingClockInReady) {
@@ -353,18 +377,15 @@ export default function HomeScreen() {
         </View>
       ) : null}
 
-      {pendingClockOut.workflow && pendingClockOut.currentForm && pendingClockOut.currentRequirement ? (
+      {pendingClockOut.workflow ? (
         <PrimaryActionButton
-          label="Resume Required Form"
-          onPress={() => router.push({
-            pathname: '/form',
-            params: {
-              formId: pendingClockOut.currentForm?.id,
-              trigger: 'after_clock_out',
-              workflowOccurrenceId: pendingClockOut.workflow?.workflowOccurrenceId,
-              workflowRequirementId: pendingClockOut.currentRequirement?.workflowRequirementId,
-            },
-          })}
+          label={recoveringRequiredForm
+            ? 'Refreshing Required Form...'
+            : pendingClockOut.currentForm
+              ? 'Resume Required Form'
+              : 'Retry Required Form'}
+          disabled={recoveringRequiredForm}
+          onPress={() => { void recoverAndOpenRequiredClockOutForm(); }}
         />
       ) : showPendingClockIn && pendingClockInReady ? (
         <PrimaryActionButton
