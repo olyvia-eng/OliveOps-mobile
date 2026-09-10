@@ -55,6 +55,15 @@ function captureUnexpectedFormsError(error: unknown, operation: string) {
   Sentry.captureException(error, { tags: { feature: 'forms', operation } });
 }
 
+function apiErrorCode(error: unknown) {
+  if (!(error instanceof ApiError)) return undefined;
+  const code = error.code?.toLowerCase();
+  if (code) return code;
+  return error.message.toLowerCase() === 'submission_idempotency_conflict'
+    ? 'submission_idempotency_conflict'
+    : undefined;
+}
+
 export function useFormsActions() {
   const { accessToken, status, user } = useAuthStore();
   const {
@@ -182,12 +191,14 @@ export function useFormsActions() {
       setFlashMessage('Form submitted successfully.');
       return { ok: true as const, submission: response.submission };
     } catch (error) {
+      const code = apiErrorCode(error);
       const shouldReconcile = (error instanceof ApiError && (error.status === 408 || error.status === 409))
         || error instanceof TypeError;
+      const canReconcile = shouldReconcile && code !== 'submission_idempotency_conflict';
       const uncertain = (error instanceof ApiError && (error.status === 408 || error.code === 'REQUEST_TIMEOUT'))
         || error instanceof TypeError;
 
-      if (shouldReconcile && currentAuthIdentityRef.current === requestIdentity) {
+      if (canReconcile && currentAuthIdentityRef.current === requestIdentity) {
         try {
           const workspace = await commitWorkspace(requestIdentity);
           const completed = workspace?.completed.find((item) => isMatchingSubmission(item, payload));
@@ -202,7 +213,6 @@ export function useFormsActions() {
 
       captureUnexpectedFormsError(error, 'submit');
       if (error instanceof ApiError && error.fieldId) {
-        const code = error.code?.toLowerCase();
         const employeeMessage = code === 'form_response_requirement_failed'
           ? error.message
           : 'Check this answer and try again.';
@@ -215,10 +225,12 @@ export function useFormsActions() {
       }
       return {
         ok: false as const,
-        code: error instanceof ApiError ? error.code?.toLowerCase() : undefined,
-        error: uncertain
-          ? 'Submission could not be confirmed. Your answers are still here. Retry when ready.'
-          : toFormsError(error, 'Could not submit this form. Your answers are still here.'),
+        code,
+        error: code === 'submission_idempotency_conflict'
+          ? 'These answers do not match the submission already saved for this attempt. Contact your supervisor before trying again.'
+          : uncertain
+            ? 'Submission could not be confirmed. Your answers are still here. Retry when ready.'
+            : toFormsError(error, 'Could not submit this form. Your answers are still here.'),
         uncertain,
       };
     } finally {

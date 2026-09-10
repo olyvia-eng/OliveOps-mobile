@@ -16,6 +16,11 @@ import {
   type EmployeeFormValues,
   validateFormValues,
 } from '@/features/forms/formValidation';
+import {
+  clockInRequirementIsCompleted,
+  clockOutRequirementIsCompleted,
+  isMandatoryCompletionConflict,
+} from '@/features/forms/mandatoryWorkflowRecovery';
 import { useFormsActions } from '@/hooks/useFormsActions';
 import { useClockingActions } from '@/hooks/useClockingActions';
 import { createFormClientSubmissionId } from '@/services/requestGuards';
@@ -584,10 +589,32 @@ export default function FormScreen() {
       setProcessingPhotos(false);
     }
     const result = await submitForm(payload);
+    let recoveredClockIn: Awaited<ReturnType<typeof pendingClockIn.recover>> | undefined;
+    let recoveredClockOut: Awaited<ReturnType<typeof pendingClockOut.recover>> | undefined;
     if (!result.ok) {
       const resultCode = 'code' in result ? result.code : undefined;
-      if (mandatoryKind && resultCode === 'workflow_requirement_already_completed') {
-        // Continue through authoritative workflow recovery below.
+      if (mandatoryKind && isMandatoryCompletionConflict(resultCode)) {
+        if (mandatoryKind === 'clock_in') {
+          recoveredClockIn = await pendingClockIn.recover();
+        } else {
+          recoveredClockOut = await pendingClockOut.recover();
+        }
+        const exactRequirementCompleted = mandatoryKind === 'clock_in'
+          ? !recoveredClockIn || clockInRequirementIsCompleted(
+            recoveredClockIn,
+            params.workflowOccurrenceId!,
+            params.workflowRequirementId!,
+          )
+          : !recoveredClockOut || clockOutRequirementIsCompleted(
+            recoveredClockOut,
+            params.workflowOccurrenceId!,
+            params.workflowRequirementId!,
+          );
+        if (!exactRequirementCompleted) {
+          submissionInProgressRef.current = false;
+          setError('Required form completion could not be verified. Your answers are still saved. Check your connection and retry.');
+          return;
+        }
       } else {
         if (mandatoryKind && resultCode === 'workflow_context_mismatch') {
           await mandatoryStore.recover();
@@ -605,11 +632,26 @@ export default function FormScreen() {
       submittedRef.current = true;
       setMandatorySubmissionAccepted(true);
       const refreshedClockIn = mandatoryKind === 'clock_in'
-        ? await pendingClockIn.refreshAfterSubmission()
+        ? recoveredClockIn === undefined ? await pendingClockIn.refreshAfterSubmission() : recoveredClockIn
         : null;
       const refreshedClockOut = mandatoryKind === 'clock_out'
-        ? await pendingClockOut.refreshAfterSubmission()
+        ? recoveredClockOut === undefined ? await pendingClockOut.refreshAfterSubmission() : recoveredClockOut
         : null;
+      if (!refreshedClockIn && !refreshedClockOut) {
+        submissionInProgressRef.current = false;
+        try {
+          await refreshWorkContext();
+        } catch {
+          // The pending endpoint already proved that the workflow is resolved.
+        }
+        if (mandatoryKind === 'clock_in') {
+          clockInNavigationCompletedRef.current = true;
+          router.dismissTo('/active-shift');
+        } else {
+          setClockOutCompleted(true);
+        }
+        return;
+      }
       const nextClockInRequirement = refreshedClockIn?.remainingForms[0] ?? null;
       const nextClockOutRequirement = mandatoryKind === 'clock_out'
         ? workflowRequirements(refreshedClockOut).find((item) => !item.completed) ?? null

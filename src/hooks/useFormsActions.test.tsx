@@ -271,6 +271,36 @@ describe('useFormsActions', () => {
     });
   });
 
+  it('does not reconcile a reused submission ID with a different payload', async () => {
+    mockSubmitEmployeeForm.mockRejectedValue(new ApiError('submission_idempotency_conflict', 409));
+    mockLoadEmployeeForms.mockResolvedValue({
+      ...workspace(),
+      completed: [{
+        submissionId: 'sub-existing', clientSubmissionId: 'attempt-required', formId: 'form-1', formName: 'End of Shift',
+        submittedAt: '2026-08-18T12:01:00.000Z', status: 'submitted', trigger: 'after_clock_out',
+        workflowOccurrenceId: 'occurrence-1', workflowRequirementId: 'requirement-1',
+      }],
+    });
+    await mount();
+
+    let result: any;
+    await act(async () => {
+      result = await currentActions.submitForm({
+        clientSubmissionId: 'attempt-required', formId: 'form-1', trigger: 'after_clock_out',
+        workflowOccurrenceId: 'occurrence-1', workflowRequirementId: 'requirement-1',
+        responses: [{ fieldId: 'condition', value: 'Changed answer' }],
+      });
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      code: 'submission_idempotency_conflict',
+      error: 'These answers do not match the submission already saved for this attempt. Contact your supervisor before trying again.',
+      uncertain: false,
+    });
+    expect(mockLoadEmployeeForms).not.toHaveBeenCalled();
+  });
+
   it('reconciles Completed after an uncertain on-demand network failure', async () => {
     mockSubmitEmployeeForm.mockRejectedValue(new TypeError('Network request failed'));
     mockLoadEmployeeForms.mockResolvedValue({
