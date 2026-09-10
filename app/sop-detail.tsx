@@ -1,18 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
-import { Linking, StyleSheet, Text, View } from 'react-native';
+import { Linking, StyleSheet, View } from 'react-native';
 import { Redirect, useLocalSearchParams } from 'expo-router';
 import { loadMySopDetail } from '@/api/sopsApi';
 import { prepareDownload } from '@/api/storageApi';
 import { ErrorState } from '@/components/ErrorState';
 import { InfoRow, ScreenHeader, SectionCard, SectionHeader, StatusBadge } from '@/components/MobilePrimitives';
 import { LoadingState } from '@/components/LoadingState';
+import { SopRichText } from '@/components/SopRichText';
 import { Screen } from '@/components/Screen';
 import { SecondaryButton } from '@/components/SecondaryButton';
 import { StatusBanner } from '@/components/StatusBanner';
 import { isOnline } from '@/services/connectivity';
+import { normalizeSopContent } from '@/features/sops/content';
 import { loadSopCache, saveSopCache } from '@/services/sopCacheStorage';
 import { useAuthStore } from '@/store/authStore';
-import { colors, spacing, typography } from '@/theme/colors';
+import { spacing } from '@/theme/colors';
 import { normalizeContentMode } from '@/types/document';
 import type { SopVersion } from '@/types/sop';
 
@@ -79,15 +81,17 @@ export default function SopDetailScreen() {
   if (normalizeContentMode(sop.contentMode) === 'document') {
     return <Redirect href={{ pathname: '/sop-document', params: { sopId: sop.sopId, expectedVersion: expectedVersionValue } }} />;
   }
+  const structuredContent = normalizeSopContent(sop);
+  if (__DEV__ && structuredContent.unsupportedTypes.length > 0) {
+    console.warn('[sop:unsupported-content]', { types: structuredContent.unsupportedTypes });
+  }
 
   return <Screen testID="sop-detail-screen">
     <ScreenHeader title={sop.title} subtitle={sop.shortDescription} action={<StatusBadge label={sop.category} tone="active" />} />
     {offline ? <StatusBanner tone="info" message="Offline. Showing the saved version." /> : null}
     {error ? <StatusBanner tone="error" message={error} /> : null}
     <SectionCard><InfoRow label="Version" value={String(sop.version)} /><InfoRow label="Published" value={new Date(sop.publishedAt).toLocaleDateString()} /></SectionCard>
-    <ContentSection title="Purpose" content={sop.purpose} />
-    <ContentSection title="Procedure" content={sop.instructions} />
-    {sop.safetyInformation ? <ContentSection title="Safety information" content={sop.safetyInformation} /> : null}
+    <SopRichText content={structuredContent} />
     {sop.attachmentFileIds.length > 0 ? <View style={styles.section}><SectionHeader title="Attachments" />
       {sop.attachmentFileIds.map((fileId, index) => <SecondaryButton key={fileId}
         label={openingFileId === fileId ? 'Opening...' : `Open attachment ${index + 1}`}
@@ -96,11 +100,6 @@ export default function SopDetailScreen() {
   </Screen>;
 }
 
-function ContentSection({ title, content }: { title: string; content: string }) {
-  return <View style={styles.section}><SectionHeader title={title} /><Text style={styles.content}>{content}</Text></View>;
-}
-
 const styles = StyleSheet.create({
   section: { gap: spacing.sm },
-  content: { color: colors.textPrimary, fontSize: typography.body, lineHeight: 23 },
 });
