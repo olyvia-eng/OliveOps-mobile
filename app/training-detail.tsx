@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { prepareDownload } from '@/api/storageApi';
 import { completeTraining, loadMyTrainingDetail } from '@/api/trainingApi';
@@ -38,6 +38,7 @@ export default function TrainingDetailScreen() {
   const [openingAttachment, setOpeningAttachment] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const submissionIdRef = useRef(createRequestMeta(`training-${assignmentId}`).idempotencyKey);
+  const documentScrollRef = useRef<ScrollView>(null);
 
   async function load() {
     if (!assignmentId) {
@@ -175,6 +176,9 @@ export default function TrainingDetailScreen() {
         onChangeText={setSignatureName}
         placeholder={user?.name ?? 'Full name'}
         placeholderTextColor={colors.inputPlaceholder}
+        onFocus={() => {
+          requestAnimationFrame(() => documentScrollRef.current?.scrollToEnd({ animated: true }));
+        }}
         style={styles.signatureInput}
       />
       <View testID="training-signature-preview" style={styles.signaturePreview}>
@@ -190,31 +194,44 @@ export default function TrainingDetailScreen() {
   if (normalizeContentMode(detail.version.contentMode) === 'document') {
     return (
       <ScreenSafeAreaView testID="training-document-screen-safe-area">
-        <View testID="training-document-screen" style={styles.documentScreen}>
-          <View style={styles.documentHeader}>
-            <ScreenHeader
-              title={detail.version.title}
-              subtitle={`Assigned version ${detail.version.version}`}
-              action={<StatusBadge label={getTrainingStatusLabel(detail.assignment.presentationStatus)} tone={getTrainingStatusTone(detail.assignment.presentationStatus)} />}
-            />
-            {error ? <StatusBanner tone="error" message={error} /> : null}
-          </View>
-          {detail.version.document ? (
-            <AuthorizedPdfViewer document={detail.version.document} />
-          ) : (
-            <ErrorState message="The PDF for this Training version is unavailable." onRetry={() => { void load(); }} />
-          )}
-          {detail.version.document ? (
-            <View style={styles.completionPanel}>
-              {trainingSections.length > 0 || checklistItems.length > 0 ? (
-                <ScrollView style={styles.documentChecklist} contentContainerStyle={styles.documentChecklistContent}>
-                  {trainingSections.length > 0 ? sectionContent : checklistItems.map(renderChecklistItem)}
-                </ScrollView>
-              ) : null}
-              {completionControls}
+        <KeyboardAvoidingView
+          testID="training-document-keyboard-avoiding-view"
+          style={styles.documentKeyboardAvoiding}
+          behavior={Platform.select({ ios: 'padding', android: undefined })}
+        >
+          <ScrollView
+            ref={documentScrollRef}
+            testID="training-document-screen"
+            contentContainerStyle={styles.documentContent}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="interactive"
+            nestedScrollEnabled
+          >
+            <View style={styles.documentHeader}>
+              <ScreenHeader
+                title={detail.version.title}
+                subtitle={`Assigned version ${detail.version.version}`}
+                action={<StatusBadge label={getTrainingStatusLabel(detail.assignment.presentationStatus)} tone={getTrainingStatusTone(detail.assignment.presentationStatus)} />}
+              />
+              {error ? <StatusBanner tone="error" message={error} /> : null}
             </View>
-          ) : null}
-        </View>
+            {detail.version.document ? (
+              <AuthorizedPdfViewer document={detail.version.document} embedded />
+            ) : (
+              <ErrorState message="The PDF for this Training version is unavailable." onRetry={() => { void load(); }} />
+            )}
+            {detail.version.document ? (
+              <View testID="training-completion-panel" style={styles.completionPanel}>
+                {trainingSections.length > 0 || checklistItems.length > 0 ? (
+                  <View testID="training-document-checklist" style={styles.documentChecklistContent}>
+                    {trainingSections.length > 0 ? sectionContent : checklistItems.map(renderChecklistItem)}
+                  </View>
+                ) : null}
+                {completionControls}
+              </View>
+            ) : null}
+          </ScrollView>
+        </KeyboardAvoidingView>
       </ScreenSafeAreaView>
     );
   }
@@ -253,10 +270,10 @@ export default function TrainingDetailScreen() {
 }
 
 const styles = StyleSheet.create({
-  documentScreen: { flex: 1, paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.sm, gap: spacing.sm },
+  documentKeyboardAvoiding: { flex: 1 },
+  documentContent: { flexGrow: 1, paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.xxl, gap: spacing.md },
   documentHeader: { gap: spacing.sm },
-  completionPanel: { gap: spacing.sm },
-  documentChecklist: { maxHeight: 144 },
+  completionPanel: { gap: spacing.md },
   documentChecklistContent: { gap: spacing.xs },
   section: { gap: spacing.sm },
   instructions: { color: colors.textPrimary, fontSize: typography.body, lineHeight: 23 },

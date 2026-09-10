@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AppState, Linking, StyleSheet, Text, View } from 'react-native';
+import { AppState, Linking, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import Pdf from 'react-native-pdf';
 import { prepareDownload } from '@/api/storageApi';
 import { ErrorState } from '@/components/ErrorState';
@@ -12,8 +12,9 @@ import type { PdfDocumentMetadata } from '@/types/document';
 
 const SIGNED_URL_REFRESH_MS = 8 * 60 * 1000;
 
-export function AuthorizedPdfViewer({ document }: { document: PdfDocumentMetadata }) {
+export function AuthorizedPdfViewer({ document, embedded = false }: { document: PdfDocumentMetadata; embedded?: boolean }) {
   const { accessToken } = useAuthStore();
+  const { height: windowHeight } = useWindowDimensions();
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -23,6 +24,7 @@ export function AuthorizedPdfViewer({ document }: { document: PdfDocumentMetadat
   const requestSequenceRef = useRef(0);
   const signedAtRef = useRef(0);
   const loadRenewalsRef = useRef(0);
+  const embeddedViewportHeight = Math.max(320, Math.min(520, Math.round(windowHeight * 0.55)));
 
   const requestSignedUrl = useCallback(async () => {
     const requestSequence = ++requestSequenceRef.current;
@@ -97,14 +99,17 @@ export function AuthorizedPdfViewer({ document }: { document: PdfDocumentMetadat
   }
 
   return (
-    <View testID="authorized-pdf-viewer" style={styles.container}>
+    <View testID="authorized-pdf-viewer" style={[styles.container, embedded && styles.embeddedContainer]}>
       <View style={styles.toolbar}>
         <Text numberOfLines={1} style={styles.fileName}>{document.originalFileName || 'PDF document'}</Text>
         <Text accessibilityLiveRegion="polite" style={styles.pageCount}>
           {pageCount > 0 ? `Page ${page} of ${pageCount}` : 'Loading pages'}
         </Text>
       </View>
-      <View style={styles.viewerSurface}>
+      <View
+        testID="authorized-pdf-viewer-surface"
+        style={[styles.viewerSurface, embedded && { flex: 0, height: embeddedViewportHeight }]}
+      >
         {loading && !downloadUrl ? <LoadingState label="Loading PDF..." /> : null}
         {error && !downloadUrl ? <ErrorState message={error} onRetry={retry} /> : null}
         {downloadUrl ? (
@@ -143,6 +148,7 @@ export function AuthorizedPdfViewer({ document }: { document: PdfDocumentMetadat
 
 const styles = StyleSheet.create({
   container: { flex: 1, gap: spacing.sm },
+  embeddedContainer: { flex: 0 },
   toolbar: { minHeight: 40, flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.md },
   fileName: { flex: 1, color: colors.textPrimary, fontSize: typography.bodySmall, fontWeight: typography.semibold },
   pageCount: { color: colors.textMuted, fontSize: typography.caption },
