@@ -90,6 +90,13 @@ jest.mock('@/store/pendingClockOutStore', () => ({
 jest.mock('@/store/pendingClockInStore', () => ({
   usePendingClockInStore: () => mockPendingClockIn,
   pendingClockInRequirementForm: (requirement: any) => requirement?.form ?? null,
+  pendingClockInRequirements: (workflow: any) => {
+    const byId = new Map<string, any>();
+    for (const requirement of [...(workflow?.requiredForms ?? []), ...(workflow?.remainingForms ?? [])]) {
+      byId.set(requirement.requirementId, requirement);
+    }
+    return [...byId.values()];
+  },
 }));
 jest.mock('@/services/requestGuards', () => ({
   createFormClientSubmissionId: () => 'form-submission:request-1',
@@ -532,6 +539,151 @@ describe('FormScreen', () => {
     expect(tree.root.findByProps({ testID: 'form-field-condition' }).props.value).toBe('Clock out entry');
     expect(mockInitialFormValues).toHaveBeenCalledTimes(1);
     expect(mockRefreshForms).not.toHaveBeenCalled();
+  });
+
+  it('resolves a routed clock-out requirement by ID instead of currentRequirement', async () => {
+    const current = {
+      workflowRequirementId: 'requirement-1', completed: false,
+      form: { ...mockForm, id: 'form-current', name: 'Current Form', trigger: 'after_clock_out' },
+    };
+    const routed = {
+      workflowRequirementId: 'requirement-2', completed: false,
+      form: { ...mockForm, id: 'form-routed', name: 'Routed Historical Form', trigger: 'after_clock_out' },
+    };
+    mockParams = {
+      formId: 'form-routed', trigger: 'after_clock_out', workflowOccurrenceId: 'occurrence-1',
+      workflowRequirementId: 'requirement-2',
+    };
+    mockPendingClockOut = {
+      ...mockPendingClockOut,
+      workflow: { workflowOccurrenceId: 'occurrence-1', requirements: [current, routed] },
+      currentRequirement: current,
+    };
+
+    let tree: any;
+    await act(async () => { tree = create(<FormScreen />); });
+
+    expect(tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ')).toContain('Routed Historical Form');
+    expect(mockRecoverPending).not.toHaveBeenCalled();
+    expect(mockRefreshForms).not.toHaveBeenCalled();
+  });
+
+  it('resolves a routed clock-in requirement by ID instead of currentRequirement', async () => {
+    const current = {
+      requirementId: 'requirement-1', formId: 'form-current',
+      form: { ...mockForm, id: 'form-current', name: 'Current Clock-in Form', trigger: 'before_clock_in' },
+    };
+    const routed = {
+      requirementId: 'requirement-2', formId: 'form-routed',
+      form: { ...mockForm, id: 'form-routed', name: 'Routed Clock-in Form', trigger: 'before_clock_in' },
+    };
+    mockParams = {
+      formId: 'form-routed', trigger: 'before_clock_in', workflowOccurrenceId: 'occurrence-1',
+      workflowRequirementId: 'requirement-2',
+    };
+    mockPendingClockIn = {
+      ...mockPendingClockIn,
+      workflow: { workflowOccurrenceId: 'occurrence-1', requiredForms: [current, routed], remainingForms: [current] },
+      currentRequirement: current,
+    };
+
+    let tree: any;
+    await act(async () => { tree = create(<FormScreen />); });
+
+    expect(tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ')).toContain('Routed Clock-in Form');
+    expect(mockRecoverPending).not.toHaveBeenCalled();
+    expect(mockRefreshForms).not.toHaveBeenCalled();
+  });
+
+  it('recovers a missing mandatory clock-out snapshot without refreshing generic Forms', async () => {
+    const recoveredForm = { ...mockForm, name: 'Recovered Clock-out Form', trigger: 'after_clock_out' };
+    const recover = jest.fn().mockResolvedValue({
+      workflowOccurrenceId: 'occurrence-1',
+      requirements: [{ workflowRequirementId: 'requirement-1', completed: false, form: recoveredForm }],
+    });
+    mockParams = {
+      formId: 'form-1', trigger: 'after_clock_out', workflowOccurrenceId: 'occurrence-1',
+      workflowRequirementId: 'requirement-1',
+    };
+    mockPendingClockOut = {
+      ...mockPendingClockOut,
+      workflow: {
+        workflowOccurrenceId: 'occurrence-1',
+        requirements: [{ workflowRequirementId: 'requirement-1', completed: false }],
+      },
+      currentRequirement: { workflowRequirementId: 'requirement-1', completed: false },
+      recover,
+    };
+
+    let tree: any;
+    await act(async () => { tree = create(<FormScreen />); });
+
+    expect(recover).toHaveBeenCalledTimes(1);
+    expect(mockRefreshForms).not.toHaveBeenCalled();
+    expect(tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ')).toContain('Recovered Clock-out Form');
+  });
+
+  it('uses clock-in recovery for a missing mandatory clock-in snapshot', async () => {
+    const recoveredForm = { ...mockForm, name: 'Recovered Clock-in Form', trigger: 'before_clock_in' };
+    const recover = jest.fn().mockResolvedValue({
+      workflowOccurrenceId: 'occurrence-1',
+      requiredForms: [{ requirementId: 'requirement-1', formId: 'form-1', form: recoveredForm }],
+      remainingForms: [{ requirementId: 'requirement-1', formId: 'form-1', form: recoveredForm }],
+    });
+    mockParams = {
+      formId: 'form-1', trigger: 'before_clock_in', workflowOccurrenceId: 'occurrence-1',
+      workflowRequirementId: 'requirement-1',
+    };
+    mockPendingClockIn = {
+      ...mockPendingClockIn,
+      workflow: {
+        workflowOccurrenceId: 'occurrence-1',
+        requiredForms: [{ requirementId: 'requirement-1', formId: 'form-1' }],
+        remainingForms: [{ requirementId: 'requirement-1', formId: 'form-1' }],
+      },
+      currentRequirement: { requirementId: 'requirement-1', formId: 'form-1' },
+      recover,
+    };
+
+    let tree: any;
+    await act(async () => { tree = create(<FormScreen />); });
+
+    expect(recover).toHaveBeenCalledTimes(1);
+    expect(mockPendingClockOut.recover).not.toHaveBeenCalled();
+    expect(mockRefreshForms).not.toHaveBeenCalled();
+    expect(tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ')).toContain('Recovered Clock-in Form');
+  });
+
+  it('ends failed mandatory recovery with a Retry action and keeps enforcement', async () => {
+    const unresolvedWorkflow = {
+      workflowOccurrenceId: 'occurrence-1',
+      requirements: [{ workflowRequirementId: 'requirement-1', completed: false }],
+    };
+    const recover = jest.fn().mockResolvedValue(unresolvedWorkflow);
+    mockParams = {
+      formId: 'form-1', trigger: 'after_clock_out', workflowOccurrenceId: 'occurrence-1',
+      workflowRequirementId: 'requirement-1',
+    };
+    mockPendingClockOut = {
+      ...mockPendingClockOut,
+      workflow: unresolvedWorkflow,
+      currentRequirement: unresolvedWorkflow.requirements[0],
+      recover,
+    };
+
+    let tree: any;
+    await act(async () => { tree = create(<FormScreen />); });
+
+    const text = tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ');
+    expect(text).toContain("Required form couldn't be loaded");
+    expect(text).not.toContain('Refreshing Required Form...');
+    expect(tree.root.findByType('primary-button').props.label).toBe('Retry');
+    expect(mockRefreshForms).not.toHaveBeenCalled();
+
+    await act(async () => tree.root.findByType('primary-button').props.onPress());
+    expect(recover).toHaveBeenCalledTimes(2);
+    expect(mockFinalize).not.toHaveBeenCalled();
+    expect(mockDismissTo).not.toHaveBeenCalled();
   });
 
   it('keeps ordinary Forms live outside mandatory workflow routes', async () => {

@@ -5,6 +5,10 @@ import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 const mockRefreshForms = jest.fn().mockResolvedValue({ ok: true });
 const mockSetFlashMessage = jest.fn();
 const mockPush = jest.fn();
+const mockRecoverClockIn = jest.fn().mockResolvedValue(null);
+const mockRecoverClockOut = jest.fn().mockResolvedValue(null);
+let mockPendingClockIn: any;
+let mockPendingClockOut: any;
 
 const mockFormsState = {
   toDo: [{
@@ -46,6 +50,16 @@ const mockFormsState = {
 jest.mock('expo-router', () => ({ router: { push: (...args: unknown[]) => mockPush(...args) } }));
 jest.mock('@/store/clockingStore', () => ({ useClockingStore: () => ({ businessTimeZone: 'America/Toronto' }) }));
 jest.mock('@/store/formsStore', () => ({ useFormsStore: () => mockFormsState }));
+jest.mock('@/store/pendingClockInStore', () => ({
+  usePendingClockInStore: () => mockPendingClockIn,
+  pendingClockInRequirementForm: (requirement: any) => requirement?.form ?? null,
+  pendingClockInRequirements: (workflow: any) => workflow?.remainingForms ?? [],
+}));
+jest.mock('@/store/pendingClockOutStore', () => ({
+  usePendingClockOutStore: () => mockPendingClockOut,
+  requirementForm: (requirement: any) => requirement?.form ?? null,
+  workflowRequirements: (workflow: any) => workflow?.requirements ?? [],
+}));
 jest.mock('@/hooks/useFormsActions', () => ({
   useFormsActions: () => ({ refreshForms: mockRefreshForms, loadingWorkspace: false }),
 }));
@@ -84,6 +98,10 @@ describe('FormsScreen', () => {
     mockFormsState.toDo = [mockFormsState.toDo[0]].filter(Boolean) as any;
     mockFormsState.available = [mockFormsState.available[0]].filter(Boolean) as any;
     mockFormsState.completed = [mockFormsState.completed[0]].filter(Boolean) as any;
+    mockPendingClockIn = { workflow: null, recover: mockRecoverClockIn };
+    mockPendingClockOut = { workflow: null, recover: mockRecoverClockOut };
+    mockRecoverClockIn.mockClear().mockResolvedValue(null);
+    mockRecoverClockOut.mockClear().mockResolvedValue(null);
   });
 
   it('renders To Do by default with backend job and division context', async () => {
@@ -133,6 +151,83 @@ describe('FormsScreen', () => {
     }));
   });
 
+  it('renders backend workflow metadata in To Do and passes mandatory route identity', async () => {
+    mockFormsState.toDo = [{
+      ...mockFormsState.toDo[0],
+      id: 'clock-out-form',
+      name: 'End of Shift Report',
+      trigger: 'after_clock_out',
+      requiredFor: 'clock_out',
+      workflowOccurrenceId: 'occurrence-1',
+      workflowRequirementId: 'requirement-1',
+      context: { jobId: 'job-1', serviceId: 'service-1', serviceVisitId: 'visit-1' },
+    }] as any;
+    let tree: any;
+    await act(async () => { tree = create(<FormsScreen />); });
+
+    expect(textOf(tree)).toContain('To Do 1');
+    expect(textOf(tree)).toContain('Required for clock-out');
+    await act(async () => tree.root.findByProps({ testID: 'form-row-clock-out-form' }).props.onPress());
+    expect(mockPush).toHaveBeenCalledWith({
+      pathname: '/form',
+      params: expect.objectContaining({
+        formId: 'clock-out-form',
+        trigger: 'after_clock_out',
+        workflowOccurrenceId: 'occurrence-1',
+        workflowRequirementId: 'requirement-1',
+        serviceId: 'service-1',
+        serviceVisitId: 'visit-1',
+      }),
+    });
+  });
+
+  it('includes a restored mandatory snapshot when the Forms workspace is empty', async () => {
+    mockFormsState.toDo = [] as any;
+    mockPendingClockOut = {
+      recover: mockRecoverClockOut,
+      workflow: {
+        workflowOccurrenceId: 'occurrence-restored',
+        requirements: [{
+          workflowRequirementId: 'requirement-restored',
+          completed: false,
+          form: {
+            id: 'restored-form', name: 'Restored Clock-out Form', trigger: 'after_clock_out', required: true,
+            fields: [], submissionState: { completed: false },
+          },
+        }],
+      },
+    };
+    let tree: any;
+    await act(async () => { tree = create(<FormsScreen />); });
+
+    expect(textOf(tree)).toContain('To Do 1');
+    expect(textOf(tree)).toContain('Restored Clock-out Form');
+    expect(textOf(tree)).toContain('Required for clock-out');
+    expect(textOf(tree)).not.toContain("You're all caught up");
+  });
+
+  it('deduplicates backend and restored workflow items by occurrence and requirement', async () => {
+    const workflowForm = {
+      id: 'form-1', name: 'Clock-in Safety Check', trigger: 'before_clock_in', required: true,
+      requiredFor: 'clock_in', workflowOccurrenceId: 'clock-in-occurrence', workflowRequirementId: 'clock-in-requirement',
+      fields: [], submissionState: { completed: false },
+    };
+    mockFormsState.toDo = [workflowForm] as any;
+    mockPendingClockIn = {
+      recover: mockRecoverClockIn,
+      workflow: {
+        workflowOccurrenceId: 'clock-in-occurrence',
+        remainingForms: [{ requirementId: 'clock-in-requirement', form: workflowForm }],
+      },
+    };
+    let tree: any;
+    await act(async () => { tree = create(<FormsScreen />); });
+
+    expect(textOf(tree)).toContain('To Do 1');
+    expect(tree.root.findAllByType('pressable').filter((node: any) => node.props.testID === 'form-row-form-1')).toHaveLength(1);
+    expect(textOf(tree)).toContain('Required for clock-in');
+  });
+
   it('supports pull-to-refresh and empty tab states', async () => {
     mockFormsState.toDo = [] as any;
     mockFormsState.available = [] as any;
@@ -147,6 +242,8 @@ describe('FormsScreen', () => {
     expect(textOf(tree)).toContain('No completed forms yet');
     await act(async () => tree.root.findByType('flat-list').props.onRefresh());
     expect(mockRefreshForms).toHaveBeenLastCalledWith({ force: true });
+    expect(mockRecoverClockIn).toHaveBeenCalledTimes(1);
+    expect(mockRecoverClockOut).toHaveBeenCalledTimes(1);
   });
 
   it('keeps separate server requirements for the same Form and labels each reason', async () => {

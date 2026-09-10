@@ -34,6 +34,8 @@ The optional context filters narrow the returned instances. They do not grant ac
 
 `toDo` contains incomplete required instances. `available` contains active on-demand instances. `completed` contains up to 50 of the employee's non-draft submissions, newest first.
 
+`toDo` also includes unresolved mandatory clock-in and clock-out workflow requirements after canonical workflow reconciliation. These items use the immutable form snapshot persisted with the workflow; the server must not rebuild historical requirements from the current editable Form configuration. Workflow-backed items are deduplicated by `workflowOccurrenceId` plus `workflowRequirementId`, not by Form ID.
+
 A renderable Form instance has this shape:
 
 ```json
@@ -59,6 +61,30 @@ A renderable Form instance has this shape:
   }
 }
 ```
+
+A workflow-backed `toDo` item includes the same renderable Form fields plus its mandatory route identity:
+
+```json
+{
+  "id": "form-id",
+  "name": "End of Shift Report",
+  "description": "Confirm the completed work.",
+  "category": "operations",
+  "trigger": "after_clock_out",
+  "required": true,
+  "completionRequirement": "required",
+  "workflowOccurrenceId": "clock-out-occurrence-id",
+  "workflowRequirementId": "workflow-requirement-id",
+  "requiredFor": "clock_out",
+  "context": {},
+  "fields": [],
+  "submissionState": {
+    "completed": false
+  }
+}
+```
+
+`requiredFor` is either `clock_in` or `clock_out`. The workflow metadata is omitted for scheduled and on-demand Forms.
 
 Missing context values and incomplete submission-state metadata are omitted from JSON.
 

@@ -89,6 +89,9 @@ export interface EmployeeForm {
   requiresApproval?: boolean;
   periodKey?: string;
   context?: EmployeeFormContext;
+  workflowOccurrenceId?: string;
+  workflowRequirementId?: string;
+  requiredFor?: 'clock_in' | 'clock_out';
   fields: EmployeeFormField[];
   submissionState: EmployeeFormSubmissionState;
 }

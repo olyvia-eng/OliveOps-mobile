@@ -876,3 +876,12 @@ export function usePendingClockInStore() {
   if (!context) throw new Error('usePendingClockInStore must be used inside PendingClockInProvider');
   return context;
 }
+
+export function pendingClockInRequirements(workflow: PendingClockInWorkflow | null): PendingClockInRequirement[] {
+  if (!workflow) return [];
+  const byId = new Map<string, PendingClockInRequirement>();
+  for (const requirement of [...workflow.requiredForms, ...workflow.remainingForms]) {
+    byId.set(requirement.requirementId, requirement);
+  }
+  return [...byId.values()];
+}
