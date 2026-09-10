@@ -98,12 +98,14 @@ export interface EmployeeForm {
 
 export interface EmployeeFormSubmission {
   submissionId: string;
-  clientSubmissionId?: string;
+  clientSubmissionId?: string | null;
   formId: string;
   formName: string;
   submittedAt: string;
   status: EmployeeFormSubmissionStatus;
   trigger: EmployeeFormTrigger;
+  workflowOccurrenceId?: string | null;
+  workflowRequirementId?: string | null;
   context?: EmployeeFormContext;
 }
 

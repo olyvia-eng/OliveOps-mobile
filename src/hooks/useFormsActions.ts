@@ -31,6 +31,25 @@ function contextMatches(
     && (!payload.serviceVisitId || completedContext?.serviceVisitId === payload.serviceVisitId);
 }
 
+function isMatchingSubmission(
+  completed: {
+    clientSubmissionId?: string | null;
+    formId: string;
+    trigger: string;
+    workflowOccurrenceId?: string | null;
+    workflowRequirementId?: string | null;
+    context?: EmployeeFormsContextFilter;
+  },
+  payload: SubmitEmployeeFormRequest,
+) {
+  return completed.clientSubmissionId === payload.clientSubmissionId
+    && completed.formId === payload.formId
+    && completed.trigger === payload.trigger
+    && (completed.workflowOccurrenceId ?? undefined) === payload.workflowOccurrenceId
+    && (completed.workflowRequirementId ?? undefined) === payload.workflowRequirementId
+    && contextMatches(completed.context, payload);
+}
+
 function captureUnexpectedFormsError(error: unknown, operation: string) {
   if (error instanceof ApiError || error instanceof TypeError) return;
   Sentry.captureException(error, { tags: { feature: 'forms', operation } });
@@ -165,16 +184,13 @@ export function useFormsActions() {
     } catch (error) {
       const shouldReconcile = (error instanceof ApiError && (error.status === 408 || error.status === 409))
         || error instanceof TypeError;
+      const uncertain = (error instanceof ApiError && (error.status === 408 || error.code === 'REQUEST_TIMEOUT'))
+        || error instanceof TypeError;
 
       if (shouldReconcile && currentAuthIdentityRef.current === requestIdentity) {
         try {
           const workspace = await commitWorkspace(requestIdentity);
-          const completed = workspace?.completed.find((item) => (
-            item.formId === payload.formId
-            && item.trigger === payload.trigger
-            && contextMatches(item.context, payload)
-            && (payload.trigger !== 'on_demand' || item.clientSubmissionId === payload.clientSubmissionId)
-          ));
+          const completed = workspace?.completed.find((item) => isMatchingSubmission(item, payload));
           if (completed) {
             setFlashMessage('Form submitted successfully.');
             return { ok: true as const, reconciled: true as const, completed };
@@ -200,10 +216,10 @@ export function useFormsActions() {
       return {
         ok: false as const,
         code: error instanceof ApiError ? error.code?.toLowerCase() : undefined,
-        error: shouldReconcile
+        error: uncertain
           ? 'Submission could not be confirmed. Your answers are still here. Retry when ready.'
           : toFormsError(error, 'Could not submit this form. Your answers are still here.'),
-        uncertain: shouldReconcile,
+        uncertain,
       };
     } finally {
       endRequest(key);
