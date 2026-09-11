@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { AppState, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { OfflineNotice } from '@/components/OfflineNotice';
 import { AdvisoryFormsPrompt } from '@/components/AdvisoryFormsPrompt';
@@ -12,7 +12,8 @@ import { WorkAreaSelector } from '@/components/WorkAreaSelector';
 import { ActivitySelector } from '@/components/ActivitySelector';
 import { StartTimeField } from '@/components/StartTimeField';
 import { ListRow, ScreenHeader, SectionCard, SectionHeader } from '@/components/MobilePrimitives';
-import { scopeJobsForSession } from '@/features/clocking/scoping';
+import { isJobAvailableForClocking } from '@/features/clocking/scoping';
+import { scheduledClockInJobs, searchClockInJobs } from '@/features/clocking/jobPicker';
 import { normalizeCompanyFeatures } from '@/features/companyFeatures';
 import { useClockingActions } from '@/hooks/useClockingActions';
 import { useEffectiveClockState } from '@/hooks/useEffectiveClockState';
@@ -70,6 +71,10 @@ export default function ClockInScreen() {
   const [error, setError] = useState<string | null>(null);
   const [advisoryForms, setAdvisoryForms] = useState<import('@/types/forms').EmployeeForm[]>([]);
   const [checkingForms, setCheckingForms] = useState(false);
+  const [jobSearch, setJobSearch] = useState('');
+  const [refreshingJobs, setRefreshingJobs] = useState(false);
+  const [lastJobRefreshAt, setLastJobRefreshAt] = useState<string | null>(null);
+  const [hasAuthoritativeJobRefresh, setHasAuthoritativeJobRefresh] = useState(false);
   const advisoryAcceptedRef = useRef(false);
   const checkingFormsRef = useRef(false);
   const continuingWorkflowRef = useRef<string | null>(null);
@@ -121,12 +126,46 @@ export default function ClockInScreen() {
 
   const assignedJobs = useMemo(() => {
     if (!effectiveCompanyFeatures.projects) return [];
-    const employeeId = user?.employeeId;
-    const availableJobs = jobs.length > 0
+    const availableJobs: import('@/types/domain').Job[] = jobs.length > 0 || hasAuthoritativeJobRefresh
       ? jobs
-      : (offlineClock?.cache?.jobs ?? []).map((job) => ({ ...job, assignedEmployeeIds: employeeId ? [employeeId] : [] }));
-    return scopeJobsForSession(availableJobs, user);
-  }, [effectiveCompanyFeatures.projects, jobs, offlineClock?.cache?.jobs, user]);
+      : (offlineClock?.cache?.jobs ?? []).map((job) => ({ ...job, assignedEmployeeIds: [] }));
+    return availableJobs.filter(isJobAvailableForClocking);
+  }, [effectiveCompanyFeatures.projects, hasAuthoritativeJobRefresh, jobs, offlineClock?.cache?.jobs]);
+  const scheduledJobs = useMemo(() => scheduledClockInJobs(assignedJobs), [assignedJobs]);
+  const searchedJobs = useMemo(() => searchClockInJobs(assignedJobs, jobSearch), [assignedJobs, jobSearch]);
+
+  const refreshJobs = useCallback(async () => {
+    setRefreshingJobs(true);
+    const result = await refreshWorkContext();
+    setLastJobRefreshAt(new Date().toISOString());
+    setRefreshingJobs(false);
+    if (result.ok) setHasAuthoritativeJobRefresh(true);
+    else setError(result.error ?? 'Could not refresh Jobs.');
+  }, [refreshWorkContext]);
+
+  useFocusEffect(useCallback(() => {
+    void refreshJobs();
+  }, [refreshJobs]));
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') void refreshJobs();
+    });
+    return () => subscription.remove();
+  }, [refreshJobs]);
+
+  useEffect(() => {
+    if (!__DEV__ || process.env.NODE_ENV === 'test') return;
+    console.info('[clock-in:jobs]', {
+      deviceNow: new Date().toISOString(),
+      businessToday: businessDateKey(new Date(), businessTimeZone),
+      lastRefreshAt: lastJobRefreshAt,
+      scheduledJobCount: scheduledJobs.length,
+      scheduledJobIds: scheduledJobs.map((job) => job.id),
+      employeeId: user?.employeeId,
+      source: jobs.length > 0 || hasAuthoritativeJobRefresh ? 'network' : 'cache',
+    });
+  }, [businessTimeZone, hasAuthoritativeJobRefresh, jobs.length, lastJobRefreshAt, scheduledJobs, user?.employeeId]);
 
   const activityOptions = useMemo<ActivityOption[]>(() => [
       {
@@ -163,6 +202,12 @@ export default function ClockInScreen() {
     const upcoming = (upcomingServiceVisits?.length ?? 0) > 0 ? upcomingServiceVisits : offlineClock?.cache?.upcomingServiceVisits ?? [];
     return [...today, ...upcoming];
   }, [effectiveCompanyFeatures.recurringServices, offlineClock?.cache?.todayServiceVisits, offlineClock?.cache?.upcomingServiceVisits, todayServiceVisits, upcomingServiceVisits]);
+  const scheduledTodayVisits = useMemo(
+    () => effectiveCompanyFeatures.recurringServices
+      ? todayServiceVisits.filter((visit) => ['scheduled', 'in_progress'].includes(visit.status))
+      : [],
+    [effectiveCompanyFeatures.recurringServices, todayServiceVisits],
+  );
   const selectedServiceVisit = useMemo(
     () => serviceVisits.find((visit) => visit.id === selectedServiceVisitId),
     [selectedServiceVisitId, serviceVisits],
@@ -554,26 +599,62 @@ export default function ClockInScreen() {
         {stage === 'job' && advisoryForms.length === 0 ? (
           <View style={styles.progressiveSection}>
             <SectionHeader title="Select a Job" />
-            <Text style={styles.helper}>Choose the job you'll be working on.</Text>
-            {assignedJobs.length === 0 && serviceVisits.length === 0 ? (
-              <StatusBanner
-                tone={requiresJobSelection ? 'error' : 'info'}
-                message={requiresJobSelection
-                  ? 'No assigned active jobs available.'
-                  : 'No assigned active jobs available. You can continue without a job context.'}
-              />
+            <TextInput
+              testID="clock-in-job-search"
+              style={styles.searchInput}
+              value={jobSearch}
+              onChangeText={setJobSearch}
+              placeholder="Search jobs..."
+              placeholderTextColor={colors.textMuted}
+              autoCapitalize="none"
+              autoCorrect={false}
+              returnKeyType="search"
+            />
+            <SecondaryButton
+              label={refreshingJobs ? 'Refreshing Jobs...' : 'Refresh Jobs'}
+              disabled={refreshingJobs}
+              onPress={() => void refreshJobs()}
+            />
+            {refreshingJobs ? <StatusBanner tone="info" message="Checking for schedule updates..." /> : null}
+            {jobSearch.trim() ? (
+              <>
+                <SectionHeader title="Search Results" />
+                {searchedJobs.length > 0 ? (
+                  <SectionCard>
+                    {searchedJobs.map((job) => {
+                      const selected = selectedJobId === job.id && !selectedServiceVisitId;
+                      return (
+                        <ListRow
+                          key={job.id}
+                          testID={`job-option-${job.id}`}
+                          title={job.title || 'Untitled Job'}
+                          subtitle={[job.customerName, job.propertyAddress, job.jobNumber].filter(Boolean).join(' · ')}
+                          selected={selected}
+                          onPress={() => {
+                            setSelectedJobId(job.id);
+                            setSelectedServiceVisitId('');
+                            setSelectedWorkAreaId('');
+                            setAdvisoryForms([]);
+                            advisoryAcceptedRef.current = false;
+                          }}
+                        />
+                      );
+                    })}
+                  </SectionCard>
+                ) : <StatusBanner tone="info" message="No authorized active Jobs match your search." />}
+              </>
             ) : (
               <>
-              {serviceVisits.length > 0 ? (
+              <SectionHeader title="Scheduled for Today" />
+              {scheduledTodayVisits.length > 0 ? (
                 <View style={styles.progressiveSection}>
-                  <SectionHeader title="Service Visits" />
                   <SectionCard>
-                    {serviceVisits.filter((visit) => ['scheduled', 'in_progress'].includes(visit.status)).map((visit) => (
+                    {scheduledTodayVisits.map((visit) => (
                       <ListRow
                         key={visit.id}
                         testID={`visit-option-${visit.id}`}
-                        title={visit.propertyName || visit.customerName || visit.jobName}
-                        subtitle={visit.serviceName}
+                        title={visit.jobName || visit.propertyName || visit.customerName}
+                        subtitle={[visit.customerName, visit.propertyAddress, visit.serviceName].filter(Boolean).join(' · ')}
                         selected={selectedServiceVisitId === visit.id}
                         onPress={() => {
                           setSelectedJobId(visit.jobId);
@@ -587,15 +668,15 @@ export default function ClockInScreen() {
                   </SectionCard>
                 </View>
               ) : null}
-              {assignedJobs.length > 0 ? <SectionCard>
-                {assignedJobs.map((job) => {
+              {scheduledJobs.length > 0 ? <SectionCard>
+                {scheduledJobs.map((job) => {
                   const selected = selectedJobId === job.id && !selectedServiceVisitId;
                   return (
                     <ListRow
                       key={job.id}
                       testID={`job-option-${job.id}`}
                       title={job.title || 'Untitled Job'}
-                      subtitle={job.status.replace('_', ' ')}
+                      subtitle={[job.customerName, job.propertyAddress].filter(Boolean).join(' · ')}
                       selected={selected}
                       onPress={() => {
                         setSelectedJobId(job.id);
@@ -608,6 +689,10 @@ export default function ClockInScreen() {
                   );
                 })}
               </SectionCard> : null}
+              {scheduledJobs.length === 0
+                && scheduledTodayVisits.length === 0
+                ? <StatusBanner tone="info" message="No Jobs are scheduled for you today. Search active Jobs if your assignment changed." />
+                : null}
               </>
             )}
           </View>
@@ -751,6 +836,16 @@ const styles = StyleSheet.create({
   progressiveSection: { gap: 8 },
   actions: { gap: 8 },
   helper: { color: colors.textSecondary, fontSize: 14, marginTop: -4 },
+  searchInput: {
+    minHeight: 46,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    color: colors.textPrimary,
+    backgroundColor: colors.surface,
+    fontSize: 16,
+  },
   progress: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
   progressItem: { flexDirection: 'row', alignItems: 'center', flexShrink: 1 },
   progressText: { color: colors.textMuted, fontSize: 12, fontWeight: '600' },

@@ -77,6 +77,10 @@ export interface Job {
   title: string;
   status: 'scheduled' | 'in_progress' | 'on_hold' | 'completed' | 'cancelled';
   assignedEmployeeIds: string[];
+  customerName?: string;
+  propertyAddress?: string;
+  jobNumber?: string;
+  scheduledToday?: boolean;
   hasOperationalWorkAreas?: boolean;
   eligibleOperationalWorkAreas?: JobWorkArea[];
 }

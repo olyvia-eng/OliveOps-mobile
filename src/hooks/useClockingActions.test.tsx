@@ -167,6 +167,41 @@ describe('useClockingActions bootstrap behavior', () => {
     expect(probe.props.activeClockIn).toBe('2026-08-17T10:00:00.000Z');
   });
 
+  it('preserves backend-authorized crew Jobs without reapplying direct employee assignment', async () => {
+    mockLoadBootstrap.mockResolvedValueOnce({
+      ...bootstrapPayload(),
+      jobs: [{
+        id: 'crew-job', title: 'Crew Job', status: 'scheduled',
+        assignedEmployeeIds: ['crew-lead'], scheduledToday: true,
+      }],
+    });
+    await act(async () => {
+      tree = create(React.createElement(ClockingProvider, null, React.createElement(ActionsProbe)));
+    });
+
+    await act(async () => { await currentActions.refreshWorkContext(); });
+
+    expect(tree.root.findByType('actions-probe').props.jobIds).toEqual(['crew-job']);
+  });
+
+  it('defensively removes inactive Jobs from a bootstrap payload', async () => {
+    mockLoadBootstrap.mockResolvedValueOnce({
+      ...bootstrapPayload(),
+      jobs: [
+        { id: 'open', title: 'Open', status: 'in_progress', assignedEmployeeIds: [] },
+        { id: 'completed', title: 'Completed', status: 'completed', assignedEmployeeIds: [] },
+        { id: 'cancelled', title: 'Cancelled', status: 'cancelled', assignedEmployeeIds: [] },
+      ],
+    });
+    await act(async () => {
+      tree = create(React.createElement(ClockingProvider, null, React.createElement(ActionsProbe)));
+    });
+
+    await act(async () => { await currentActions.refreshWorkContext(); });
+
+    expect(tree.root.findByType('actions-probe').props.jobIds).toEqual(['open']);
+  });
+
   it('loads core bootstrap state when companyFeatures is partial or malformed', async () => {
     mockLoadBootstrap
       .mockResolvedValueOnce({

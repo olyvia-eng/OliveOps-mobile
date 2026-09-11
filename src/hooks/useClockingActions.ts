@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import * as clockingApi from '@/api/clockingApi';
-import { scopeJobsForSession, scopeTimeEntriesForSession } from '@/features/clocking/scoping';
+import { isJobAvailableForClocking, scopeTimeEntriesForSession } from '@/features/clocking/scoping';
 import { mergeAuthoritativeActiveEntry } from '@/features/clocking/bootstrap';
 import { normalizeCompanyFeatures } from '@/features/companyFeatures';
 import { beginRequest, createRequestMeta, endRequest } from '@/services/requestGuards';
@@ -60,7 +60,7 @@ export function useClockingActions() {
     }
 
     const companyFeatures = normalizeCompanyFeatures(payload.companyFeatures);
-    const scopedJobs = scopeJobsForSession(payload.jobs ?? [], user);
+    const scopedJobs = (payload.jobs ?? []).filter(isJobAvailableForClocking);
     setCompanyFeatures(companyFeatures);
     setJobs(scopedJobs);
     setBusinessTimeZone(payload.timezone);

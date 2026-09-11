@@ -15,7 +15,7 @@ import {
 } from '@/features/offlineClocking/types';
 import { getCurrentShiftSegments, resolveCurrentActiveEntry } from '@/features/clocking/presentation';
 import { mergeAuthoritativeActiveEntry } from '@/features/clocking/bootstrap';
-import { scopeJobsForSession, scopeTimeEntriesForSession } from '@/features/clocking/scoping';
+import { isJobAvailableForClocking, scopeTimeEntriesForSession } from '@/features/clocking/scoping';
 import { beginRequest, endRequest } from '@/services/requestGuards';
 import {
   completeOfflineCommand,
@@ -243,7 +243,8 @@ export function OfflineClockProvider({ children }: { children: React.ReactNode }
             try {
               const payload = await clockingApi.loadBootstrap(accessToken, { force: true });
               if (identityRef.current !== identityKey) return;
-              clocking.setJobs(scopeJobsForSession(payload.jobs ?? [], user));
+              const authorizedActiveJobs = (payload.jobs ?? []).filter(isJobAvailableForClocking);
+              clocking.setJobs(authorizedActiveJobs);
               clocking.setBusinessTimeZone(payload.timezone);
               clocking.setClockingCapabilities(payload.capabilities);
               const scopedEntries = scopeTimeEntriesForSession(payload.timeEntries ?? [], user);
@@ -257,7 +258,7 @@ export function OfflineClockProvider({ children }: { children: React.ReactNode }
               clocking.setActivityConfigs(payload.activityConfigs);
               clocking.setServiceVisits(payload.serviceVisitHorizonDays, payload.todayServiceVisits, payload.upcomingServiceVisits);
               await updateEligibilityCache({
-                jobs: scopeJobsForSession(payload.jobs ?? [], user),
+                jobs: authorizedActiveJobs,
                 activityConfigs: payload.activityConfigs ?? [],
                 todayServiceVisits: payload.todayServiceVisits ?? [],
                 upcomingServiceVisits: payload.upcomingServiceVisits ?? [],
