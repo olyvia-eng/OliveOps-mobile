@@ -79,12 +79,27 @@ export default function FormScreen() {
     ? `${params.workflowOccurrenceId}:${params.workflowRequirementId}`
     : null;
   const mandatoryKind: MandatoryFinalizationKind | null = mandatoryRouteKey
-    ? params.trigger === 'before_clock_in'
+    ? params.workflowOccurrenceId === pendingClockIn.workflow?.workflowOccurrenceId
       ? 'clock_in'
-      : params.trigger === 'after_clock_out'
+      : params.workflowOccurrenceId === pendingClockOut.workflow?.workflowOccurrenceId
         ? 'clock_out'
-        : null
+        : params.trigger === 'before_clock_in'
+          ? 'clock_in'
+          : params.trigger === 'after_clock_out'
+            ? 'clock_out'
+            : null
     : null;
+  if (__DEV__ && mandatoryRouteKey && !mandatoryKind) {
+    console.warn(
+      '[form] mandatoryRouteKey present but mandatoryKind resolved to null',
+      {
+        trigger: params.trigger,
+        workflowOccurrenceId: params.workflowOccurrenceId,
+        pendingClockInOccurrence: pendingClockIn.workflow?.workflowOccurrenceId,
+        pendingClockOutOccurrence: pendingClockOut.workflow?.workflowOccurrenceId,
+      },
+    );
+  }
   const clockInFormContext = mandatoryKind === 'clock_in'
     || Boolean(params.workflowId && workflow?.id === params.workflowId && workflow.intent.kind === 'clock_in');
   const mandatoryClockInRequirement = params.workflowOccurrenceId === pendingClockIn.workflow?.workflowOccurrenceId
