@@ -545,6 +545,12 @@ export default function ClockInScreen() {
     setRetryMeta(null);
     clearWorkflow();
     setStatus('pendingSync' in result && result.pendingSync ? 'Clock-in saved on this device. It will sync when online.' : 'Clock-in submitted successfully.');
+    // clockIn() already updated the shared clocking store before resolving, which can flip
+    // authoritativeActiveShift to true and let the useFocusEffect above win this navigation
+    // first (it sets redirectingActiveShiftRef). Without this guard we'd replace('/active-shift')
+    // a second time here, remounting the screen right after it just mounted — the "loads twice" flash.
+    if (redirectingActiveShiftRef.current) return;
+    redirectingActiveShiftRef.current = true;
     router.replace('/active-shift');
   }
 
