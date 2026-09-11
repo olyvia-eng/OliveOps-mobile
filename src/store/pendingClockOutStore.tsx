@@ -118,6 +118,7 @@ export function PendingClockOutProvider({ children }: { children: React.ReactNod
   const recoveryPromiseRef = useRef<Promise<PendingClockOutWorkflow | null> | null>(null);
   const syncPromiseRef = useRef<Promise<void> | null>(null);
   const finalizePromiseRef = useRef<Promise<FinalizeResult> | null>(null);
+  const workflowMutationEpochRef = useRef(0);
   const [hydrated, setHydrated] = useState(false);
   const [workflow, setWorkflow] = useState<PendingClockOutWorkflow | null>(null);
   const [busy, setBusy] = useState(false);
@@ -132,6 +133,7 @@ export function PendingClockOutProvider({ children }: { children: React.ReactNod
   }, [identityKey]);
 
   const acceptWorkflow = useCallback(async (nextWorkflow: PendingClockOutWorkflow) => {
+    workflowMutationEpochRef.current += 1;
     const current = recordRef.current;
     await commit({
       workflow: nextWorkflow,
@@ -153,10 +155,14 @@ export function PendingClockOutProvider({ children }: { children: React.ReactNod
     const run = async () => {
       if (!identityKey || status !== 'authenticated') return null;
       if (!await isOnline()) return recordRef.current?.workflow ?? null;
+      const recoveryEpoch = workflowMutationEpochRef.current;
       try {
         const response = await clockingApi.loadPendingClockOut(accessToken);
-        if (identityRef.current !== identityKey) return null;
+        if (identityRef.current !== identityKey || workflowMutationEpochRef.current !== recoveryEpoch) {
+          return recordRef.current?.workflow ?? null;
+        }
         if (response.status === 'no_pending_clock_out') {
+          workflowMutationEpochRef.current += 1;
           await commit(null);
           return null;
         }
@@ -190,6 +196,7 @@ export function PendingClockOutProvider({ children }: { children: React.ReactNod
           await acceptWorkflow(response);
           return { ok: false, error: 'Complete the remaining required form.' };
         }
+        workflowMutationEpochRef.current += 1;
         await commit(null);
         return { ok: true };
       } catch (finalizeError) {
@@ -199,6 +206,7 @@ export function PendingClockOutProvider({ children }: { children: React.ReactNod
           return { ok: false, error: 'Complete the remaining required form.' };
         }
         if (code === 'clock_out_workflow_already_finalized') {
+          workflowMutationEpochRef.current += 1;
           await commit(null);
           return { ok: true };
         }
@@ -291,6 +299,7 @@ export function PendingClockOutProvider({ children }: { children: React.ReactNod
     setHydrated(false);
     setWorkflow(null);
     recordRef.current = null;
+    workflowMutationEpochRef.current += 1;
     if (!identityKey || status !== 'authenticated') {
       setHydrated(true);
       return () => { cancelled = true; };
@@ -391,6 +400,7 @@ export function PendingClockOutProvider({ children }: { children: React.ReactNod
     if (clocking.status !== 'clock_out_completed' && clocking.status !== 'clock_out_already_finalized') return;
     if (clocking.timeEntry) upsertTimeEntry(clocking.timeEntry);
     setCurrentActiveEntryId(null);
+    workflowMutationEpochRef.current += 1;
     await commit(null);
   }, [commit, setCurrentActiveEntryId, upsertTimeEntry]);
 

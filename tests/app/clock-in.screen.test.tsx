@@ -447,26 +447,12 @@ describe('ClockInScreen', () => {
     expect(renderedText).toContain('4 Main Street, Markham');
   });
 
-  it('refreshes on foreground and replaces yesterday Today results with the new schedule', async () => {
-    mockJobs = [{
-      id: 'job-a', title: 'Day One Job', status: 'scheduled', assignedEmployeeIds: ['emp-1'], scheduledToday: true,
-    }];
+  it('performs one focus refresh without registering a duplicate AppState owner', async () => {
     let tree: any;
     await act(async () => { tree = create(<ClockInScreen />); });
-    await chooseActivity(tree, 'job');
-    expect(tree.root.findAllByProps({ testID: 'job-option-job-a' }).length).toBeGreaterThan(0);
 
-    mockRefresh.mockImplementationOnce(async () => {
-      mockJobs = [
-        { id: 'job-a', title: 'Day One Job', status: 'scheduled', assignedEmployeeIds: ['emp-1'], scheduledToday: false },
-        { id: 'job-b', title: 'Day Two Job', status: 'scheduled', assignedEmployeeIds: ['emp-1'], scheduledToday: true },
-      ];
-      return { ok: true };
-    });
-    await act(async () => { await mockAppStateListener?.('active'); });
-
-    expect(tree.root.findAllByProps({ testID: 'job-option-job-a' })).toHaveLength(0);
-    expect(tree.root.findAllByProps({ testID: 'job-option-job-b' }).length).toBeGreaterThan(0);
+    expect(mockRefresh).toHaveBeenCalledTimes(1);
+    expect(mockAppStateListener).toBeNull();
   });
 
   it('manually refreshes the Job schedule without leaving Clock In', async () => {

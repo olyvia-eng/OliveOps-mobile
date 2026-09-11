@@ -28,12 +28,12 @@ const requiredForm = {
   submissionState: { completed: false },
 };
 
-function workflow(completed = false) {
+function workflow(completed = false, workflowOccurrenceId = 'occurrence-1') {
   return {
     ok: true,
     status: 'clock_out_pending_required_forms' as const,
     blocked: true as const,
-    workflowOccurrenceId: 'occurrence-1',
+    workflowOccurrenceId,
     intendedClockOutAt: '2026-08-25T20:30:00.000Z',
     requiredCount: 1,
     completedCount: completed ? 1 : 0,
@@ -267,6 +267,59 @@ describe('PendingClockOutProvider', () => {
     expect(pendingStore.workflow).toBeNull();
     expect(mockLoadPendingClockOut).not.toHaveBeenCalled();
     expect(mockFinalizeClockOut).not.toHaveBeenCalled();
+  });
+
+  it.each(['clock_out_completed', 'clock_out_already_finalized'] as const)(
+    'does not let stale recovery resurrect a workflow after %s submission authority',
+    async (status) => {
+      await mount();
+      let resolveRecovery!: (value: ReturnType<typeof workflow>) => void;
+      mockLoadPendingClockOut.mockClear().mockImplementationOnce(() => new Promise((resolve) => {
+        resolveRecovery = resolve;
+      }));
+
+      const recovery = pendingStore.recover();
+      await act(async () => { await Promise.resolve(); });
+      await act(async () => pendingStore.completeFromSubmission({ ok: true, status }));
+      await act(async () => {
+        resolveRecovery(workflow());
+        await recovery;
+      });
+
+      expect(pendingStore.workflow).toBeNull();
+      expect(mockSetCurrentActiveEntryId).toHaveBeenCalledWith(null);
+    },
+  );
+
+  it('does not let stale recovery resurrect a workflow after successful finalize', async () => {
+    await mount();
+    let resolveRecovery!: (value: ReturnType<typeof workflow>) => void;
+    mockLoadPendingClockOut.mockClear().mockImplementationOnce(() => new Promise((resolve) => {
+      resolveRecovery = resolve;
+    }));
+
+    const recovery = pendingStore.recover();
+    await act(async () => { await Promise.resolve(); });
+    await act(async () => { await pendingStore.finalize(); });
+    await act(async () => {
+      resolveRecovery(workflow());
+      await recovery;
+    });
+
+    expect(pendingStore.workflow).toBeNull();
+  });
+
+  it('clears on canonical no-pending recovery and accepts a genuinely later workflow', async () => {
+    await mount();
+    mockLoadPendingClockOut.mockReset()
+      .mockResolvedValueOnce({ ok: true, status: 'no_pending_clock_out' })
+      .mockResolvedValueOnce(workflow(false, 'occurrence-2'));
+
+    await act(async () => { await pendingStore.recover(); });
+    expect(pendingStore.workflow).toBeNull();
+
+    await act(async () => { await pendingStore.recover(); });
+    expect(pendingStore.workflow?.workflowOccurrenceId).toBe('occurrence-2');
   });
 
   it('does not auto-finalize a completed bootstrap workflow without queued submissions', async () => {

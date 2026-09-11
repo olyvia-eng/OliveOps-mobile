@@ -82,6 +82,25 @@ describe('clockingApi', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it('shares overlapping forced bootstrap requests but refreshes again after settlement', async () => {
+    let resolveFetch!: (response: any) => void;
+    const fetchMock = jest.fn()
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveFetch = resolve; }))
+      .mockResolvedValue(mockResponse(200, { ok: true, jobs: [] }));
+    (global as any).fetch = fetchMock;
+
+    const first = loadBootstrap('forced-token', { force: true });
+    const second = loadBootstrap('forced-token', { force: true });
+
+    expect(first).toBe(second);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    resolveFetch(mockResponse(200, { ok: true, jobs: [] }));
+    await Promise.all([first, second]);
+
+    await loadBootstrap('forced-token', { force: true });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it('clears a failed bootstrap request and keeps sessions isolated', async () => {
     let rejectFetch!: (error: Error) => void;
     const pendingFetch = new Promise<any>((_resolve, reject) => {

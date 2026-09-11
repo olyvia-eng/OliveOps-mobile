@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AppState, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { OfflineNotice } from '@/components/OfflineNotice';
 import { AdvisoryFormsPrompt } from '@/components/AdvisoryFormsPrompt';
@@ -147,13 +147,6 @@ export default function ClockInScreen() {
   useFocusEffect(useCallback(() => {
     void refreshJobs();
   }, [refreshJobs]));
-
-  useEffect(() => {
-    const subscription = AppState.addEventListener('change', (nextState) => {
-      if (nextState === 'active') void refreshJobs();
-    });
-    return () => subscription.remove();
-  }, [refreshJobs]);
 
   useEffect(() => {
     if (!__DEV__ || process.env.NODE_ENV === 'test') return;
