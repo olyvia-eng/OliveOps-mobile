@@ -51,7 +51,33 @@ function identityFor(user: ReturnType<typeof useAuthStore>['user']) {
 export function workflowRequirements(workflow: PendingClockOutWorkflow | null): PendingClockOutRequirement[] {
   if (!workflow) return [];
   const explicit = workflow.requirements ?? workflow.requiredForms ?? workflow.requiredFormPackages;
-  if (explicit?.length) return explicit;
+  if (explicit?.length) {
+    // `remainingForms`/`completedForms` are only meaningful when the server actually sent them.
+    // An empty array is authoritative (e.g. "nothing remains"); `undefined` means "no signal" and
+    // must NOT be treated the same as an empty array, or a just-completed requirement (whose
+    // refreshed `remainingForms: []` is the strongest signal it's done) gets misread as still
+    // outstanding whenever `completedForms` isn't populated in that same response.
+    const remainingIds = workflow.remainingForms
+      ? new Set(workflow.remainingForms.map((item) => item.workflowRequirementId ?? item.requirementId))
+      : null;
+    const completedIds = workflow.completedForms
+      ? new Set(workflow.completedForms.map((item) => item.workflowRequirementId ?? item.requirementId))
+      : null;
+    return explicit.flatMap((requirement) => {
+      const workflowRequirementId = requirement.workflowRequirementId ?? requirement.requirementId;
+      if (!workflowRequirementId) return [];
+      const derivedCompleted = completedIds
+        ? completedIds.has(workflowRequirementId)
+        : remainingIds
+          ? !remainingIds.has(workflowRequirementId)
+          : undefined;
+      return [{
+        ...requirement,
+        workflowRequirementId,
+        completed: requirement.completed ?? derivedCompleted ?? false,
+      }];
+    });
+  }
   return (workflow.formPackages ?? []).flatMap((form) => {
     const workflowRequirementId = (form as EmployeeForm & { workflowRequirementId?: string }).workflowRequirementId;
     return workflowRequirementId ? [{
@@ -409,6 +435,7 @@ export function PendingClockOutProvider({ children }: { children: React.ReactNod
   const outstanding = requirements.filter((item) => !item.completed);
   const currentRequirement = outstanding[0] ?? null;
   const completedCount = workflow?.completedFormCount
+    ?? workflow?.completedRequiredFormCount
     ?? workflow?.completedCount
     ?? requirements.length - outstanding.length;
   const totalCount = workflow?.requiredFormCount ?? workflow?.requiredCount ?? requirements.length;
