@@ -82,7 +82,9 @@ export function OfflineClockProvider({ children }: { children: React.ReactNode }
   const [pendingClockInWorkflow, setPendingClockInWorkflow] = useState<PendingClockInWorkflow | null>(null);
   const syncPromiseRef = useRef<Promise<void> | null>(null);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clockingRef = useRef(clocking);
   const identityRef = useRef(identityKey);
+  clockingRef.current = clocking;
   identityRef.current = identityKey;
   cacheRef.current = cache;
 
@@ -252,19 +254,19 @@ export function OfflineClockProvider({ children }: { children: React.ReactNode }
               const payload = await clockingApi.loadBootstrap(accessToken, { force: true });
               if (identityRef.current !== identityKey) return;
               const authorizedActiveJobs = (payload.jobs ?? []).filter(isJobAvailableForClocking);
-              clocking.setJobs(authorizedActiveJobs);
-              clocking.setBusinessTimeZone(payload.timezone);
-              clocking.setClockingCapabilities(payload.capabilities);
+              clockingRef.current.setJobs(authorizedActiveJobs);
+              clockingRef.current.setBusinessTimeZone(payload.timezone);
+              clockingRef.current.setClockingCapabilities(payload.capabilities);
               const scopedEntries = scopeTimeEntriesForSession(payload.timeEntries ?? [], user);
               const scopedActiveEntry = payload.activeTimeEntry
                 ? scopeTimeEntriesForSession([payload.activeTimeEntry], user)[0]
                 : undefined;
-              clocking.setTimeEntries(mergeAuthoritativeActiveEntry(scopedEntries, scopedActiveEntry));
-              clocking.setTimeCorrections(payload.timeCorrections ?? []);
-              clocking.setCurrentActiveEntryId(scopedActiveEntry?.id ?? payload.currentActiveEntryId ?? null);
-              clocking.setActiveShiftWarnings(payload.activeShiftWarnings);
-              clocking.setActivityConfigs(payload.activityConfigs);
-              clocking.setServiceVisits(payload.serviceVisitHorizonDays, payload.todayServiceVisits, payload.upcomingServiceVisits);
+              clockingRef.current.setTimeEntries(mergeAuthoritativeActiveEntry(scopedEntries, scopedActiveEntry));
+              clockingRef.current.setTimeCorrections(payload.timeCorrections ?? []);
+              clockingRef.current.setCurrentActiveEntryId(scopedActiveEntry?.id ?? payload.currentActiveEntryId ?? null);
+              clockingRef.current.setActiveShiftWarnings(payload.activeShiftWarnings);
+              clockingRef.current.setActivityConfigs(payload.activityConfigs);
+              clockingRef.current.setServiceVisits(payload.serviceVisitHorizonDays, payload.todayServiceVisits, payload.upcomingServiceVisits);
               await updateEligibilityCache({
                 jobs: authorizedActiveJobs,
                 activityConfigs: payload.activityConfigs ?? [],
@@ -315,8 +317,8 @@ export function OfflineClockProvider({ children }: { children: React.ReactNode }
               localShiftId: stored.localShiftId,
               serverEntryId: response.timeEntry.id,
             });
-            clocking.upsertTimeEntry(response.timeEntry);
-            clocking.setCurrentActiveEntryId(response.timeEntry.id);
+            clockingRef.current.upsertTimeEntry(response.timeEntry);
+            clockingRef.current.setCurrentActiveEntryId(response.timeEntry.id);
           } else if (stored.type === 'switch_activity') {
             const response = await clockingApi.switchActivity({
               ...(stored.logicalPayload as OfflineSwitchPayload),
@@ -329,8 +331,8 @@ export function OfflineClockProvider({ children }: { children: React.ReactNode }
               localShiftId: stored.localShiftId,
               serverEntryId: response.timeEntry.id,
             });
-            clocking.upsertTimeEntry(response.timeEntry);
-            clocking.setCurrentActiveEntryId(response.timeEntry.id);
+            clockingRef.current.upsertTimeEntry(response.timeEntry);
+            clockingRef.current.setCurrentActiveEntryId(response.timeEntry.id);
           } else {
             const payload = stored.logicalPayload as OfflineClockOutPayload;
             const entryId = payload.entryId ?? await loadShiftMapping(identityKey, stored.localShiftId);
@@ -347,8 +349,8 @@ export function OfflineClockProvider({ children }: { children: React.ReactNode }
             } satisfies ClockOutRequest, accessToken);
             await completeOfflineCommand(attempted);
             if (response.status !== 'clock_out_pending_required_forms') {
-              if ('timeEntry' in response && response.timeEntry) clocking.upsertTimeEntry(response.timeEntry);
-              clocking.setCurrentActiveEntryId(null);
+              if ('timeEntry' in response && response.timeEntry) clockingRef.current.upsertTimeEntry(response.timeEntry);
+              clockingRef.current.setCurrentActiveEntryId(null);
             }
           }
           completedAny = true;
@@ -397,7 +399,7 @@ export function OfflineClockProvider({ children }: { children: React.ReactNode }
         syncPromiseRef.current = null;
       });
     return syncPromiseRef.current;
-  }, [accessToken, clocking, handoffPendingClockInWorkflow, identityKey, replaceCommand, status, updateEligibilityCache, user]);
+  }, [accessToken, handoffPendingClockInWorkflow, identityKey, replaceCommand, status, updateEligibilityCache, user]);
 
   useEffect(() => {
     if (!hydrated || status !== 'authenticated') return;
