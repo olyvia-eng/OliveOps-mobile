@@ -41,7 +41,7 @@ jest.mock('@/store/clockingStore', () => ({
 jest.mock('react-native-safe-area-context', () => {
   const React = require('react');
   return {
-    SafeAreaView: ({ children }: any) => React.createElement('safe-area', {}, children),
+    SafeAreaView: ({ children, ...props }: any) => React.createElement('safe-area', props, children),
   };
 });
 
@@ -55,7 +55,7 @@ jest.mock('react-native', () => {
     View: ({ children }: any) => React.createElement('view', {}, children),
     Text: ({ children }: any) => React.createElement('text', {}, children),
     Pressable: ({ children, onPress, testID }: any) => React.createElement('pressable', { onPress, testID }, children),
-    FlatList: ({ data, ListHeaderComponent, renderItem, ListEmptyComponent }: any) => {
+    FlatList: ({ data, ListHeaderComponent, renderItem, ListEmptyComponent, contentContainerStyle }: any) => {
       const children = [];
       if (ListHeaderComponent) {
         children.push(React.createElement(React.Fragment, { key: 'header' }, ListHeaderComponent));
@@ -67,7 +67,7 @@ jest.mock('react-native', () => {
       } else if (ListEmptyComponent) {
         children.push(React.createElement(React.Fragment, { key: 'empty' }, ListEmptyComponent));
       }
-      return React.createElement('flat-list', {}, children);
+      return React.createElement('flat-list', { contentContainerStyle }, children);
     },
   };
 });
@@ -185,6 +185,17 @@ describe('TimeHistoryScreen', () => {
         status: 'clocked_out',
       },
     ];
+  });
+
+  it('leaves top inset ownership to its Stack header and keeps history scrollable above navigation', async () => {
+    let tree: any;
+    await act(async () => { tree = create(<TimeHistoryScreen />); });
+
+    expect(tree.root.findByType('safe-area').props.edges).toEqual(['left', 'right']);
+    expect(tree.root.findByType('flat-list').props.contentContainerStyle).toEqual(expect.objectContaining({
+      flexGrow: 1,
+      paddingBottom: 24,
+    }));
   });
 
   afterEach(() => {

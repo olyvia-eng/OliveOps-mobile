@@ -106,7 +106,9 @@ Production branding paths are configured in `app.json`. The approved iOS source 
 - Confirmed expired or invalid sessions are cleared and routed safely to Login.
 - Transient network, backend, or SecureStore verification failures show a retryable startup state rather than deleting a potentially valid session.
 - A top-level error boundary prevents unexpected render failures from leaving a blank screen; user-facing fallback text never includes exception details.
-- Login and destructive clocking/correction flows fail closed while offline. No offline queue is implemented or implied.
+- Login and time-correction submission fail closed while offline. Clocking and Service Visit operations use tenant- and employee-scoped durable queues with server-authoritative replay and conflict handling.
+- Snow field commands and Before/After evidence use a tenant- and employee-scoped durable queue with stable idempotency IDs.
+- The current release uses foreground, user-initiated Snow checkpoints only. It does not declare iOS background location or request Always location permission.
 - Failed prepared photo uploads are cleaned up best-effort, and clock-out remains blocked while any retained attachment is uploading or failed.
 
 ### Web Favicon
@@ -120,7 +122,7 @@ Production branding paths are configured in `app.json`. The approved iOS source 
 - [ ] Confirm the OliveOps Apple Developer Program membership is active and agreements are accepted.
 - [ ] Confirm the release operator has permission to manage identifiers, certificates, App Store Connect records, and TestFlight builds.
 - [ ] Confirm the existing App ID for `ca.oliveops.app` remains registered under the correct OliveOps team.
-- [ ] Do not enable capabilities that the app does not use. Camera and photo-library access are privacy permissions, not App ID capabilities.
+- [ ] Verify the App ID and generated profile do not enable an unused Background Modes location capability for the current release. Camera, photo-library, and When In Use location access are privacy permissions, not App ID capabilities.
 - [ ] During the first production build, allow EAS to create or select the iOS distribution certificate and App Store provisioning profile, or deliberately select existing valid remote credentials.
 - [ ] Verify generated signing assets use `ca.oliveops.app` and the intended Apple team.
 
@@ -136,7 +138,7 @@ Production branding paths are configured in `app.json`. The approved iOS source 
 - [ ] Marketing URL: optional; provide only if an approved public page exists.
 - [ ] Primary category: select the category that best represents the product, likely Business, after product-owner review.
 - [ ] Secondary category: optional; select only if accurate.
-- [ ] Complete Apple's age-rating questionnaire from actual app behavior. The code audit found no ads, purchases, gambling, mature content, social feed, unrestricted web access, or location use; the account holder must provide the final answers.
+- [ ] Complete Apple's age-rating questionnaire from actual app behavior. The code audit found no ads, purchases, gambling, mature content, social feed, or unrestricted web access; Snow Operations uses location during active service.
 - [ ] Complete App Privacy using `APP_STORE_PRIVACY_INVENTORY.md` and verify answers against backend retention, processors, and the published privacy policy.
 - [ ] Answer export-compliance questions consistently with `usesNonExemptEncryption: false` and the current use of standard HTTPS/SecureStore. Reassess if cryptography changes.
 - [ ] Enter App Review contact name, phone number, and email address.

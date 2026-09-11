@@ -49,9 +49,16 @@ const mockUseAuthStore = jest.fn(() => ({
 }));
 
 let mockJobs: any[] = [];
+let mockServiceVisits: any[] = [];
+let mockCompanyFeatures: { projects: boolean; recurringServices: boolean; snowOperations: boolean } | null = {
+  projects: true, recurringServices: true, snowOperations: false,
+};
 const mockUseClockingStore = jest.fn(() => ({
+  companyFeatures: mockCompanyFeatures,
   currentActiveEntryId: 'entry-1',
   jobs: mockJobs,
+  todayServiceVisits: mockServiceVisits,
+  upcomingServiceVisits: [],
   timeEntries: [
     {
       id: 'entry-2',
@@ -161,10 +168,12 @@ import { router } from 'expo-router';
 
 describe('SwitchActivityScreen', () => {
   beforeEach(() => {
+    mockCompanyFeatures = { projects: true, recurringServices: true, snowOperations: false };
     mockJobs = [
       { id: 'job-1', title: 'Site A', status: 'scheduled', assignedEmployeeIds: ['emp-1'] },
       { id: 'job-2', title: 'Warehouse', status: 'scheduled', assignedEmployeeIds: ['emp-1'] },
     ];
+    mockServiceVisits = [];
     (router.replace as jest.Mock).mockReset();
     (router.dismissTo as jest.Mock).mockReset();
     mockSwitchActivity.mockReset();
@@ -195,6 +204,15 @@ describe('SwitchActivityScreen', () => {
       retry: jest.fn(),
     });
     mockSwitchActivity.mockResolvedValue({ ok: true });
+  });
+
+  it('keeps project job choices available while company features are unhydrated', async () => {
+    mockCompanyFeatures = null;
+    let tree: any;
+    await act(async () => { tree = create(<SwitchActivityScreen />); });
+
+    await act(async () => tree.root.findByProps({ testID: 'switch-activity-option-job' }).props.onPress());
+    expect(tree.root.findAllByProps({ testID: 'switch-job-option-job-1' }).length).toBeGreaterThan(0);
   });
 
   it('marks the chosen job with the shared selected state', async () => {
@@ -295,6 +313,29 @@ describe('SwitchActivityScreen', () => {
 
     expect(mockSwitchActivity).toHaveBeenCalledWith('non_billable', [], 'cat-training', { requestId: 'req-switch-1', idempotencyKey: 'key-switch-1' });
     expect(router.dismissTo).toHaveBeenCalledWith('/active-shift');
+  });
+
+  it('switches to a Service Visit as Job Work with its immutable tuple', async () => {
+    mockServiceVisits = [{
+      id: 'visit-2', jobId: 'job-2', serviceId: 'service-2', jobName: 'Warehouse',
+      serviceName: 'Snow Clearing', customerName: 'Morgan', propertyName: 'North Yard',
+      propertyAddress: '20 Pine Street', scheduledDate: '2026-09-07', scheduleAllDay: true,
+      status: 'scheduled', billingType: 'per_visit', hasRequiredForms: false, hasSops: false,
+    }];
+    let tree: any;
+    await act(async () => { tree = create(<SwitchActivityScreen />); });
+    await act(async () => tree.root.findByProps({ testID: 'switch-activity-option-job' }).props.onPress());
+    await act(async () => tree.root.findByProps({ testID: 'switch-visit-option-visit-2' }).props.onPress());
+    await act(async () => tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Switch Activity').props.onPress());
+
+    expect(mockGetRequiredForms).toHaveBeenCalledWith('before_starting_job', {
+      jobId: 'job-2', serviceId: 'service-2', serviceVisitId: 'visit-2',
+    });
+    expect(mockSwitchActivity).toHaveBeenCalledWith(
+      'job', ['job-2'], undefined, { requestId: 'req-switch-1', idempotencyKey: 'key-switch-1' },
+      undefined,
+      { jobId: 'job-2', serviceId: 'service-2', serviceVisitId: 'visit-2', serviceName: 'Snow Clearing', propertyName: 'North Yard' },
+    );
   });
 
   it('surfaces before-starting Forms and continues the job switch non-blocking', async () => {

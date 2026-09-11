@@ -52,7 +52,7 @@ let currentActions: ReturnType<typeof useClockingActions>;
 
 function ActionsProbe({ refreshOnMount = false }: { refreshOnMount?: boolean }) {
   currentActions = useClockingActions();
-  const { currentActiveEntryId, jobs, timeEntries } = useClockingStore();
+  const { companyFeatures, currentActiveEntryId, jobs, timeEntries } = useClockingStore();
 
   useEffect(() => {
     if (refreshOnMount) {
@@ -65,6 +65,7 @@ function ActionsProbe({ refreshOnMount = false }: { refreshOnMount?: boolean }) 
     activeClockIn: timeEntries.find((entry) => entry.id === currentActiveEntryId)?.clockIn,
     jobIds: jobs.map((job) => job.id),
     jobStatuses: jobs.map((job) => job.status),
+    companyFeatures,
   });
 }
 
@@ -84,6 +85,7 @@ function activeEntry(id = 'entry-1') {
 function bootstrapPayload(entry = activeEntry()) {
   return {
     ok: true,
+    companyFeatures: { projects: true, recurringServices: true, snowOperations: false },
     jobs: [{ id: 'job-1', title: 'Job 1', status: 'scheduled', assignedEmployeeIds: ['emp-1'] }],
     timeEntries: [entry],
     timeCorrections: [],
@@ -142,6 +144,96 @@ describe('useClockingActions bootstrap behavior', () => {
     expect(mockLoadBootstrap).toHaveBeenCalledTimes(1);
   });
 
+  it('loads legacy bootstrap jobs and active time state when companyFeatures is absent', async () => {
+    const legacyPayload = bootstrapPayload();
+    delete (legacyPayload as Partial<typeof legacyPayload>).companyFeatures;
+    mockLoadBootstrap.mockResolvedValueOnce(legacyPayload);
+    await act(async () => {
+      tree = create(React.createElement(ClockingProvider, null, React.createElement(ActionsProbe)));
+    });
+
+    let result: Awaited<ReturnType<typeof currentActions.refreshWorkContext>> | undefined;
+    await act(async () => { result = await currentActions.refreshWorkContext(); });
+
+    const probe = tree.root.findByType('actions-probe');
+    expect(result).toEqual({ ok: true });
+    expect(probe.props.companyFeatures).toEqual({
+      projects: true,
+      recurringServices: true,
+      snowOperations: false,
+    });
+    expect(probe.props.jobIds).toEqual(['job-1']);
+    expect(probe.props.currentActiveEntryId).toBe('entry-1');
+    expect(probe.props.activeClockIn).toBe('2026-08-17T10:00:00.000Z');
+  });
+
+  it('preserves backend-authorized crew Jobs without reapplying direct employee assignment', async () => {
+    mockLoadBootstrap.mockResolvedValueOnce({
+      ...bootstrapPayload(),
+      jobs: [{
+        id: 'crew-job', title: 'Crew Job', status: 'scheduled',
+        assignedEmployeeIds: ['crew-lead'], scheduledToday: true,
+      }],
+    });
+    await act(async () => {
+      tree = create(React.createElement(ClockingProvider, null, React.createElement(ActionsProbe)));
+    });
+
+    await act(async () => { await currentActions.refreshWorkContext(); });
+
+    expect(tree.root.findByType('actions-probe').props.jobIds).toEqual(['crew-job']);
+  });
+
+  it('defensively removes inactive Jobs from a bootstrap payload', async () => {
+    mockLoadBootstrap.mockResolvedValueOnce({
+      ...bootstrapPayload(),
+      jobs: [
+        { id: 'open', title: 'Open', status: 'in_progress', assignedEmployeeIds: [] },
+        { id: 'completed', title: 'Completed', status: 'completed', assignedEmployeeIds: [] },
+        { id: 'cancelled', title: 'Cancelled', status: 'cancelled', assignedEmployeeIds: [] },
+      ],
+    });
+    await act(async () => {
+      tree = create(React.createElement(ClockingProvider, null, React.createElement(ActionsProbe)));
+    });
+
+    await act(async () => { await currentActions.refreshWorkContext(); });
+
+    expect(tree.root.findByType('actions-probe').props.jobIds).toEqual(['open']);
+  });
+
+  it('loads core bootstrap state when companyFeatures is partial or malformed', async () => {
+    mockLoadBootstrap
+      .mockResolvedValueOnce({
+        ...bootstrapPayload(),
+        companyFeatures: { snowOperations: true },
+      })
+      .mockResolvedValueOnce({
+        ...bootstrapPayload(activeEntry('entry-2')),
+        companyFeatures: { projects: 'invalid', recurringServices: 0, snowOperations: null },
+      });
+    await act(async () => {
+      tree = create(React.createElement(ClockingProvider, null, React.createElement(ActionsProbe)));
+    });
+
+    await act(async () => { await currentActions.refreshWorkContext(); });
+    expect(tree.root.findByType('actions-probe').props.companyFeatures).toEqual({
+      projects: true,
+      recurringServices: true,
+      snowOperations: true,
+    });
+
+    await act(async () => { await currentActions.refreshWorkContext(); });
+    const probe = tree.root.findByType('actions-probe');
+    expect(probe.props.companyFeatures).toEqual({
+      projects: true,
+      recurringServices: true,
+      snowOperations: false,
+    });
+    expect(probe.props.jobIds).toEqual(['job-1']);
+    expect(probe.props.currentActiveEntryId).toBe('entry-2');
+  });
+
   it('updates offline eligibility only after a successful bootstrap', async () => {
     mockOfflineClock = { updateEligibilityCache: mockUpdateEligibilityCache };
     await act(async () => {
@@ -156,9 +248,26 @@ describe('useClockingActions bootstrap behavior', () => {
     expect(mockUpdateEligibilityCache).toHaveBeenCalledWith({
       jobs: bootstrapPayload().jobs,
       activityConfigs: [],
+      todayServiceVisits: [],
+      upcomingServiceVisits: [],
       requiredBeforeClockInForms: undefined,
       requiredAfterClockOutForms: undefined,
     });
+
+    mockUpdateEligibilityCache.mockClear();
+    mockLoadBootstrap.mockResolvedValueOnce({
+      ...bootstrapPayload(),
+      companyFeatures: { projects: false, recurringServices: false, snowOperations: false },
+      todayServiceVisits: [{ id: 'visit-1' }],
+    });
+    await act(async () => {
+      await currentActions.refreshWorkContext();
+    });
+    expect(mockUpdateEligibilityCache).toHaveBeenCalledWith(expect.objectContaining({
+      jobs: [],
+      todayServiceVisits: [],
+      upcomingServiceVisits: [],
+    }));
 
     mockUpdateEligibilityCache.mockClear();
     mockLoadBootstrap.mockRejectedValueOnce(new TypeError('offline'));

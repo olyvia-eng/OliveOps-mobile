@@ -20,6 +20,7 @@ let currentStore: ReturnType<typeof useClockingStore>;
 function ClockingProbe() {
   currentStore = useClockingStore();
   return React.createElement('clocking-probe', {
+    projectsEnabled: currentStore.companyFeatures?.projects,
     jobCount: currentStore.jobs.length,
     timeEntryCount: currentStore.timeEntries.length,
   });
@@ -42,6 +43,7 @@ describe('ClockingProvider', () => {
     };
 
     await act(async () => {
+      currentStore.setCompanyFeatures({ projects: true, recurringServices: false, snowOperations: false });
       currentStore.setJobs([
         { id: 'job-1', title: 'Job 1', status: 'scheduled', assignedEmployeeIds: ['emp-1'] },
       ]);
@@ -124,6 +126,7 @@ describe('ClockingProvider', () => {
     });
 
     const probe = tree.root.findByType('clocking-probe');
+    expect(probe.props.projectsEnabled).toBeUndefined();
     expect(probe.props.jobCount).toBe(0);
     expect(probe.props.timeEntryCount).toBe(0);
   });

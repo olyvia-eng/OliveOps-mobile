@@ -1,8 +1,8 @@
 import { useMemo } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { EmptyState, ScreenHeader, StatusBadge } from '@/components/MobilePrimitives';
+import { ScreenSafeAreaView } from '@/components/Screen';
 import {
   buildEffectiveTimeEntries,
   formatDurationForEntry,
@@ -13,6 +13,7 @@ import {
   hasPendingCorrectionForEntry,
   isAuthoritativeActiveEntry,
   resolveEntryPrimaryLabel,
+  resolveServiceVisitProperty,
   resolveWorkAreaName,
 } from '@/features/clocking/presentation';
 import { useEffectiveClockState } from '@/hooks/useEffectiveClockState';
@@ -52,7 +53,7 @@ export default function TimeHistoryScreen() {
   );
   const weekTotalLabel = useMemo(() => formatDurationMinutes(weekTotal * 60), [weekTotal]);
   return (
-    <SafeAreaView style={styles.safe} edges={['left', 'right']}>
+    <ScreenSafeAreaView testID="time-history-safe-area">
       <FlatList
         data={historyItems}
         keyExtractor={(item) => item.key}
@@ -108,20 +109,17 @@ export default function TimeHistoryScreen() {
               ) : null}
             </View>
             <Text style={styles.entryRange}>{formatEntryTimeRange(item.entry, isAuthoritativeActiveEntry(item.entry.id, authoritativeActiveEntryId), businessTimeZone)}</Text>
+            {resolveServiceVisitProperty(item.entry) ? <Text style={styles.entryRange}>{resolveServiceVisitProperty(item.entry)}</Text> : null}
             {resolveWorkAreaName(item.entry) ? <Text style={styles.entryRange}>Work Area: {resolveWorkAreaName(item.entry)}</Text> : null}
           </Pressable>
         )}
         ListEmptyComponent={<EmptyState title="No time history" message="Your completed and active work will appear here." />}
       />
-    </SafeAreaView>
+    </ScreenSafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
   listContent: {
     flexGrow: 1,
     paddingHorizontal: spacing.lg,

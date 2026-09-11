@@ -10,6 +10,7 @@ import {
   getWorkTypeLabel,
   isAuthoritativeActiveEntry,
   resolveEntryPrimaryLabel,
+  resolveServiceVisitProperty,
   resolveWorkAreaName,
 } from '@/features/clocking/presentation';
 import { useEffectiveClockState } from '@/hooks/useEffectiveClockState';
@@ -44,6 +45,8 @@ export default function TimeEntryDetailScreen() {
       <SectionCard>
         <InfoRow label="Activity" value={getWorkTypeLabel(entry.workType)} emphasis />
         {entry.workType !== 'drive_time' ? <InfoRow label={entry.workType === 'job' ? 'Job' : 'Category'} value={resolveEntryPrimaryLabel(entry, jobs)} /> : null}
+        {entry.serviceVisitId ? <InfoRow label="Work Context" value="Service Visit" /> : null}
+        {resolveServiceVisitProperty(entry) ? <InfoRow label="Property" value={resolveServiceVisitProperty(entry)!} /> : null}
         {resolveWorkAreaName(entry) ? <InfoRow label="Work Area" value={resolveWorkAreaName(entry)!} /> : null}
         <InfoRow label="Duration" value={formatDurationForEntry(entry)} />
         {entry.notes ? <InfoRow label="Notes" value={entry.notes} /> : null}

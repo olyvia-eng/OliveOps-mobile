@@ -19,12 +19,14 @@ export function ActivitySelector({
   helper,
   selectedType,
   onSelect,
+  allowedTypes,
   testIDPrefix = 'activity-option',
 }: {
   heading: string;
   helper?: string;
   selectedType: TimeEntryWorkType | null;
   onSelect: (type: TimeEntryWorkType) => void;
+  allowedTypes?: TimeEntryWorkType[];
   testIDPrefix?: string;
 }) {
   return (
@@ -32,7 +34,7 @@ export function ActivitySelector({
       <SectionHeader title={heading} />
       {helper ? <Text style={styles.helper}>{helper}</Text> : null}
       <View style={styles.list}>
-        {options.map((option) => (
+        {options.filter((option) => !allowedTypes || allowedTypes.includes(option.type)).map((option) => (
           <ListRow
             key={option.type}
             testID={`${testIDPrefix}-${option.type}`}

@@ -66,6 +66,9 @@ export interface EmployeeFormContext {
   equipmentName?: string;
   divisionId?: string;
   divisionName?: string;
+  serviceId?: string;
+  serviceName?: string;
+  serviceVisitId?: string;
 }
 
 export interface EmployeeFormSubmissionState {
@@ -86,18 +89,23 @@ export interface EmployeeForm {
   requiresApproval?: boolean;
   periodKey?: string;
   context?: EmployeeFormContext;
+  workflowOccurrenceId?: string;
+  workflowRequirementId?: string;
+  requiredFor?: 'clock_in' | 'clock_out';
   fields: EmployeeFormField[];
   submissionState: EmployeeFormSubmissionState;
 }
 
 export interface EmployeeFormSubmission {
   submissionId: string;
-  clientSubmissionId?: string;
+  clientSubmissionId?: string | null;
   formId: string;
   formName: string;
   submittedAt: string;
   status: EmployeeFormSubmissionStatus;
   trigger: EmployeeFormTrigger;
+  workflowOccurrenceId?: string | null;
+  workflowRequirementId?: string | null;
   context?: EmployeeFormContext;
 }
 
@@ -136,6 +144,8 @@ export interface LocalFormAttachment {
   jobId?: string;
   equipmentId?: string;
   divisionId?: string;
+  serviceId?: string;
+  serviceVisitId?: string;
   localUri: string;
   fileName: string;
   mimeType: 'image/jpeg';
@@ -157,6 +167,8 @@ export interface SubmitEmployeeFormRequest {
   jobId?: string;
   equipmentId?: string;
   divisionId?: string;
+  serviceId?: string;
+  serviceVisitId?: string;
   workflowOccurrenceId?: string;
   workflowRequirementId?: string;
   responses: EmployeeFormResponse[];
@@ -186,6 +198,7 @@ export interface SubmittedEmployeeForm {
 export interface SubmitEmployeeFormResponse {
   ok: true;
   submission: SubmittedEmployeeForm;
+  clocking?: import('./api').ClockInResponse | import('./api').ClockOutResponse;
 }
 
 export interface EmployeeFormAnswer {
@@ -212,4 +225,6 @@ export interface EmployeeFormsContextFilter {
   jobId?: string;
   equipmentId?: string;
   divisionId?: string;
+  serviceId?: string;
+  serviceVisitId?: string;
 }

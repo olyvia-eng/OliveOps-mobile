@@ -3,6 +3,7 @@ import type { OfflineClockCache, OfflineClockCommand, OfflineClockInPayload, Off
 import type { buildEffectiveClockState } from '@/features/offlineClocking/model';
 import type { ActivityConfig, PendingClockInWorkflow } from '@/types/api';
 import type { Job, TimeEntry, UnbillableCategory } from '@/types/domain';
+import type { ServiceVisitSummary } from '@/types/serviceVisit';
 
 export type OfflineClockSubmitMeta = { requestId: string; idempotencyKey: string; clientOccurredAt: string };
 export type OfflineClockRecordedResult = { ok: true; pendingSync: boolean } | { ok: false; error: string };
@@ -23,6 +24,8 @@ export type OfflineClockContextValue = {
     jobs?: Job[];
     unbillableCategories?: UnbillableCategory[];
     activityConfigs?: ActivityConfig[];
+    todayServiceVisits?: ServiceVisitSummary[];
+    upcomingServiceVisits?: ServiceVisitSummary[];
     requiredBeforeClockInForms?: boolean;
     requiredAfterClockOutForms?: boolean;
   }) => Promise<void>;

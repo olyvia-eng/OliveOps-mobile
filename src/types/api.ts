@@ -8,6 +8,7 @@ import type {
   UnbillableCategory,
 } from '@/types/domain';
 import type { EmployeeForm, EmployeeFormContext } from '@/types/forms';
+import type { ServiceVisitSummary } from '@/types/serviceVisit';
 
 export interface ActivityConfig {
   type: TimeEntryWorkType;
@@ -35,14 +36,32 @@ export interface AuthSessionResponse {
   expiresAt?: string;
 }
 
+export interface CompanyFeatures {
+  projects: boolean;
+  recurringServices: boolean;
+  snowOperations: boolean;
+}
+
+export type CompanyFeaturesInput = Partial<{
+  [Key in keyof CompanyFeatures]: unknown;
+}> | null;
+
 export interface BootstrapResponse {
   ok: boolean;
+  companyFeatures?: CompanyFeaturesInput;
   timezone?: string;
   jobs?: Job[];
   timeEntries?: TimeEntry[];
   timeCorrections?: TimeCorrectionRequest[];
   employees?: Array<{ id: string }>;
   currentActiveEntryId?: string | null;
+  activeTimeEntry?: TimeEntry | null;
+  serviceVisitHorizonDays?: number;
+  todayServiceVisits?: ServiceVisitSummary[];
+  upcomingServiceVisits?: ServiceVisitSummary[];
+  trainingAttentionCount?: number;
+  overdueTrainingCount?: number;
+  dueSoonTrainingCount?: number;
   activeShiftWarnings?: {
     possibleForgottenClockOut: boolean;
     thresholdHours: number;
@@ -97,6 +116,8 @@ export interface ClockInRequest {
   employeeId: string;
   workType: TimeEntryWorkType;
   jobIds: string[];
+  serviceId?: string;
+  serviceVisitId?: string;
   workAreaId?: string;
   clockingContractVersion?: number;
   unbillableCategoryId?: string;
@@ -124,6 +145,8 @@ export interface ClockInIntent {
   employeeId: string;
   workType: TimeEntryWorkType;
   jobIds: string[];
+  serviceId?: string;
+  serviceVisitId?: string;
   workAreaId?: string | null;
   workAreaNameSnapshot?: string | null;
   clockingContractVersion?: number;
@@ -226,6 +249,8 @@ export interface FinalizeClockOutRequest {
 export interface SwitchActivityRequest {
   workType: TimeEntryWorkType;
   jobIds: string[];
+  serviceId?: string;
+  serviceVisitId?: string;
   workAreaId?: string;
   clockingContractVersion?: number;
   unbillableCategoryId?: string;
@@ -272,9 +297,9 @@ export interface PrepareUploadRequest {
   fileName: string;
   mimeType: string;
   sizeBytes: number;
-  entityType: 'time-entry' | 'form-attachment';
+  entityType: 'time-entry' | 'form-attachment' | 'service-visit' | 'snow-occurrence';
   entityId: string;
-  category: 'clock-in-photo' | 'clock-out-photo' | 'photo';
+  category: 'clock-in-photo' | 'clock-out-photo' | 'photo' | 'before-photo' | 'after-photo';
   formId?: string;
   fieldId?: string;
   clientSubmissionId?: string;
@@ -283,6 +308,11 @@ export interface PrepareUploadRequest {
   jobId?: string;
   equipmentId?: string;
   divisionId?: string;
+  serviceId?: string;
+  serviceVisitId?: string;
+  snowEventId?: string;
+  snowRouteId?: string;
+  routeStopId?: string;
 }
 
 export interface PrepareUploadResponse {

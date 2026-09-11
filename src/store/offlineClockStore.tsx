@@ -5,6 +5,7 @@ import * as Sentry from '@sentry/react-native';
 import * as clockingApi from '@/api/clockingApi';
 import { buildEffectiveClockState, nextReplayableCommand } from '@/features/offlineClocking/model';
 import {
+  OFFLINE_CLOCK_CACHE_SCHEMA_VERSION,
   OFFLINE_CLOCK_SCHEMA_VERSION,
   SUPPORTED_OFFLINE_CLOCK_SCHEMA_VERSIONS,
   type OfflineClockCache,
@@ -14,7 +15,8 @@ import {
   type OfflineSwitchPayload,
 } from '@/features/offlineClocking/types';
 import { getCurrentShiftSegments, resolveCurrentActiveEntry } from '@/features/clocking/presentation';
-import { scopeJobsForSession, scopeTimeEntriesForSession } from '@/features/clocking/scoping';
+import { mergeAuthoritativeActiveEntry } from '@/features/clocking/bootstrap';
+import { isJobAvailableForClocking, scopeTimeEntriesForSession } from '@/features/clocking/scoping';
 import { beginRequest, endRequest } from '@/services/requestGuards';
 import {
   completeOfflineCommand,
@@ -80,7 +82,9 @@ export function OfflineClockProvider({ children }: { children: React.ReactNode }
   const [pendingClockInWorkflow, setPendingClockInWorkflow] = useState<PendingClockInWorkflow | null>(null);
   const syncPromiseRef = useRef<Promise<void> | null>(null);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clockingRef = useRef(clocking);
   const identityRef = useRef(identityKey);
+  clockingRef.current = clocking;
   identityRef.current = identityKey;
   cacheRef.current = cache;
 
@@ -145,19 +149,28 @@ export function OfflineClockProvider({ children }: { children: React.ReactNode }
     jobs?: typeof clocking.jobs;
     unbillableCategories?: typeof clocking.unbillableCategories;
     activityConfigs?: NonNullable<typeof clocking.activityConfigs>;
+    todayServiceVisits?: typeof clocking.todayServiceVisits;
+    upcomingServiceVisits?: typeof clocking.upcomingServiceVisits;
     requiredBeforeClockInForms?: boolean;
     requiredAfterClockOutForms?: boolean;
   }) => {
     if (!identityKey || status !== 'authenticated') return;
     const previous = cacheRef.current?.identityKey === identityKey ? cacheRef.current : null;
     const next: OfflineClockCache = {
-      schemaVersion: OFFLINE_CLOCK_SCHEMA_VERSION,
+      schemaVersion: OFFLINE_CLOCK_CACHE_SCHEMA_VERSION,
       identityKey,
       updatedAt: new Date().toISOString(),
-      jobs: update.jobs?.map(({ id, title, status: jobStatus, hasOperationalWorkAreas, eligibleOperationalWorkAreas }) => ({
+      jobs: update.jobs?.map(({ id, title, status: jobStatus, assignedEmployeeIds, assignedForemanId, assignedCrewEmployeeIds, scheduledToday, customerName, propertyAddress, jobNumber, hasOperationalWorkAreas, eligibleOperationalWorkAreas }) => ({
         id,
         title,
         status: jobStatus,
+        assignedEmployeeIds,
+        assignedForemanId,
+        assignedCrewEmployeeIds,
+        scheduledToday,
+        customerName,
+        propertyAddress,
+        jobNumber,
         hasOperationalWorkAreas,
         eligibleOperationalWorkAreas: eligibleOperationalWorkAreas?.map(({ id: workAreaId, name, status: workAreaStatus }) => ({
           id: workAreaId,
@@ -183,6 +196,8 @@ export function OfflineClockProvider({ children }: { children: React.ReactNode }
         ?? previous?.requiredBeforeClockInForms,
       requiredAfterClockOutForms: update.requiredAfterClockOutForms
         ?? previous?.requiredAfterClockOutForms,
+      todayServiceVisits: update.todayServiceVisits ?? previous?.todayServiceVisits ?? [],
+      upcomingServiceVisits: update.upcomingServiceVisits ?? previous?.upcomingServiceVisits ?? [],
     };
     cacheRef.current = next;
     setCache(next);
@@ -238,17 +253,25 @@ export function OfflineClockProvider({ children }: { children: React.ReactNode }
             try {
               const payload = await clockingApi.loadBootstrap(accessToken, { force: true });
               if (identityRef.current !== identityKey) return;
-              clocking.setJobs(scopeJobsForSession(payload.jobs ?? [], user));
-              clocking.setBusinessTimeZone(payload.timezone);
-              clocking.setClockingCapabilities(payload.capabilities);
-              clocking.setTimeEntries(scopeTimeEntriesForSession(payload.timeEntries ?? [], user));
-              clocking.setTimeCorrections(payload.timeCorrections ?? []);
-              clocking.setCurrentActiveEntryId(payload.currentActiveEntryId ?? null);
-              clocking.setActiveShiftWarnings(payload.activeShiftWarnings);
-              clocking.setActivityConfigs(payload.activityConfigs);
+              const authorizedActiveJobs = (payload.jobs ?? []).filter(isJobAvailableForClocking);
+              clockingRef.current.setJobs(authorizedActiveJobs);
+              clockingRef.current.setBusinessTimeZone(payload.timezone);
+              clockingRef.current.setClockingCapabilities(payload.capabilities);
+              const scopedEntries = scopeTimeEntriesForSession(payload.timeEntries ?? [], user);
+              const scopedActiveEntry = payload.activeTimeEntry
+                ? scopeTimeEntriesForSession([payload.activeTimeEntry], user)[0]
+                : undefined;
+              clockingRef.current.setTimeEntries(mergeAuthoritativeActiveEntry(scopedEntries, scopedActiveEntry));
+              clockingRef.current.setTimeCorrections(payload.timeCorrections ?? []);
+              clockingRef.current.setCurrentActiveEntryId(scopedActiveEntry?.id ?? payload.currentActiveEntryId ?? null);
+              clockingRef.current.setActiveShiftWarnings(payload.activeShiftWarnings);
+              clockingRef.current.setActivityConfigs(payload.activityConfigs);
+              clockingRef.current.setServiceVisits(payload.serviceVisitHorizonDays, payload.todayServiceVisits, payload.upcomingServiceVisits);
               await updateEligibilityCache({
-                jobs: scopeJobsForSession(payload.jobs ?? [], user),
+                jobs: authorizedActiveJobs,
                 activityConfigs: payload.activityConfigs ?? [],
+                todayServiceVisits: payload.todayServiceVisits ?? [],
+                upcomingServiceVisits: payload.upcomingServiceVisits ?? [],
                 requiredBeforeClockInForms: payload.capabilities
                   ? payload.capabilities.requiredBeforeClockInForms === true
                   : undefined,
@@ -294,8 +317,8 @@ export function OfflineClockProvider({ children }: { children: React.ReactNode }
               localShiftId: stored.localShiftId,
               serverEntryId: response.timeEntry.id,
             });
-            clocking.upsertTimeEntry(response.timeEntry);
-            clocking.setCurrentActiveEntryId(response.timeEntry.id);
+            clockingRef.current.upsertTimeEntry(response.timeEntry);
+            clockingRef.current.setCurrentActiveEntryId(response.timeEntry.id);
           } else if (stored.type === 'switch_activity') {
             const response = await clockingApi.switchActivity({
               ...(stored.logicalPayload as OfflineSwitchPayload),
@@ -308,8 +331,8 @@ export function OfflineClockProvider({ children }: { children: React.ReactNode }
               localShiftId: stored.localShiftId,
               serverEntryId: response.timeEntry.id,
             });
-            clocking.upsertTimeEntry(response.timeEntry);
-            clocking.setCurrentActiveEntryId(response.timeEntry.id);
+            clockingRef.current.upsertTimeEntry(response.timeEntry);
+            clockingRef.current.setCurrentActiveEntryId(response.timeEntry.id);
           } else {
             const payload = stored.logicalPayload as OfflineClockOutPayload;
             const entryId = payload.entryId ?? await loadShiftMapping(identityKey, stored.localShiftId);
@@ -326,8 +349,8 @@ export function OfflineClockProvider({ children }: { children: React.ReactNode }
             } satisfies ClockOutRequest, accessToken);
             await completeOfflineCommand(attempted);
             if (response.status !== 'clock_out_pending_required_forms') {
-              if ('timeEntry' in response && response.timeEntry) clocking.upsertTimeEntry(response.timeEntry);
-              clocking.setCurrentActiveEntryId(null);
+              if ('timeEntry' in response && response.timeEntry) clockingRef.current.upsertTimeEntry(response.timeEntry);
+              clockingRef.current.setCurrentActiveEntryId(null);
             }
           }
           completedAny = true;
@@ -376,7 +399,7 @@ export function OfflineClockProvider({ children }: { children: React.ReactNode }
         syncPromiseRef.current = null;
       });
     return syncPromiseRef.current;
-  }, [accessToken, clocking, handoffPendingClockInWorkflow, identityKey, replaceCommand, status, updateEligibilityCache, user]);
+  }, [accessToken, handoffPendingClockInWorkflow, identityKey, replaceCommand, status, updateEligibilityCache, user]);
 
   useEffect(() => {
     if (!hydrated || status !== 'authenticated') return;

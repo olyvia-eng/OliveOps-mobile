@@ -26,12 +26,42 @@ function contextMatches(
 ) {
   return (!payload.jobId || completedContext?.jobId === payload.jobId)
     && (!payload.equipmentId || completedContext?.equipmentId === payload.equipmentId)
-    && (!payload.divisionId || completedContext?.divisionId === payload.divisionId);
+    && (!payload.divisionId || completedContext?.divisionId === payload.divisionId)
+    && (!payload.serviceId || completedContext?.serviceId === payload.serviceId)
+    && (!payload.serviceVisitId || completedContext?.serviceVisitId === payload.serviceVisitId);
+}
+
+function isMatchingSubmission(
+  completed: {
+    clientSubmissionId?: string | null;
+    formId: string;
+    trigger: string;
+    workflowOccurrenceId?: string | null;
+    workflowRequirementId?: string | null;
+    context?: EmployeeFormsContextFilter;
+  },
+  payload: SubmitEmployeeFormRequest,
+) {
+  return completed.clientSubmissionId === payload.clientSubmissionId
+    && completed.formId === payload.formId
+    && completed.trigger === payload.trigger
+    && (completed.workflowOccurrenceId ?? undefined) === payload.workflowOccurrenceId
+    && (completed.workflowRequirementId ?? undefined) === payload.workflowRequirementId
+    && contextMatches(completed.context, payload);
 }
 
 function captureUnexpectedFormsError(error: unknown, operation: string) {
   if (error instanceof ApiError || error instanceof TypeError) return;
   Sentry.captureException(error, { tags: { feature: 'forms', operation } });
+}
+
+function apiErrorCode(error: unknown) {
+  if (!(error instanceof ApiError)) return undefined;
+  const code = error.code?.toLowerCase();
+  if (code) return code;
+  return error.message.toLowerCase() === 'submission_idempotency_conflict'
+    ? 'submission_idempotency_conflict'
+    : undefined;
 }
 
 export function useFormsActions() {
@@ -96,7 +126,7 @@ export function useFormsActions() {
     filters: EmployeeFormsContextFilter = {},
   ) => {
     if (!authIdentity) return { ok: false as const, error: 'Please log in to view Forms.' };
-    const key = `forms:required:${trigger}:${filters.jobId ?? ''}:${filters.equipmentId ?? ''}:${filters.divisionId ?? ''}`;
+    const key = `forms:required:${trigger}:${filters.jobId ?? ''}:${filters.equipmentId ?? ''}:${filters.divisionId ?? ''}:${filters.serviceId ?? ''}:${filters.serviceVisitId ?? ''}`;
     if (!beginRequest(key)) return { ok: false as const, error: 'Required Forms are already loading.' };
     const requestIdentity = authIdentity;
     try {
@@ -137,7 +167,7 @@ export function useFormsActions() {
 
   const submitForm = useCallback(async (payload: SubmitEmployeeFormRequest) => {
     if (!authIdentity) return { ok: false as const, error: 'Please log in to submit this form.' };
-    const key = `forms:submit:${payload.formId}:${payload.trigger}:${payload.jobId ?? ''}:${payload.equipmentId ?? ''}:${payload.divisionId ?? ''}`;
+    const key = `forms:submit:${payload.formId}:${payload.trigger}:${payload.jobId ?? ''}:${payload.equipmentId ?? ''}:${payload.divisionId ?? ''}:${payload.serviceId ?? ''}:${payload.serviceVisitId ?? ''}`;
     if (!beginRequest(key)) return { ok: false as const, error: 'This form is already being submitted.' };
 
     const requestIdentity = authIdentity;
@@ -149,30 +179,35 @@ export function useFormsActions() {
 
       const response = await submitEmployeeForm(payload, accessToken);
       if (currentAuthIdentityRef.current !== requestIdentity) return { ok: false as const, stale: true as const };
+      if (response.clocking?.status === 'clock_out_completed'
+        || response.clocking?.status === 'clock_out_already_finalized'
+        || response.clocking?.status === 'clock_in_completed') {
+        setFlashMessage('Form submitted successfully.');
+        return { ok: true as const, submission: response.submission, clocking: response.clocking };
+      }
 
       try {
         await commitWorkspace(requestIdentity);
       } catch (refreshError) {
         captureUnexpectedFormsError(refreshError, 'post-submit-refresh');
         setFlashMessage('Form submitted. Pull to refresh if it does not appear in Completed yet.');
-        return { ok: true as const, submission: response.submission, warning: true as const };
+        return { ok: true as const, submission: response.submission, clocking: response.clocking, warning: true as const };
       }
 
       setFlashMessage('Form submitted successfully.');
-      return { ok: true as const, submission: response.submission };
+      return { ok: true as const, submission: response.submission, clocking: response.clocking };
     } catch (error) {
+      const code = apiErrorCode(error);
       const shouldReconcile = (error instanceof ApiError && (error.status === 408 || error.status === 409))
         || error instanceof TypeError;
+      const canReconcile = shouldReconcile && code !== 'submission_idempotency_conflict';
+      const uncertain = (error instanceof ApiError && (error.status === 408 || error.code === 'REQUEST_TIMEOUT'))
+        || error instanceof TypeError;
 
-      if (shouldReconcile && currentAuthIdentityRef.current === requestIdentity) {
+      if (canReconcile && currentAuthIdentityRef.current === requestIdentity) {
         try {
           const workspace = await commitWorkspace(requestIdentity);
-          const completed = workspace?.completed.find((item) => (
-            item.formId === payload.formId
-            && item.trigger === payload.trigger
-            && contextMatches(item.context, payload)
-            && (payload.trigger !== 'on_demand' || item.clientSubmissionId === payload.clientSubmissionId)
-          ));
+          const completed = workspace?.completed.find((item) => isMatchingSubmission(item, payload));
           if (completed) {
             setFlashMessage('Form submitted successfully.');
             return { ok: true as const, reconciled: true as const, completed };
@@ -184,7 +219,6 @@ export function useFormsActions() {
 
       captureUnexpectedFormsError(error, 'submit');
       if (error instanceof ApiError && error.fieldId) {
-        const code = error.code?.toLowerCase();
         const employeeMessage = code === 'form_response_requirement_failed'
           ? error.message
           : 'Check this answer and try again.';
@@ -197,11 +231,13 @@ export function useFormsActions() {
       }
       return {
         ok: false as const,
-        code: error instanceof ApiError ? error.code?.toLowerCase() : undefined,
-        error: shouldReconcile
-          ? 'Submission could not be confirmed. Your answers are still here. Retry when ready.'
-          : toFormsError(error, 'Could not submit this form. Your answers are still here.'),
-        uncertain: shouldReconcile,
+        code,
+        error: code === 'submission_idempotency_conflict'
+          ? 'These answers do not match the submission already saved for this attempt. Contact your supervisor before trying again.'
+          : uncertain
+            ? 'Submission could not be confirmed. Your answers are still here. Retry when ready.'
+            : toFormsError(error, 'Could not submit this form. Your answers are still here.'),
+        uncertain,
       };
     } finally {
       endRequest(key);

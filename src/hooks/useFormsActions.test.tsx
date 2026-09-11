@@ -138,6 +138,34 @@ describe('useFormsActions', () => {
     expect(currentStore.flashMessage).toBe('Form submitted successfully.');
   });
 
+  it.each(['clock_out_completed', 'clock_out_already_finalized'] as const)(
+    'returns authoritative %s state without refreshing the resolved Forms workspace',
+    async (clockingStatus) => {
+    const clocking = {
+      ok: true,
+      status: clockingStatus,
+      timeEntry: { id: 'entry-1', employeeId: 'emp-1', status: 'completed', clockOut: '2026-09-10T21:00:00.000Z' },
+    };
+    mockSubmitEmployeeForm.mockResolvedValue({
+      ok: true,
+      submission: { id: 'sub-1', formId: 'form-1', trigger: 'after_clock_out', submittedAt: '2026-09-10T21:00:00.000Z', status: 'submitted' },
+      clocking,
+    });
+    await mount();
+
+    let result: unknown;
+    await act(async () => {
+      result = await currentActions.submitForm({
+        clientSubmissionId: 'attempt-required', formId: 'form-1', trigger: 'after_clock_out',
+        workflowOccurrenceId: 'occurrence-1', workflowRequirementId: 'requirement-1', responses: [],
+      });
+    });
+
+    expect(result).toMatchObject({ ok: true, clocking });
+    expect(mockLoadEmployeeForms).not.toHaveBeenCalled();
+    },
+  );
+
   it('clears employee-scoped Forms state when authenticated identity changes', async () => {
     mockLoadEmployeeForms.mockResolvedValue({
       ...workspace(),
@@ -195,8 +223,9 @@ describe('useFormsActions', () => {
       ...workspace(),
       toDo: [],
       completed: [{
-        submissionId: 'sub-1', formId: 'form-1', formName: 'Daily Report',
+        submissionId: 'sub-1', clientSubmissionId: 'attempt-daily', formId: 'form-1', formName: 'Daily Report',
         submittedAt: '2026-08-18T12:01:00.000Z', status: 'submitted', trigger: 'daily',
+        workflowOccurrenceId: null, workflowRequirementId: null,
       }],
     });
     await mount();
@@ -208,6 +237,96 @@ describe('useFormsActions', () => {
 
     expect(result).toMatchObject({ ok: true, reconciled: true });
     expect(currentStore.toDo).toHaveLength(0);
+  });
+
+  it('reconciles a mandatory submission only to its exact workflow attempt', async () => {
+    mockSubmitEmployeeForm.mockRejectedValue(new ApiError(
+      'This required form has already been submitted.',
+      409,
+      'workflow_requirement_already_completed',
+    ));
+    mockLoadEmployeeForms.mockResolvedValue({
+      ...workspace(),
+      toDo: [],
+      completed: [{
+        submissionId: 'sub-required', clientSubmissionId: 'attempt-required', formId: 'form-1', formName: 'End of Shift',
+        submittedAt: '2026-08-18T12:01:00.000Z', status: 'submitted', trigger: 'after_clock_out',
+        workflowOccurrenceId: 'occurrence-1', workflowRequirementId: 'requirement-1',
+      }],
+    });
+    await mount();
+
+    let result: any;
+    await act(async () => {
+      result = await currentActions.submitForm({
+        clientSubmissionId: 'attempt-required', formId: 'form-1', trigger: 'after_clock_out',
+        workflowOccurrenceId: 'occurrence-1', workflowRequirementId: 'requirement-1', responses: [],
+      });
+    });
+
+    expect(result).toMatchObject({ ok: true, reconciled: true });
+  });
+
+  it('does not report a deterministic mandatory conflict as uncertain or match an older attempt', async () => {
+    mockSubmitEmployeeForm.mockRejectedValue(new ApiError(
+      'This required form has already been submitted.',
+      409,
+      'workflow_requirement_already_completed',
+    ));
+    mockLoadEmployeeForms.mockResolvedValue({
+      ...workspace(),
+      completed: [{
+        submissionId: 'sub-other', clientSubmissionId: 'older-attempt', formId: 'form-1', formName: 'End of Shift',
+        submittedAt: '2026-08-18T12:01:00.000Z', status: 'submitted', trigger: 'after_clock_out',
+        workflowOccurrenceId: 'occurrence-1', workflowRequirementId: 'requirement-1',
+      }],
+    });
+    await mount();
+
+    let result: any;
+    await act(async () => {
+      result = await currentActions.submitForm({
+        clientSubmissionId: 'current-attempt', formId: 'form-1', trigger: 'after_clock_out',
+        workflowOccurrenceId: 'occurrence-1', workflowRequirementId: 'requirement-1', responses: [],
+      });
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      code: 'workflow_requirement_already_completed',
+      error: 'This form may already be completed. Refreshing Forms will confirm its status.',
+      uncertain: false,
+    });
+  });
+
+  it('does not reconcile a reused submission ID with a different payload', async () => {
+    mockSubmitEmployeeForm.mockRejectedValue(new ApiError('submission_idempotency_conflict', 409));
+    mockLoadEmployeeForms.mockResolvedValue({
+      ...workspace(),
+      completed: [{
+        submissionId: 'sub-existing', clientSubmissionId: 'attempt-required', formId: 'form-1', formName: 'End of Shift',
+        submittedAt: '2026-08-18T12:01:00.000Z', status: 'submitted', trigger: 'after_clock_out',
+        workflowOccurrenceId: 'occurrence-1', workflowRequirementId: 'requirement-1',
+      }],
+    });
+    await mount();
+
+    let result: any;
+    await act(async () => {
+      result = await currentActions.submitForm({
+        clientSubmissionId: 'attempt-required', formId: 'form-1', trigger: 'after_clock_out',
+        workflowOccurrenceId: 'occurrence-1', workflowRequirementId: 'requirement-1',
+        responses: [{ fieldId: 'condition', value: 'Changed answer' }],
+      });
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      code: 'submission_idempotency_conflict',
+      error: 'These answers do not match the submission already saved for this attempt. Contact your supervisor before trying again.',
+      uncertain: false,
+    });
+    expect(mockLoadEmployeeForms).not.toHaveBeenCalled();
   });
 
   it('reconciles Completed after an uncertain on-demand network failure', async () => {

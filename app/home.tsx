@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { PrimaryActionButton } from '@/components/PrimaryActionButton';
 import { SecondaryButton } from '@/components/SecondaryButton';
-import { Screen } from '@/components/Screen';
+import { PrimaryScreen } from '@/components/Screen';
 import { OfflineNotice } from '@/components/OfflineNotice';
 import { OfflineClockStatus } from '@/components/OfflineClockStatus';
 import { StatusBanner } from '@/components/StatusBanner';
@@ -16,37 +16,58 @@ import {
   resolveJobTitle,
   resolveWorkAreaName,
 } from '@/features/clocking/presentation';
+import { scheduledClockInJobs } from '@/features/clocking/jobPicker';
+import { formatTrainingDate } from '@/features/training/presentation';
+import { serviceVisitPlaceLabel, serviceVisitStatusLabel, serviceVisitTimeLabel } from '@/features/serviceVisits/presentation';
+import { normalizeCompanyFeatures } from '@/features/companyFeatures';
 import { useClockingActions } from '@/hooks/useClockingActions';
 import { useEffectiveClockState } from '@/hooks/useEffectiveClockState';
-import { useFormsActions } from '@/hooks/useFormsActions';
+import { useTrainingActions } from '@/hooks/useTrainingActions';
 import { useAuthStore } from '@/store/authStore';
 import { useClockingStore } from '@/store/clockingStore';
 import { useOptionalOfflineClockStore } from '@/store/offlineClockContext';
-import { useFormsStore } from '@/store/formsStore';
+import { useTrainingStore } from '@/store/trainingStore';
 import { usePendingClockInStore } from '@/store/pendingClockInStore';
-import { usePendingClockOutStore } from '@/store/pendingClockOutStore';
+import { pendingClockOutFormTarget, usePendingClockOutStore } from '@/store/pendingClockOutStore';
 import { colors } from '@/theme/colors';
 import { formatBusinessDate, formatBusinessTime } from '@/utils/businessTime';
+import { loadMyActiveSnowRoute } from '@/api/snowOperationsApi';
+import type { SnowAssignmentResponse } from '@/types/snowOperations';
 
 export default function HomeScreen() {
-  const { user } = useAuthStore();
-  const { activeShiftWarnings, businessTimeZone, currentActiveEntryId, jobs, timeEntries } = useClockingStore();
+  const { accessToken, user } = useAuthStore();
+  const [snowAssignment, setSnowAssignment] = useState<SnowAssignmentResponse | null>(null);
+  const {
+    activeShiftWarnings,
+    businessTimeZone,
+    companyFeatures,
+    currentActiveEntryId,
+    jobs,
+    timeEntries,
+    todayServiceVisits = [],
+    upcomingServiceVisits = [],
+  } = useClockingStore();
+  const effectiveCompanyFeatures = normalizeCompanyFeatures(companyFeatures);
+  const [visitWindow, setVisitWindow] = useState<'today' | 'upcoming'>('today');
   const offlineClock = useOptionalOfflineClockStore();
   const effectiveClock = useEffectiveClockState();
   const { refreshWorkContext } = useClockingActions();
-  const { refreshForms } = useFormsActions();
-  const { toDo } = useFormsStore();
+  const { refreshAssignments } = useTrainingActions();
+  const { assignments } = useTrainingStore();
   const pendingClockIn = usePendingClockInStore();
   const pendingClockOut = usePendingClockOutStore();
   const pendingClockInReady = pendingClockIn.phase.kind === 'ready_to_finalize';
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [hasAuthoritativeJobRefresh, setHasAuthoritativeJobRefresh] = useState(false);
   const [pendingFormError, setPendingFormError] = useState<string | null>(null);
+  const [recoveringRequiredForm, setRecoveringRequiredForm] = useState(false);
   const [now, setNow] = useState(Date.now());
 
   useEffect(() => {
     let mounted = true;
     void refreshWorkContext().then((result) => {
       if (!mounted) return;
+      if (result.ok) setHasAuthoritativeJobRefresh(true);
       setLoadError(result.ok ? null : result.error || 'Could not load assigned jobs and shifts.');
     });
 
@@ -55,9 +76,19 @@ export default function HomeScreen() {
     };
   }, [refreshWorkContext]);
 
+  useEffect(() => { void refreshAssignments(); }, [refreshAssignments]);
+
   useEffect(() => {
-    void refreshForms();
-  }, [refreshForms]);
+    if (!effectiveCompanyFeatures.snowOperations) {
+      setSnowAssignment(null);
+      return;
+    }
+    let mounted = true;
+    void loadMyActiveSnowRoute(accessToken).then((payload) => {
+      if (mounted) setSnowAssignment(payload);
+    }).catch(() => undefined);
+    return () => { mounted = false; };
+  }, [accessToken, effectiveCompanyFeatures.snowOperations]);
 
   const authoritativeActiveShift = currentActiveEntryId
     ? timeEntries.find((entry) => entry.id === currentActiveEntryId && entry.status === 'clocked_in') ?? null
@@ -65,10 +96,11 @@ export default function HomeScreen() {
   const activeShift = authoritativeActiveShift ?? effectiveClock.activeEntry;
   const localPendingClockIn = effectiveClock.activeSource === 'offline_pending';
   const showPendingClockIn = Boolean(pendingClockIn.workflow && !authoritativeActiveShift);
-  const effectiveJobs = useMemo(() => jobs.length > 0
+  const effectiveJobs = useMemo(() => jobs.length > 0 || hasAuthoritativeJobRefresh
     ? jobs
-    : (offlineClock?.cache?.jobs ?? []).map((job) => ({ ...job, assignedEmployeeIds: [] })),
-  [jobs, offlineClock?.cache?.jobs]);
+    : offlineClock?.cache?.jobs ?? [],
+  [hasAuthoritativeJobRefresh, jobs, offlineClock?.cache?.jobs]);
+  const todayJobs = useMemo(() => scheduledClockInJobs(effectiveJobs), [effectiveJobs]);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 30_000);
@@ -96,6 +128,12 @@ export default function HomeScreen() {
   }, [activeShift, effectiveClock.shiftStartedAt, now]);
 
   const showLongShiftWarning = Boolean(activeShift && activeShiftWarnings.possibleForgottenClockOut);
+  const attentionAssignments = useMemo(() => [
+    ...assignments.filter((assignment) => assignment.presentationStatus === 'overdue'),
+    ...assignments.filter((assignment) => assignment.presentationStatus === 'due_soon'),
+  ], [assignments]);
+  const blockingAttention = pendingClockOut.workflow || showPendingClockIn;
+  const visibleAttentionCount = (blockingAttention ? 1 : 0) + attentionAssignments.length;
   const longShiftWarning = useMemo(() => {
     if (!activeShift) return '';
     return formatLongShiftWarning(effectiveClock.shiftStartedAt ?? activeShift.clockIn, now);
@@ -107,25 +145,156 @@ export default function HomeScreen() {
     [businessTimeZone, now]
   );
 
+  async function recoverAndOpenRequiredClockOutForm() {
+    setPendingFormError(null);
+    setRecoveringRequiredForm(true);
+    try {
+      const canonicalWorkflow = await pendingClockOut.recover();
+      if (!canonicalWorkflow) {
+        await refreshWorkContext();
+        return;
+      }
+      const target = pendingClockOutFormTarget(canonicalWorkflow);
+      if (!target) {
+        setPendingFormError('Required form details are unavailable. Retry to refresh them. If this continues, contact your supervisor or administrator to resolve the clock-out requirement.');
+        return;
+      }
+      router.push({
+        pathname: '/form',
+        params: {
+          formId: target.form.id,
+          trigger: 'after_clock_out',
+          workflowOccurrenceId: target.workflowOccurrenceId,
+          workflowRequirementId: target.workflowRequirementId,
+        },
+      });
+    } finally {
+      setRecoveringRequiredForm(false);
+    }
+  }
+
   return (
-    <Screen testID="home-scroll">
+    <PrimaryScreen testID="home-scroll">
       <OfflineNotice />
       <OfflineClockStatus showHistoricalAttention />
 
       <View style={styles.topRow}>
         <Text style={styles.brandText}>OliveOps</Text>
-        <Pressable accessibilityRole="button" onPress={() => router.push('/settings')}>
-          <Text style={styles.settingsLink}>Settings</Text>
-        </Pressable>
       </View>
 
       <ScreenHeader title={greeting} subtitle={todayLabel} />
+
+      {effectiveCompanyFeatures.snowOperations && snowAssignment?.route ? (
+        <View style={styles.assignedSection}>
+          <SectionHeader title="Snow Operations" />
+          <SectionCard testID="snow-assignment-card">
+            <ListRow
+              testID="snow-assignment-link"
+              title={snowAssignment.route.name}
+              subtitle={snowAssignment.event?.title}
+              detail={`${snowAssignment.progress?.completed ?? 0} of ${snowAssignment.progress?.total ?? snowAssignment.stops.length}`}
+              onPress={() => router.push('/snow-assignment')}
+            />
+          </SectionCard>
+        </View>
+      ) : null}
+
+      {visibleAttentionCount > 0 ? (
+        <View style={styles.attentionSection}>
+          <SectionHeader
+            title="Needs your attention"
+            action={visibleAttentionCount > 3 ? (
+              <Pressable accessibilityRole="button" onPress={() => router.push('/employee-hub')}>
+                <Text style={styles.detailsLink}>View all</Text>
+              </Pressable>
+            ) : undefined}
+          />
+          <SectionCard testID="attention-list">
+            {blockingAttention ? (
+              <ListRow
+                testID="attention-blocking-workflow"
+                title={pendingClockOut.workflow ? 'Complete required clock-out form' : 'Complete required clock-in form'}
+                subtitle="Your clocking workflow is waiting for you"
+                onPress={() => {
+                  if (pendingClockOut.workflow) {
+                    void recoverAndOpenRequiredClockOutForm();
+                    return;
+                  }
+                  if (pendingClockInReady) {
+                    void pendingClockIn.finalize().then(async (result) => {
+                      if (result.ok) await refreshWorkContext();
+                    });
+                    return;
+                  }
+                  const workflowOccurrenceId = pendingClockIn.workflow?.workflowOccurrenceId;
+                  const workflowRequirementId = pendingClockIn.currentRequirement?.requirementId;
+                  if (pendingClockIn.currentForm && workflowOccurrenceId && workflowRequirementId) {
+                    router.push({ pathname: '/form', params: {
+                      formId: pendingClockIn.currentForm.id,
+                      trigger: 'before_clock_in',
+                      workflowOccurrenceId,
+                      workflowRequirementId,
+                    } });
+                    return;
+                  }
+                  void pendingClockIn.ensureCurrentForm().then((form) => {
+                    if (!form || !workflowOccurrenceId || !workflowRequirementId) return;
+                    router.push({ pathname: '/form', params: {
+                      formId: form.id,
+                      trigger: 'before_clock_in',
+                      workflowOccurrenceId,
+                      workflowRequirementId,
+                    } });
+                  });
+                }}
+              />
+            ) : null}
+            {attentionAssignments.slice(0, blockingAttention ? 2 : 3).map((assignment) => (
+              <ListRow
+                key={assignment.id}
+                testID={`attention-training-${assignment.id}`}
+                title={assignment.trainingTitle}
+                subtitle={`Due ${formatTrainingDate(assignment.currentDueDate)}`}
+                leading={<StatusBadge label={assignment.presentationStatus === 'overdue' ? 'Overdue' : 'Due soon'} tone={assignment.presentationStatus === 'overdue' ? 'error' : 'active'} />}
+                onPress={() => router.push({ pathname: '/training-detail', params: { assignmentId: assignment.id } })}
+              />
+            ))}
+          </SectionCard>
+        </View>
+      ) : null}
 
       {loadError && !loadError.startsWith('Offline.') ? <StatusBanner tone="error" message={loadError} /> : null}
       {pendingFormError ? <StatusBanner tone="error" message={pendingFormError} /> : null}
       {showPendingClockIn && pendingClockInReady && pendingClockIn.error
         ? <StatusBanner tone="error" message={pendingClockIn.error} />
         : null}
+
+      {effectiveCompanyFeatures.recurringServices ? <View style={styles.assignedSection}>
+        <SectionHeader
+          title="Service Visits"
+          action={upcomingServiceVisits.length > 0 ? (
+            <Pressable accessibilityRole="button" onPress={() => setVisitWindow((current) => current === 'today' ? 'upcoming' : 'today')}>
+              <Text style={styles.detailsLink}>{visitWindow === 'today' ? 'Upcoming' : 'Today'}</Text>
+            </Pressable>
+          ) : undefined}
+        />
+        {(visitWindow === 'today' ? todayServiceVisits : upcomingServiceVisits).length === 0 ? (
+          <Text style={styles.emptyVisits}>{visitWindow === 'today' ? 'No Service Visits Today' : 'No Upcoming Service Visits'}</Text>
+        ) : (
+          <SectionCard testID={`service-visits-${visitWindow}`}>
+            {(visitWindow === 'today' ? todayServiceVisits : upcomingServiceVisits).map((visit) => (
+              <ListRow
+                key={visit.id}
+                testID={`service-visit-${visit.id}`}
+                title={serviceVisitPlaceLabel(visit)}
+                subtitle={[visit.serviceName, visit.propertyAddress].filter(Boolean).join('\n')}
+                detail={`${serviceVisitTimeLabel(visit, businessTimeZone)} · ${serviceVisitStatusLabel(visit.status)}`}
+                onPress={() => router.push({ pathname: '/service-visit', params: { jobId: visit.jobId, visitId: visit.id } })}
+              />
+            ))}
+          </SectionCard>
+        )}
+      </View> : null}
 
       {pendingClockOut.workflow ? (
         <ActionCard>
@@ -186,17 +355,18 @@ export default function HomeScreen() {
         </ActionCard>
       )}
 
-      {!activeShift && !showPendingClockIn && !pendingClockOut.workflow && effectiveJobs.length > 0 ? (
+      {effectiveCompanyFeatures.projects && !activeShift && !showPendingClockIn && !pendingClockOut.workflow ? (
         <View style={styles.assignedSection}>
-          <SectionHeader title="Assigned Jobs" />
-          <SectionCard>
-            {effectiveJobs.slice(0, 3).map((job) => (
+          <SectionHeader title="Today’s Jobs" />
+          {todayJobs.length > 0 ? <SectionCard testID="today-jobs-list">
+            {todayJobs.map((job) => (
               <ListRow
                 key={job.id}
+                testID={`today-job-${job.id}`}
                 title={job.title || 'Untitled Job'}
               />
             ))}
-          </SectionCard>
+          </SectionCard> : <StatusBanner tone="info" message="No jobs scheduled for today" />}
         </View>
       ) : null}
 
@@ -212,18 +382,15 @@ export default function HomeScreen() {
         </View>
       ) : null}
 
-      {pendingClockOut.workflow && pendingClockOut.currentForm && pendingClockOut.currentRequirement ? (
+      {pendingClockOut.workflow ? (
         <PrimaryActionButton
-          label="Resume Required Form"
-          onPress={() => router.push({
-            pathname: '/form',
-            params: {
-              formId: pendingClockOut.currentForm?.id,
-              trigger: 'after_clock_out',
-              workflowOccurrenceId: pendingClockOut.workflow?.workflowOccurrenceId,
-              workflowRequirementId: pendingClockOut.currentRequirement?.workflowRequirementId,
-            },
-          })}
+          label={recoveringRequiredForm
+            ? 'Refreshing Required Form...'
+            : pendingClockOut.currentForm
+              ? 'Resume Required Form'
+              : 'Retry Required Form'}
+          disabled={recoveringRequiredForm}
+          onPress={() => { void recoverAndOpenRequiredClockOutForm(); }}
         />
       ) : showPendingClockIn && pendingClockInReady ? (
         <PrimaryActionButton
@@ -297,25 +464,7 @@ export default function HomeScreen() {
         <PrimaryActionButton label="Clock In" onPress={() => router.push('/clock-in')} />
       )}
 
-      <View style={styles.quickSection}>
-        <SectionHeader title="Quick Actions" />
-        <View style={styles.quickGrid}>
-          <Pressable style={styles.quickAction} onPress={() => router.push('/forms')}>
-            <Text style={styles.quickActionLabel}>Forms</Text>
-            {toDo.length > 0 ? <Text style={styles.quickActionMeta}>{`${toDo.length} due`}</Text> : null}
-          </Pressable>
-          <Pressable style={styles.quickAction} onPress={() => router.push('/time-off')}>
-            <Text style={styles.quickActionLabel}>Time Off</Text>
-          </Pressable>
-          <Pressable style={styles.quickAction} onPress={() => router.push('/time-history')}>
-            <Text style={styles.quickActionLabel}>Time History</Text>
-          </Pressable>
-          <Pressable style={styles.quickAction} onPress={() => router.push('/my-correction-requests')}>
-            <Text style={styles.quickActionLabel}>Corrections</Text>
-          </Pressable>
-        </View>
-      </View>
-    </Screen>
+    </PrimaryScreen>
   );
 }
 
@@ -343,15 +492,9 @@ const styles = StyleSheet.create({
   actionStack: {
     gap: 8,
   },
-  quickSection: {
-    gap: 6,
-    marginTop: 4,
-  },
+  attentionSection: { gap: 6 },
   assignedSection: { gap: 6 },
-  quickGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  quickAction: { minHeight: 42, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, paddingHorizontal: 12, paddingVertical: 9, justifyContent: 'center' },
-  quickActionLabel: { color: colors.textPrimary, fontSize: 14, fontWeight: '600' },
-  quickActionMeta: { color: colors.primary, fontSize: 11, fontWeight: '700' },
+  emptyVisits: { color: colors.textSecondary, fontSize: 14, paddingVertical: 8 },
   topRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -361,11 +504,6 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     fontSize: 16,
     fontWeight: '700',
-  },
-  settingsLink: {
-    color: colors.textSecondary,
-    fontSize: 14,
-    fontWeight: '600',
   },
   warningBlock: {
     gap: 8,

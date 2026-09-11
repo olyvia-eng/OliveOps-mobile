@@ -19,6 +19,7 @@ import {
   getWorkTypeLabel,
   resolveEntryPrimaryLabel,
   resolveJobTitle,
+  resolveServiceVisitProperty,
 } from '@/features/clocking/presentation';
 import { useClockingActions } from '@/hooks/useClockingActions';
 import { useEffectiveClockState } from '@/hooks/useEffectiveClockState';
@@ -28,7 +29,7 @@ import { createRequestMeta } from '@/services/requestGuards';
 import { useAuthStore } from '@/store/authStore';
 import { useClockingStore } from '@/store/clockingStore';
 import { useFormsWorkflowStore } from '@/store/formsWorkflowStore';
-import { usePendingClockOutStore } from '@/store/pendingClockOutStore';
+import { pendingClockOutFormTarget, usePendingClockOutStore } from '@/store/pendingClockOutStore';
 import { colors, radii, spacing } from '@/theme/colors';
 import { toUserFacingError } from '@/utils/userFacingError';
 import { returnToParentOrReplace } from '@/utils/navigation';
@@ -84,6 +85,7 @@ export default function ClockOutScreen() {
   const [error, setError] = useState<string | null>(null);
   const [permissionSettingsRequired, setPermissionSettingsRequired] = useState(false);
   const [navigatingAfterSuccess, setNavigatingAfterSuccess] = useState(false);
+  const [recoveringRequiredForm, setRecoveringRequiredForm] = useState(false);
   const [postActionForms, setPostActionForms] = useState<EmployeeForm[]>([]);
   const [offline, setOffline] = useState(false);
   const [workAreaTimeline, setWorkAreaTimeline] = useState<CurrentShiftWorkAreaTimelineResponse | null>(null);
@@ -149,9 +151,48 @@ export default function ClockOutScreen() {
   const clockOutWorkflow = workflow?.originRoute === '/clock-out' && workflow.intent.kind === 'clock_out_follow_up'
     ? { ...workflow, intent: workflow.intent }
     : null;
+
+  function openRequiredClockOutForm(target: NonNullable<ReturnType<typeof pendingClockOutFormTarget>>) {
+    router.push({
+      pathname: '/form',
+      params: {
+        formId: target.form.id,
+        trigger: 'after_clock_out',
+        workflowOccurrenceId: target.workflowOccurrenceId,
+        workflowRequirementId: target.workflowRequirementId,
+      },
+    });
+  }
+
+  async function retryRequiredClockOutForm() {
+    setError(null);
+    setRecoveringRequiredForm(true);
+    try {
+      const canonicalWorkflow = await pendingClockOut.recover();
+      if (!canonicalWorkflow) {
+        await refreshWorkContext();
+        returnToParentOrReplace(clockOutDestination);
+        return;
+      }
+      const target = pendingClockOutFormTarget(canonicalWorkflow);
+      if (target) {
+        openRequiredClockOutForm(target);
+        return;
+      }
+      setError('Required form details are unavailable. Retry to refresh them. If this continues, contact your supervisor or administrator to resolve the clock-out requirement.');
+    } finally {
+      setRecoveringRequiredForm(false);
+    }
+  }
   const remainingPostActionForms = clockOutWorkflow
     ? clockOutWorkflow.forms.slice(clockOutWorkflow.completedCount)
     : postActionForms;
+  const clockOutDestination = activeEntry?.serviceVisitId && (activeEntry.jobIds?.[0] ?? activeEntry.jobId)
+    ? { pathname: '/service-visit' as const, params: { jobId: activeEntry.jobIds?.[0] ?? activeEntry.jobId!, visitId: activeEntry.serviceVisitId } }
+    : '/home' as const;
+  const workflowDestination = clockOutWorkflow?.intent.serviceVisitId && clockOutWorkflow.intent.jobId
+    ? { pathname: '/service-visit' as const, params: { jobId: clockOutWorkflow.intent.jobId, visitId: clockOutWorkflow.intent.serviceVisitId } }
+    : '/home' as const;
 
   useEffect(() => {
     if (!clockingCapabilities.editShiftWorkAreas || !activeEntry || !shiftSegments.some((segment) => segment.workType === 'job')) {
@@ -446,21 +487,9 @@ export default function ClockOutScreen() {
       submittedRef.current = true;
       setNavigatingAfterSuccess(false);
       await pendingClockOut.acceptWorkflow(result.pendingWorkflow);
-      const requirement = pendingClockOut.currentRequirement
-        ?? result.pendingWorkflow.requirements?.find((item) => !item.completed)
-        ?? result.pendingWorkflow.requiredForms?.find((item) => !item.completed);
-      const form = requirement?.form ?? requirement?.formPackage ?? requirement;
-      if (requirement && form?.id) {
-        router.push({
-          pathname: '/form',
-          params: {
-            formId: form.id,
-            trigger: 'after_clock_out',
-            workflowOccurrenceId: result.pendingWorkflow.workflowOccurrenceId,
-            workflowRequirementId: requirement.workflowRequirementId,
-          },
-        });
-      }
+      const target = pendingClockOutFormTarget(result.pendingWorkflow);
+      if (target) openRequiredClockOutForm(target);
+      else setError('Clock out is waiting for a required form, but its details are unavailable. Retry to refresh them. If this continues, contact your supervisor or administrator.');
       return;
     }
 
@@ -472,13 +501,17 @@ export default function ClockOutScreen() {
     submittedRef.current = true;
     setSuccess(pendingSync ? 'Clock-out saved on this device. It will sync when online.' : 'Clock-out submitted successfully.');
     if (pendingSync) {
-      returnToParentOrReplace('/home');
+      returnToParentOrReplace(clockOutDestination);
       return;
     }
     const leavingJobId = activeEntry.jobIds?.[0] ?? activeEntry.jobId;
     const checks = [getRequiredForms('after_clock_out')];
     if (leavingJobId) {
-      checks.push(getRequiredForms('after_leaving_job', { jobId: leavingJobId }));
+      checks.push(getRequiredForms('after_leaving_job', {
+        jobId: leavingJobId,
+        serviceId: activeEntry.serviceId,
+        serviceVisitId: activeEntry.serviceVisitId,
+      }));
     }
     const results = await Promise.all(checks);
     const forms = results.flatMap((advisory) => advisory.ok ? advisory.forms : []);
@@ -490,13 +523,16 @@ export default function ClockOutScreen() {
         intent: {
           kind: 'clock_out_follow_up',
           recordedDurationLabel: formatDurationMinutes(totalShiftMinutes),
+          jobId: leavingJobId,
+          serviceId: activeEntry.serviceId,
+          serviceVisitId: activeEntry.serviceVisitId,
         },
         forms,
       });
       setPostActionForms(forms);
       return;
     }
-    returnToParentOrReplace('/home');
+    returnToParentOrReplace(clockOutDestination);
   }
 
   function onConfirmClockOut() {
@@ -506,9 +542,8 @@ export default function ClockOutScreen() {
     ]);
   }
 
-  if (pendingClockOut.workflow && pendingClockOut.currentRequirement && pendingClockOut.currentForm) {
-    const form = pendingClockOut.currentForm;
-    const requirement = pendingClockOut.currentRequirement;
+  if (pendingClockOut.workflow) {
+    const target = pendingClockOutFormTarget(pendingClockOut.workflow);
     return (
       <Screen>
         <OfflineNotice />
@@ -517,19 +552,18 @@ export default function ClockOutScreen() {
           subtitle={`Required form ${pendingClockOut.completedCount + 1} of ${pendingClockOut.totalCount}`}
         />
         <StatusBanner tone="info" message="Complete the required form to finish clocking out." />
-        {pendingClockOut.error ? <StatusBanner tone="error" message={pendingClockOut.error} /> : null}
+        {error || pendingClockOut.error ? <StatusBanner tone="error" message={error ?? pendingClockOut.error ?? ''} /> : null}
         <PrimaryActionButton
-          label="Complete Required Form"
-          disabled={pendingClockOut.busy}
-          onPress={() => router.push({
-            pathname: '/form',
-            params: {
-              formId: form.id,
-              trigger: 'after_clock_out',
-              workflowOccurrenceId: pendingClockOut.workflow?.workflowOccurrenceId,
-              workflowRequirementId: requirement.workflowRequirementId,
-            },
-          })}
+          label={recoveringRequiredForm
+            ? 'Refreshing Required Form...'
+            : target
+              ? 'Complete Required Form'
+              : 'Retry Required Form'}
+          disabled={pendingClockOut.busy || recoveringRequiredForm}
+          onPress={() => {
+            if (target) openRequiredClockOutForm(target);
+            else void retryRequiredClockOutForm();
+          }}
         />
       </Screen>
     );
@@ -557,7 +591,7 @@ export default function ClockOutScreen() {
               label="Done"
               onPress={() => {
                 clearWorkflow();
-                returnToParentOrReplace('/home');
+                returnToParentOrReplace(workflowDestination);
               }}
             />
           </>
@@ -575,12 +609,13 @@ export default function ClockOutScreen() {
               params: {
                 list: 'todo', formId: form.id, trigger: form.trigger,
                 jobId: form.context?.jobId, equipmentId: form.context?.equipmentId,
-                divisionId: form.context?.divisionId, workflowId: clockOutWorkflow.id,
+                divisionId: form.context?.divisionId, serviceId: form.context?.serviceId,
+                serviceVisitId: form.context?.serviceVisitId, workflowId: clockOutWorkflow.id,
               },
             })}
             onSkip={() => {
               clearWorkflow();
-              returnToParentOrReplace('/home');
+              returnToParentOrReplace(workflowDestination);
             }}
           />
         )}
@@ -609,6 +644,7 @@ export default function ClockOutScreen() {
                     <Text style={styles.segmentDuration}>{formatDurationForEntry(segment)}</Text>
                   </View>
                   {segment.workType !== 'drive_time' ? <Text style={styles.segmentMeta}>{resolveEntryPrimaryLabel(segment, jobs)}</Text> : null}
+                  {resolveServiceVisitProperty(segment) ? <Text style={styles.segmentMeta}>{resolveServiceVisitProperty(segment)}</Text> : null}
                 </View>
               </View>
             ))}
@@ -734,13 +770,14 @@ export default function ClockOutScreen() {
               params: {
                 list: 'todo', formId: form.id, trigger: form.trigger,
                 jobId: form.context?.jobId, equipmentId: form.context?.equipmentId,
-                divisionId: form.context?.divisionId, workflowId: activeWorkflow.id,
+                divisionId: form.context?.divisionId, serviceId: form.context?.serviceId,
+                serviceVisitId: form.context?.serviceVisitId, workflowId: activeWorkflow.id,
               },
             });
           }}
           onSkip={() => {
             clearWorkflow();
-            returnToParentOrReplace('/home');
+            returnToParentOrReplace(workflowDestination);
           }}
         />
       ) : null}

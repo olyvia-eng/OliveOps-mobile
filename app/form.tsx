@@ -16,6 +16,11 @@ import {
   type EmployeeFormValues,
   validateFormValues,
 } from '@/features/forms/formValidation';
+import {
+  clockInRequirementIsCompleted,
+  clockOutRequirementIsCompleted,
+  isMandatoryCompletionConflict,
+} from '@/features/forms/mandatoryWorkflowRecovery';
 import { useFormsActions } from '@/hooks/useFormsActions';
 import { useClockingActions } from '@/hooks/useClockingActions';
 import { createFormClientSubmissionId } from '@/services/requestGuards';
@@ -34,7 +39,7 @@ import { useAuthStore } from '@/store/authStore';
 import { useClockingStore } from '@/store/clockingStore';
 import { useFormsStore } from '@/store/formsStore';
 import { useFormsWorkflowStore } from '@/store/formsWorkflowStore';
-import { pendingClockInRequirementForm, usePendingClockInStore } from '@/store/pendingClockInStore';
+import { pendingClockInRequirementForm, pendingClockInRequirements, usePendingClockInStore } from '@/store/pendingClockInStore';
 import {
   requirementForm,
   usePendingClockOutStore,
@@ -54,11 +59,13 @@ function matchesParams(form: EmployeeForm, params: Record<string, string | strin
     && form.trigger === params.trigger
     && (params.jobId ?? '') === (form.context?.jobId ?? '')
     && (params.equipmentId ?? '') === (form.context?.equipmentId ?? '')
-    && (params.divisionId ?? '') === (form.context?.divisionId ?? '');
+    && (params.divisionId ?? '') === (form.context?.divisionId ?? '')
+    && (params.serviceId ?? '') === (form.context?.serviceId ?? '')
+    && (params.serviceVisitId ?? '') === (form.context?.serviceVisitId ?? '');
 }
 
 export default function FormScreen() {
-  const params = useLocalSearchParams<{ list?: string; formId?: string; trigger?: string; jobId?: string; equipmentId?: string; divisionId?: string; returnTo?: string; workflowId?: string; workflowOccurrenceId?: string; workflowRequirementId?: string }>();
+  const params = useLocalSearchParams<{ list?: string; formId?: string; trigger?: string; jobId?: string; equipmentId?: string; divisionId?: string; serviceId?: string; serviceVisitId?: string; returnTo?: string; workflowId?: string; workflowOccurrenceId?: string; workflowRequirementId?: string }>();
   const navigation = useNavigation();
   const { user, accessToken } = useAuthStore();
   const { businessTimeZone } = useClockingStore();
@@ -72,25 +79,40 @@ export default function FormScreen() {
     ? `${params.workflowOccurrenceId}:${params.workflowRequirementId}`
     : null;
   const mandatoryKind: MandatoryFinalizationKind | null = mandatoryRouteKey
-    ? params.trigger === 'before_clock_in'
+    ? params.workflowOccurrenceId === pendingClockIn.workflow?.workflowOccurrenceId
       ? 'clock_in'
-      : params.trigger === 'after_clock_out'
+      : params.workflowOccurrenceId === pendingClockOut.workflow?.workflowOccurrenceId
         ? 'clock_out'
-        : null
+        : params.trigger === 'before_clock_in'
+          ? 'clock_in'
+          : params.trigger === 'after_clock_out'
+            ? 'clock_out'
+            : null
     : null;
+  if (__DEV__ && mandatoryRouteKey && !mandatoryKind) {
+    console.warn(
+      '[form] mandatoryRouteKey present but mandatoryKind resolved to null',
+      {
+        trigger: params.trigger,
+        workflowOccurrenceId: params.workflowOccurrenceId,
+        pendingClockInOccurrence: pendingClockIn.workflow?.workflowOccurrenceId,
+        pendingClockOutOccurrence: pendingClockOut.workflow?.workflowOccurrenceId,
+      },
+    );
+  }
   const clockInFormContext = mandatoryKind === 'clock_in'
     || Boolean(params.workflowId && workflow?.id === params.workflowId && workflow.intent.kind === 'clock_in');
   const mandatoryClockInRequirement = params.workflowOccurrenceId === pendingClockIn.workflow?.workflowOccurrenceId
-    && params.workflowRequirementId === pendingClockIn.currentRequirement?.requirementId
-    ? pendingClockIn.currentRequirement
+    ? pendingClockInRequirements(pendingClockIn.workflow).find((item) => item.requirementId === params.workflowRequirementId) ?? null
     : null;
   const mandatoryClockOutRequirement = params.workflowOccurrenceId === pendingClockOut.workflow?.workflowOccurrenceId
-    && params.workflowRequirementId === pendingClockOut.currentRequirement?.workflowRequirementId
-    ? pendingClockOut.currentRequirement
+    ? workflowRequirements(pendingClockOut.workflow).find((item) => item.workflowRequirementId === params.workflowRequirementId) ?? null
     : null;
-  const liveMandatoryForm = mandatoryClockInRequirement
+  const liveMandatoryForm = mandatoryKind === 'clock_in'
     ? pendingClockInRequirementForm(mandatoryClockInRequirement)
-    : requirementForm(mandatoryClockOutRequirement);
+    : mandatoryKind === 'clock_out'
+      ? requirementForm(mandatoryClockOutRequirement)
+      : null;
   const stableMandatoryFormRef = useRef<MandatoryFormSnapshot | null>(null);
   if (stableMandatoryFormRef.current?.routeKey !== mandatoryRouteKey) {
     stableMandatoryFormRef.current = null;
@@ -127,7 +149,7 @@ export default function FormScreen() {
     [candidates, mandatoryRouteKey, params, stableMandatoryForm, workflowForm],
   );
   const formRouteIdentity = mandatoryRouteKey
-    ?? `${params.list ?? ''}:${params.workflowId ?? ''}:${params.formId ?? ''}:${params.trigger ?? ''}:${params.jobId ?? ''}:${params.equipmentId ?? ''}:${params.divisionId ?? ''}`;
+    ?? `${params.list ?? ''}:${params.workflowId ?? ''}:${params.formId ?? ''}:${params.trigger ?? ''}:${params.jobId ?? ''}:${params.equipmentId ?? ''}:${params.divisionId ?? ''}:${params.serviceId ?? ''}:${params.serviceVisitId ?? ''}`;
   const formSnapshotRef = useRef<{ identity: string; form: EmployeeForm } | null>(null);
   const submissionInProgressRef = useRef(false);
   if (formSnapshotRef.current?.identity !== formRouteIdentity) formSnapshotRef.current = null;
@@ -138,6 +160,9 @@ export default function FormScreen() {
   const form = stableMandatoryForm
     ?? matchedForm
     ?? (submissionInProgressRef.current || mandatorySubmissionAccepted ? formSnapshotRef.current?.form ?? null : null);
+  const clockOutDestination = form?.context?.serviceVisitId && form.context.jobId
+    ? { pathname: '/service-visit' as const, params: { jobId: form.context.jobId, visitId: form.context.serviceVisitId } }
+    : '/home' as const;
   const orderedFields = useMemo(
     () => [...(form?.fields ?? [])].sort((left, right) => left.order - right.order),
     [form],
@@ -167,6 +192,7 @@ export default function FormScreen() {
   const [fieldErrors, setFieldErrors] = useState<EmployeeFormFieldErrors>({});
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [mandatoryRecoveryError, setMandatoryRecoveryError] = useState<string | null>(null);
   const [submittedFormName, setSubmittedFormName] = useState<string | null>(null);
   const [clockOutCompleted, setClockOutCompleted] = useState(false);
   const [queuedOffline, setQueuedOffline] = useState(false);
@@ -179,7 +205,7 @@ export default function FormScreen() {
   const refreshedMissingRef = useRef<string | null>(null);
   const submissionFailure = mandatoryKind ? mandatoryStore.submissionFailure : null;
   const submissionIdentity = form && user
-    ? `${user.businessId}:${user.id}:${user.employeeId ?? ''}:${mandatoryRouteKey ?? ''}:${form.id}:${form.trigger}:${form.context?.jobId ?? ''}:${form.context?.equipmentId ?? ''}:${form.context?.divisionId ?? ''}`
+    ? `${user.businessId}:${user.id}:${user.employeeId ?? ''}:${mandatoryRouteKey ?? ''}:${form.id}:${form.trigger}:${form.context?.jobId ?? ''}:${form.context?.equipmentId ?? ''}:${form.context?.divisionId ?? ''}:${form.context?.serviceId ?? ''}:${form.context?.serviceVisitId ?? ''}`
     : '';
   const attachmentIdentityKey = user?.employeeId ? `${user.businessId}:${user.id}:${user.employeeId}` : '';
 
@@ -225,12 +251,50 @@ export default function FormScreen() {
     setFieldErrors({});
   }, [initialValues, submissionIdentity]);
 
+  async function recoverMandatoryForm() {
+    if (!mandatoryKind || !mandatoryRouteKey) return;
+    setRefreshing(true);
+    setMandatoryRecoveryError(null);
+    try {
+      let recoveredForm: EmployeeForm | null = null;
+      let recoveredOccurrenceId: string | undefined;
+      if (mandatoryKind === 'clock_in') {
+        const recovered = await pendingClockIn.recover();
+        recoveredOccurrenceId = recovered?.workflowOccurrenceId;
+        const requirement = pendingClockInRequirements(recovered).find((item) => item.requirementId === params.workflowRequirementId) ?? null;
+        recoveredForm = pendingClockInRequirementForm(requirement);
+      } else {
+        const recovered = await pendingClockOut.recover();
+        recoveredOccurrenceId = recovered?.workflowOccurrenceId;
+        const requirement = workflowRequirements(recovered).find((item) => item.workflowRequirementId === params.workflowRequirementId) ?? null;
+        recoveredForm = requirementForm(requirement);
+      }
+      if (!recoveredOccurrenceId || recoveredOccurrenceId !== params.workflowOccurrenceId) {
+        router.replace('/home');
+        return;
+      }
+      if (recoveredForm && recoveredForm.id === params.formId) {
+        stableMandatoryFormRef.current = { routeKey: mandatoryRouteKey, form: recoveredForm };
+        return;
+      }
+      setMandatoryRecoveryError('This required form could not be recovered. Retry when connected. If this continues, contact your supervisor or administrator.');
+    } catch {
+      setMandatoryRecoveryError('This required form could not be recovered. Retry when connected. If this continues, contact your supervisor or administrator.');
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
   useEffect(() => {
     if (form || refreshedMissingRef.current === formRouteIdentity) return;
     refreshedMissingRef.current = formRouteIdentity;
+    if (mandatoryKind) {
+      void recoverMandatoryForm();
+      return;
+    }
     setRefreshing(true);
     void refreshForms({ force: true }).finally(() => setRefreshing(false));
-  }, [form, formRouteIdentity, refreshForms]);
+  }, [form, formRouteIdentity, mandatoryKind, refreshForms]);
 
   useEffect(() => {
     if (!submissionFailure || submissionFailure.workflowRequirementId !== params.workflowRequirementId) return;
@@ -289,7 +353,7 @@ export default function FormScreen() {
       <Screen>
         <ScreenHeader title="Clocked out" subtitle="Your required forms were submitted and your shift is complete." />
         <StatusBanner tone="success" message="Clock-out submitted successfully." />
-        <PrimaryActionButton label="Done" onPress={() => returnToParentOrReplace('/home')} />
+        <PrimaryActionButton label="Done" onPress={() => returnToParentOrReplace(clockOutDestination)} />
       </Screen>
     );
   }
@@ -331,6 +395,26 @@ export default function FormScreen() {
   }
 
   if (!form) {
+    if (mandatoryKind) {
+      return (
+        <Screen>
+          <ScreenHeader
+            title={refreshing ? 'Refreshing Required Form...' : "Required form couldn't be loaded"}
+            subtitle="Your clocking requirement is still pending."
+          />
+          {mandatoryRecoveryError ? <StatusBanner tone="error" message={mandatoryRecoveryError} /> : null}
+          {!refreshing ? (
+            <PrimaryActionButton
+              label="Retry"
+              onPress={() => {
+                refreshedMissingRef.current = null;
+                void recoverMandatoryForm();
+              }}
+            />
+          ) : null}
+        </Screen>
+      );
+    }
     return (
       <Screen>
         <ScreenHeader title="Form unavailable" subtitle="This form may have changed or no longer be assigned to you." />
@@ -361,6 +445,8 @@ export default function FormScreen() {
         jobId: form.context?.jobId,
         equipmentId: form.context?.equipmentId,
         divisionId: form.context?.divisionId,
+        serviceId: form.context?.serviceId,
+        serviceVisitId: form.context?.serviceVisitId,
       });
       setPhotoAttachments((current) => ({ ...current, [fieldId]: next }));
       setValues((current) => ({ ...current, [fieldId]: next.localAttachmentId }));
@@ -473,6 +559,8 @@ export default function FormScreen() {
       jobId: form.context?.jobId,
       equipmentId: form.context?.equipmentId,
       divisionId: form.context?.divisionId,
+      serviceId: form.context?.serviceId,
+      serviceVisitId: form.context?.serviceVisitId,
       ...(mandatoryKind && params.workflowOccurrenceId && params.workflowRequirementId ? {
         workflowOccurrenceId: params.workflowOccurrenceId,
         workflowRequirementId: params.workflowRequirementId,
@@ -516,10 +604,32 @@ export default function FormScreen() {
       setProcessingPhotos(false);
     }
     const result = await submitForm(payload);
+    let recoveredClockIn: Awaited<ReturnType<typeof pendingClockIn.recover>> | undefined;
+    let recoveredClockOut: Awaited<ReturnType<typeof pendingClockOut.recover>> | undefined;
     if (!result.ok) {
       const resultCode = 'code' in result ? result.code : undefined;
-      if (mandatoryKind && resultCode === 'workflow_requirement_already_completed') {
-        // Continue through authoritative workflow recovery below.
+      if (mandatoryKind && isMandatoryCompletionConflict(resultCode)) {
+        if (mandatoryKind === 'clock_in') {
+          recoveredClockIn = await pendingClockIn.recover();
+        } else {
+          recoveredClockOut = await pendingClockOut.recover();
+        }
+        const exactRequirementCompleted = mandatoryKind === 'clock_in'
+          ? !recoveredClockIn || clockInRequirementIsCompleted(
+            recoveredClockIn,
+            params.workflowOccurrenceId!,
+            params.workflowRequirementId!,
+          )
+          : !recoveredClockOut || clockOutRequirementIsCompleted(
+            recoveredClockOut,
+            params.workflowOccurrenceId!,
+            params.workflowRequirementId!,
+          );
+        if (!exactRequirementCompleted) {
+          submissionInProgressRef.current = false;
+          setError('Required form completion could not be verified. Your answers are still saved. Check your connection and retry.');
+          return;
+        }
       } else {
         if (mandatoryKind && resultCode === 'workflow_context_mismatch') {
           await mandatoryStore.recover();
@@ -532,16 +642,39 @@ export default function FormScreen() {
     }
 
     if (mandatoryKind) {
-      await markFormAttachmentsSubmitted(attachmentIdentityKey, clientSubmissionId);
-      await mandatoryStore.completeQueuedSubmission?.(clientSubmissionId);
       submittedRef.current = true;
       setMandatorySubmissionAccepted(true);
+      await markFormAttachmentsSubmitted(attachmentIdentityKey, clientSubmissionId);
+      await mandatoryStore.completeQueuedSubmission?.(clientSubmissionId);
+      if (mandatoryKind === 'clock_out' && result.ok
+        && (result.clocking?.status === 'clock_out_completed'
+          || result.clocking?.status === 'clock_out_already_finalized')) {
+        await pendingClockOut.completeFromSubmission(result.clocking);
+        submissionInProgressRef.current = false;
+        router.replace('/home');
+        return;
+      }
       const refreshedClockIn = mandatoryKind === 'clock_in'
-        ? await pendingClockIn.refreshAfterSubmission()
+        ? recoveredClockIn === undefined ? await pendingClockIn.refreshAfterSubmission() : recoveredClockIn
         : null;
       const refreshedClockOut = mandatoryKind === 'clock_out'
-        ? await pendingClockOut.refreshAfterSubmission()
+        ? recoveredClockOut === undefined ? await pendingClockOut.refreshAfterSubmission() : recoveredClockOut
         : null;
+      if (!refreshedClockIn && !refreshedClockOut) {
+        submissionInProgressRef.current = false;
+        try {
+          await refreshWorkContext();
+        } catch {
+          // The pending endpoint already proved that the workflow is resolved.
+        }
+        if (mandatoryKind === 'clock_in') {
+          clockInNavigationCompletedRef.current = true;
+          router.dismissTo('/active-shift');
+        } else {
+          setClockOutCompleted(true);
+        }
+        return;
+      }
       const nextClockInRequirement = refreshedClockIn?.remainingForms[0] ?? null;
       const nextClockOutRequirement = mandatoryKind === 'clock_out'
         ? workflowRequirements(refreshedClockOut).find((item) => !item.completed) ?? null

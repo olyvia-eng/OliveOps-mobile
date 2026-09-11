@@ -77,6 +77,12 @@ export interface Job {
   title: string;
   status: 'scheduled' | 'in_progress' | 'on_hold' | 'completed' | 'cancelled';
   assignedEmployeeIds: string[];
+  assignedForemanId?: string | null;
+  assignedCrewEmployeeIds?: string[];
+  customerName?: string;
+  propertyAddress?: string;
+  jobNumber?: string;
+  scheduledToday?: boolean;
   hasOperationalWorkAreas?: boolean;
   eligibleOperationalWorkAreas?: JobWorkArea[];
 }
@@ -96,6 +102,11 @@ export interface TimeEntry {
   employeeId: string;
   jobId?: string;
   jobIds?: string[];
+  serviceId?: string;
+  serviceVisitId?: string;
+  jobName?: string;
+  serviceName?: string;
+  propertyName?: string;
   workType: TimeEntryWorkType;
   workAreaId?: string | null;
   workAreaNameSnapshot?: string | null;

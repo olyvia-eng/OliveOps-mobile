@@ -1,9 +1,83 @@
 import * as SQLite from 'expo-sqlite';
 import type { OfflineClockCache, OfflineClockCommand, OfflineShiftMapping } from '@/features/offlineClocking/types';
-import { SUPPORTED_OFFLINE_CLOCK_SCHEMA_VERSIONS } from '@/features/offlineClocking/types';
+import { OFFLINE_CLOCK_CACHE_SCHEMA_VERSION, SUPPORTED_OFFLINE_CLOCK_SCHEMA_VERSIONS } from '@/features/offlineClocking/types';
+import type { Job } from '@/types/domain';
 
 const DATABASE_NAME = 'oliveops-offline-clock.db';
 let databasePromise: ReturnType<typeof SQLite.openDatabaseAsync> | null = null;
+
+const JOB_STATUSES = new Set<Job['status']>(['scheduled', 'in_progress', 'on_hold', 'completed', 'cancelled']);
+const LEGACY_CACHE_SCHEMA_VERSIONS = new Set([1, 2, 3, OFFLINE_CLOCK_CACHE_SCHEMA_VERSION]);
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+}
+
+function optionalString(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
+
+function normalizeCachedJob(value: unknown): OfflineClockCache['jobs'][number] | null {
+  if (!value || typeof value !== 'object') return null;
+  const job = value as Record<string, unknown>;
+  if (typeof job.id !== 'string' || typeof job.title !== 'string' || !JOB_STATUSES.has(job.status as Job['status'])) return null;
+  const eligibleOperationalWorkAreas = Array.isArray(job.eligibleOperationalWorkAreas)
+    ? job.eligibleOperationalWorkAreas.flatMap((value) => {
+        if (!value || typeof value !== 'object') return [];
+        const workArea = value as Record<string, unknown>;
+        if (typeof workArea.id !== 'string' || typeof workArea.name !== 'string') return [];
+        return [{
+          id: workArea.id,
+          name: workArea.name,
+          status: workArea.status === 'in_progress' ? 'in_progress' as const : 'not_started' as const,
+        }];
+      })
+    : undefined;
+
+  return {
+    id: job.id,
+    title: job.title,
+    status: job.status as Job['status'],
+    assignedEmployeeIds: stringArray(job.assignedEmployeeIds),
+    assignedForemanId: typeof job.assignedForemanId === 'string' || job.assignedForemanId === null
+      ? job.assignedForemanId
+      : undefined,
+    assignedCrewEmployeeIds: stringArray(job.assignedCrewEmployeeIds),
+    scheduledToday: job.scheduledToday === true,
+    customerName: optionalString(job.customerName),
+    propertyAddress: optionalString(job.propertyAddress),
+    jobNumber: optionalString(job.jobNumber),
+    hasOperationalWorkAreas: typeof job.hasOperationalWorkAreas === 'boolean' ? job.hasOperationalWorkAreas : undefined,
+    eligibleOperationalWorkAreas,
+  };
+}
+
+function normalizeOfflineClockCache(value: unknown, identityKey: string): OfflineClockCache | null {
+  if (!value || typeof value !== 'object') return null;
+  const cache = value as Record<string, unknown>;
+  if (!LEGACY_CACHE_SCHEMA_VERSIONS.has(cache.schemaVersion as number) || cache.identityKey !== identityKey || !Array.isArray(cache.jobs)) return null;
+  if (!Array.isArray(cache.unbillableCategories)) return null;
+
+  return {
+    schemaVersion: OFFLINE_CLOCK_CACHE_SCHEMA_VERSION,
+    identityKey,
+    updatedAt: typeof cache.updatedAt === 'string' ? cache.updatedAt : new Date(0).toISOString(),
+    jobs: cache.jobs.flatMap((job) => normalizeCachedJob(job) ?? []),
+    unbillableCategories: cache.unbillableCategories.flatMap((value) => {
+      if (!value || typeof value !== 'object') return [];
+      const category = value as Record<string, unknown>;
+      if (typeof category.id !== 'string' || typeof category.name !== 'string' || typeof category.active !== 'boolean') return [];
+      return [{ id: category.id, name: category.name, active: category.active }];
+    }),
+    driveTimeAvailable: cache.driveTimeAvailable !== false,
+    jobWorkAvailable: cache.jobWorkAvailable !== false,
+    unbillableAvailable: cache.unbillableAvailable === true,
+    requiredBeforeClockInForms: typeof cache.requiredBeforeClockInForms === 'boolean' ? cache.requiredBeforeClockInForms : undefined,
+    requiredAfterClockOutForms: typeof cache.requiredAfterClockOutForms === 'boolean' ? cache.requiredAfterClockOutForms : undefined,
+    todayServiceVisits: Array.isArray(cache.todayServiceVisits) ? cache.todayServiceVisits as OfflineClockCache['todayServiceVisits'] : [],
+    upcomingServiceVisits: Array.isArray(cache.upcomingServiceVisits) ? cache.upcomingServiceVisits as OfflineClockCache['upcomingServiceVisits'] : [],
+  };
+}
 
 function storageCommandId(identityKey: string, commandId: string) {
   return `${identityKey}:${commandId}`;
@@ -173,7 +247,17 @@ export async function loadOfflineClockCache(identityKey: string): Promise<Offlin
     'SELECT cache_json FROM offline_clock_cache WHERE identity_key = ?',
     identityKey,
   );
-  return row ? JSON.parse(row.cache_json) as OfflineClockCache : null;
+  if (!row) return null;
+  try {
+    const raw = JSON.parse(row.cache_json) as unknown;
+    const cache = normalizeOfflineClockCache(raw, identityKey);
+    if (cache && (raw as { schemaVersion?: unknown }).schemaVersion !== OFFLINE_CLOCK_CACHE_SCHEMA_VERSION) {
+      await saveOfflineClockCache(cache);
+    }
+    return cache;
+  } catch {
+    return null;
+  }
 }
 
 export function resetOfflineClockStorageForTests() {

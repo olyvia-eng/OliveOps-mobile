@@ -1,7 +1,8 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuthStore } from '@/store/authStore';
-import type { ActivityConfig } from '@/types/api';
+import type { ActivityConfig, CompanyFeatures } from '@/types/api';
 import type { Job, TimeCorrectionRequest, TimeEntry, UnbillableCategory } from '@/types/domain';
+import type { ServiceVisitSummary } from '@/types/serviceVisit';
 import { DEFAULT_BUSINESS_TIME_ZONE, normalizeBusinessTimeZone } from '@/utils/businessTime';
 import {
   DEFAULT_CLOCKING_CAPABILITIES,
@@ -15,6 +16,7 @@ export type ActiveShiftWarnings = {
 };
 
 type ClockingState = {
+  companyFeatures: CompanyFeatures | null;
   businessTimeZone: string;
   clockingCapabilities: ClockingCapabilities;
   jobs: Job[];
@@ -28,6 +30,10 @@ type ClockingState = {
   currentActiveEntryId: string | null;
   activeShiftWarnings: ActiveShiftWarnings;
   activityConfigs?: ActivityConfig[];
+  serviceVisitHorizonDays?: number;
+  todayServiceVisits: ServiceVisitSummary[];
+  upcomingServiceVisits: ServiceVisitSummary[];
+  setCompanyFeatures: (features: CompanyFeatures) => void;
   setBusinessTimeZone: (timeZone?: string | null) => void;
   setClockingCapabilities: (capabilities?: Partial<ClockingCapabilities> | null) => void;
   setJobs: (jobs: Job[]) => void;
@@ -40,6 +46,7 @@ type ClockingState = {
   setCurrentActiveEntryId: (entryId: string | null) => void;
   setActiveShiftWarnings: (warnings?: Partial<ActiveShiftWarnings>) => void;
   setActivityConfigs: (configs?: ActivityConfig[]) => void;
+  setServiceVisits: (horizonDays?: number, today?: ServiceVisitSummary[], upcoming?: ServiceVisitSummary[]) => void;
   upsertTimeEntry: (entry: TimeEntry) => void;
   resetClockingState: () => void;
 };
@@ -48,6 +55,7 @@ const ClockingContext = createContext<ClockingState | undefined>(undefined);
 
 export function ClockingProvider({ children }: { children: React.ReactNode }) {
   const { status, user } = useAuthStore();
+  const [companyFeatures, setCompanyFeatures] = useState<CompanyFeatures | null>(null);
   const [businessTimeZone, setBusinessTimeZoneState] = useState(DEFAULT_BUSINESS_TIME_ZONE);
   const [clockingCapabilities, setClockingCapabilitiesState] = useState(DEFAULT_CLOCKING_CAPABILITIES);
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -64,6 +72,9 @@ export function ClockingProvider({ children }: { children: React.ReactNode }) {
     thresholdHours: 12,
   });
   const [activityConfigs, setActivityConfigs] = useState<ActivityConfig[] | undefined>(undefined);
+  const [serviceVisitHorizonDays, setServiceVisitHorizonDays] = useState<number | undefined>(undefined);
+  const [todayServiceVisits, setTodayServiceVisits] = useState<ServiceVisitSummary[]>([]);
+  const [upcomingServiceVisits, setUpcomingServiceVisits] = useState<ServiceVisitSummary[]>([]);
   const previousIdentityRef = useRef<string | null>(null);
 
   const setActiveShiftWarnings = useCallback((next?: Partial<ActiveShiftWarnings>) => {
@@ -106,7 +117,14 @@ export function ClockingProvider({ children }: { children: React.ReactNode }) {
     setUnbillableCategoriesBusinessId(null);
   }, []);
 
+  const setServiceVisits = useCallback((horizonDays?: number, today: ServiceVisitSummary[] = [], upcoming: ServiceVisitSummary[] = []) => {
+    setServiceVisitHorizonDays(horizonDays);
+    setTodayServiceVisits(today);
+    setUpcomingServiceVisits(upcoming);
+  }, []);
+
   const resetClockingState = useCallback(() => {
+    setCompanyFeatures(null);
     setBusinessTimeZoneState(DEFAULT_BUSINESS_TIME_ZONE);
     setClockingCapabilitiesState(DEFAULT_CLOCKING_CAPABILITIES);
     setJobs([]);
@@ -123,6 +141,9 @@ export function ClockingProvider({ children }: { children: React.ReactNode }) {
       thresholdHours: 12,
     });
     setActivityConfigs(undefined);
+    setServiceVisitHorizonDays(undefined);
+    setTodayServiceVisits([]);
+    setUpcomingServiceVisits([]);
   }, []);
 
   useEffect(() => {
@@ -138,6 +159,7 @@ export function ClockingProvider({ children }: { children: React.ReactNode }) {
 
   const value = useMemo<ClockingState>(
     () => ({
+      companyFeatures,
       businessTimeZone,
       clockingCapabilities,
       jobs,
@@ -151,6 +173,10 @@ export function ClockingProvider({ children }: { children: React.ReactNode }) {
       currentActiveEntryId,
       activeShiftWarnings,
       activityConfigs,
+      serviceVisitHorizonDays,
+      todayServiceVisits,
+      upcomingServiceVisits,
+      setCompanyFeatures,
       setBusinessTimeZone,
       setClockingCapabilities,
       setJobs,
@@ -163,6 +189,7 @@ export function ClockingProvider({ children }: { children: React.ReactNode }) {
       setCurrentActiveEntryId,
       setActiveShiftWarnings,
       setActivityConfigs,
+      setServiceVisits,
       upsertTimeEntry,
       resetClockingState,
     }),
@@ -170,6 +197,7 @@ export function ClockingProvider({ children }: { children: React.ReactNode }) {
       activeShiftWarnings,
       activityConfigs,
       businessTimeZone,
+      companyFeatures,
       clockingCapabilities,
       currentActiveEntryId,
       jobs,
@@ -178,14 +206,17 @@ export function ClockingProvider({ children }: { children: React.ReactNode }) {
       setActiveShiftWarnings,
       setBusinessTimeZone,
       setClockingCapabilities,
+      setServiceVisits,
       setUnbillableCategories,
       timeCorrections,
       timeEntries,
+      todayServiceVisits,
       unbillableCategories,
       unbillableCategoriesBusinessId,
       unbillableCategoriesError,
       unbillableCategoriesLoadedAt,
       unbillableCategoriesLoading,
+      upcomingServiceVisits,
       upsertTimeEntry,
     ]
   );

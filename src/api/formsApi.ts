@@ -23,6 +23,8 @@ function contextQuery(filters: EmployeeFormsContextFilter = {}) {
     jobId: filters.jobId,
     equipmentId: filters.equipmentId,
     divisionId: filters.divisionId,
+    serviceId: filters.serviceId,
+    serviceVisitId: filters.serviceVisitId,
   };
 }
 

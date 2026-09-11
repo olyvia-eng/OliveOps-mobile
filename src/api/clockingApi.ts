@@ -26,7 +26,7 @@ export function loadBootstrap(
   options: { force?: boolean } = {},
 ): Promise<BootstrapResponse> {
   const requestKey = accessToken ?? '';
-  const inFlightRequest = options.force ? undefined : bootstrapRequests.get(requestKey);
+  const inFlightRequest = bootstrapRequests.get(requestKey);
   if (inFlightRequest) return inFlightRequest;
 
   const request = apiRequest<BootstrapResponse>(ENDPOINTS.bootstrap, {
@@ -34,17 +34,15 @@ export function loadBootstrap(
     accessToken,
   });
 
-  if (!options.force) {
-    bootstrapRequests.set(requestKey, request);
-  }
+  bootstrapRequests.set(requestKey, request);
   void request.then(
     () => {
-      if (!options.force && bootstrapRequests.get(requestKey) === request) {
+      if (bootstrapRequests.get(requestKey) === request) {
         bootstrapRequests.delete(requestKey);
       }
     },
     () => {
-      if (!options.force && bootstrapRequests.get(requestKey) === request) {
+      if (bootstrapRequests.get(requestKey) === request) {
         bootstrapRequests.delete(requestKey);
       }
     }

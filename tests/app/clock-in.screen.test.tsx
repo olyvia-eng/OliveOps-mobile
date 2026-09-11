@@ -15,6 +15,7 @@ const mockLoadUnbillableCategoriesIfNeeded = jest.fn().mockResolvedValue(undefin
 const mockRetryUnbillableCategories = jest.fn().mockResolvedValue(undefined);
 let mockOfflineClock: any;
 let mockRouteFocused = true;
+let mockAppStateListener: ((state: string) => void) | null = null;
 
 const mockUseClockingActions = jest.fn(() => ({
   clockIn: mockClockIn,
@@ -63,15 +64,22 @@ const mockUseAuthStore = jest.fn(() => ({
 }));
 
 let mockJobs: any[] = [];
+let mockServiceVisits: any[] = [];
 let mockCurrentActiveEntryId: string | null = null;
 let mockTimeEntries: any[] = [];
 let mockAdjustClockInTime = false;
+let mockCompanyFeatures: { projects: boolean; recurringServices: boolean; snowOperations: boolean } | null = {
+  projects: true, recurringServices: true, snowOperations: false,
+};
 const mockUseClockingStore = jest.fn(() => ({
   businessTimeZone: 'America/Toronto',
+  companyFeatures: mockCompanyFeatures,
   clockingCapabilities: { adjustClockInTime: mockAdjustClockInTime, editShiftWorkAreas: false },
   currentActiveEntryId: mockCurrentActiveEntryId,
   timeEntries: mockTimeEntries,
   jobs: mockJobs,
+  todayServiceVisits: mockServiceVisits,
+  upcomingServiceVisits: [],
 }));
 
 jest.mock('expo-router', () => ({
@@ -158,12 +166,17 @@ jest.mock('@/components/SecondaryButton', () => ({
 jest.mock('react-native', () => {
   const React = require('react');
   return {
+    AppState: { addEventListener: jest.fn((_event, listener) => {
+      mockAppStateListener = listener;
+      return { remove: jest.fn() };
+    }) },
     NativeModules: {},
     Platform: { select: (values: any) => values.ios ?? values.default },
     StyleSheet: { create: (value: unknown) => value },
     TurboModuleRegistry: { get: () => null },
     View: ({ children }: any) => React.createElement('view', {}, children),
     Text: ({ children }: any) => React.createElement('text', {}, children),
+    TextInput: (props: any) => React.createElement('textinput', props),
     Pressable: ({ children, onPress, testID, accessibilityState, style }: any) =>
       React.createElement('pressable', {
         onPress,
@@ -192,9 +205,12 @@ async function continueFlow(tree: any) {
 
 describe('ClockInScreen', () => {
   beforeEach(() => {
+    mockAppStateListener = null;
+    mockCompanyFeatures = { projects: true, recurringServices: true, snowOperations: false };
     mockJobs = [
-      { id: 'job-1', title: 'Site A', status: 'scheduled', assignedEmployeeIds: ['emp-1'] },
+      { id: 'job-1', title: 'Site A', status: 'scheduled', assignedEmployeeIds: ['emp-1'], scheduledToday: true },
     ];
+    mockServiceVisits = [];
     mockCurrentActiveEntryId = null;
     mockTimeEntries = [];
     mockAdjustClockInTime = false;
@@ -202,7 +218,7 @@ describe('ClockInScreen', () => {
     (router.replace as jest.Mock).mockReset();
     (router.push as jest.Mock).mockReset();
     mockClockIn.mockReset();
-    mockRefresh.mockClear();
+    mockRefresh.mockReset().mockResolvedValue({ ok: true });
     mockGetRequiredForms.mockReset().mockResolvedValue({ ok: true, forms: [] });
     mockRefreshForms.mockReset().mockResolvedValue({ ok: true });
     mockStartWorkflow.mockClear();
@@ -382,7 +398,7 @@ describe('ClockInScreen', () => {
 
     const offline = tree.root.findAllByType('offline-notice');
     expect(offline.length).toBe(1);
-    expect(mockRefresh).not.toHaveBeenCalled();
+    expect(mockRefresh).toHaveBeenCalledTimes(1);
 
     const submitButton = tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Continue');
     expect(submitButton?.props.disabled).toBe(true);
@@ -403,6 +419,119 @@ describe('ClockInScreen', () => {
 
     const enabledSubmit = tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Continue');
     expect(enabledSubmit?.props.disabled).toBe(false);
+  });
+
+  it('shows only authoritative Scheduled for Today Jobs and keeps yesterday available through search', async () => {
+    mockJobs = [
+      {
+        id: 'job-yesterday', title: 'Yesterday Cleanup', status: 'in_progress',
+        assignedEmployeeIds: ['emp-1'], scheduledToday: false,
+        customerName: 'Olivia Brown', propertyAddress: '4 Main Street, Markham',
+      },
+      {
+        id: 'job-today', title: 'Flagstone Patio', status: 'scheduled',
+        assignedEmployeeIds: ['emp-1'], scheduledToday: true,
+        customerName: 'Morgan Lee', propertyAddress: '8 Lake Road, Markham',
+      },
+    ];
+    let tree: any;
+    await act(async () => { tree = create(<ClockInScreen />); });
+    await chooseActivity(tree, 'job');
+
+    expect(tree.root.findAllByProps({ testID: 'job-option-job-today' }).length).toBeGreaterThan(0);
+    expect(tree.root.findAllByProps({ testID: 'job-option-job-yesterday' })).toHaveLength(0);
+
+    await act(async () => tree.root.findByProps({ testID: 'clock-in-job-search' }).props.onChangeText('Olivia'));
+    expect(tree.root.findAllByProps({ testID: 'job-option-job-yesterday' }).length).toBeGreaterThan(0);
+    const renderedText = tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ');
+    expect(renderedText).toContain('4 Main Street, Markham');
+  });
+
+  it('performs one focus refresh without registering a duplicate AppState owner', async () => {
+    let tree: any;
+    await act(async () => { tree = create(<ClockInScreen />); });
+
+    expect(mockRefresh).toHaveBeenCalledTimes(1);
+    expect(mockAppStateListener).toBeNull();
+  });
+
+  it('manually refreshes the Job schedule without leaving Clock In', async () => {
+    let tree: any;
+    await act(async () => { tree = create(<ClockInScreen />); });
+    await chooseActivity(tree, 'job');
+    expect(mockRefresh).toHaveBeenCalledTimes(1);
+
+    await act(async () => tree.root.findByProps({ label: 'Refresh Jobs' }).props.onPress());
+
+    expect(mockRefresh).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not restore stale cached Jobs after an authoritative empty refresh', async () => {
+    mockJobs = [];
+    mockOfflineClock = {
+      cache: {
+        jobs: [{ id: 'cached-job', title: 'Yesterday Cached Job', status: 'scheduled' }],
+        todayServiceVisits: [],
+        upcomingServiceVisits: [],
+      },
+    };
+    let tree: any;
+    await act(async () => { tree = create(<ClockInScreen />); });
+    await chooseActivity(tree, 'job');
+    await act(async () => tree.root.findByProps({ testID: 'clock-in-job-search' }).props.onChangeText('Yesterday'));
+
+    expect(tree.root.findAllByProps({ testID: 'job-option-cached-job' })).toHaveLength(0);
+    expect(tree.root.findAllByType('status-banner').map((node: any) => node.props.message)).toContain(
+      'No authorized active Jobs match your search.',
+    );
+  });
+
+  it('preserves Scheduled Today and searchable Other Jobs from the offline cache', async () => {
+    mockJobs = [];
+    mockRefresh.mockResolvedValue({ ok: false, error: 'Offline' });
+    mockOfflineClock = {
+      cache: {
+        schemaVersion: 4,
+        identityKey: 'business-1:user-1:emp-1',
+        updatedAt: '2026-09-11T12:00:00.000Z',
+        jobs: [
+          {
+            id: 'cached-today', title: 'Today Patio', status: 'scheduled', scheduledToday: true,
+            assignedEmployeeIds: ['emp-1'], assignedForemanId: 'emp-1', assignedCrewEmployeeIds: ['emp-2'],
+            customerName: 'Morgan Lee', propertyAddress: '8 Lake Road', jobNumber: 'J-100',
+          },
+          {
+            id: 'cached-other', title: 'Yesterday Cleanup', status: 'in_progress', scheduledToday: false,
+            assignedEmployeeIds: ['emp-1'], assignedForemanId: null, assignedCrewEmployeeIds: ['emp-1'],
+            customerName: 'Olivia Brown', propertyAddress: '4 Main Street', jobNumber: 'J-1042',
+          },
+        ],
+      },
+    };
+
+    let tree: any;
+    await act(async () => { tree = create(<ClockInScreen />); });
+    await chooseActivity(tree, 'job');
+
+    expect(tree.root.findAllByProps({ testID: 'job-option-cached-today' }).length).toBeGreaterThan(0);
+    expect(tree.root.findAllByProps({ testID: 'job-option-cached-other' })).toHaveLength(0);
+    expect(tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ')).toContain('Other Jobs');
+
+    for (const query of ['Olivia Brown', '4 Main Street', 'J-1042']) {
+      await act(async () => tree.root.findByProps({ testID: 'clock-in-job-search' }).props.onChangeText(query));
+      expect(tree.root.findAllByProps({ testID: 'job-option-cached-other' }).length).toBeGreaterThan(0);
+      expect(tree.root.findAllByProps({ testID: 'job-option-cached-today' })).toHaveLength(0);
+    }
+  });
+
+  it('keeps Job Work and assigned jobs available while company features are unhydrated', async () => {
+    mockCompanyFeatures = null;
+    let tree: any;
+    await act(async () => { tree = create(<ClockInScreen />); });
+
+    expect(tree.root.findAllByProps({ testID: 'activity-option-job' }).length).toBeGreaterThan(0);
+    await chooseActivity(tree, 'job');
+    expect(tree.root.findAllByProps({ testID: 'job-option-job-1' }).length).toBeGreaterThan(0);
   });
 
   it('submits selected job and navigates to active shift', async () => {
@@ -445,6 +574,70 @@ describe('ClockInScreen', () => {
     expect(router.replace).toHaveBeenCalledTimes(1);
   });
 
+  it('clocks into a Service Visit as Job Work with its immutable tuple', async () => {
+    mockServiceVisits = [{
+      id: 'visit-1', jobId: 'job-1', serviceId: 'service-1', jobName: 'Site A',
+      serviceName: 'Weekly Mowing', customerName: 'Morgan', propertyName: 'Oak Residence',
+      propertyAddress: '10 Oak Street', scheduledDate: '2026-09-07', scheduleAllDay: true,
+      status: 'scheduled', billingType: 'per_visit', hasRequiredForms: false, hasSops: false,
+    }];
+    let tree: any;
+    await act(async () => { tree = create(<ClockInScreen />); });
+    await chooseActivity(tree, 'job');
+    await act(async () => tree.root.findByProps({ testID: 'visit-option-visit-1' }).props.onPress());
+    await continueFlow(tree);
+
+    expect(mockGetRequiredForms).toHaveBeenCalledWith('before_starting_job', {
+      jobId: 'job-1', serviceId: 'service-1', serviceVisitId: 'visit-1',
+    });
+    expect(mockClockIn).toHaveBeenCalledWith(
+      'emp-1', 'job', ['job-1'], undefined, { requestId: 'req-1', idempotencyKey: 'key-1' },
+      undefined, undefined,
+      { jobId: 'job-1', serviceId: 'service-1', serviceVisitId: 'visit-1', serviceName: 'Weekly Mowing', propertyName: 'Oak Residence' },
+    );
+  });
+
+  it('shows recurring Visit work but hides ordinary project jobs when Projects is disabled', async () => {
+    mockCompanyFeatures = { projects: false, recurringServices: true, snowOperations: false };
+    mockServiceVisits = [{
+      id: 'visit-1', jobId: 'job-1', serviceId: 'service-1', jobName: 'Site A',
+      serviceName: 'Weekly Mowing', scheduledDate: '2026-09-07', scheduleAllDay: true,
+      status: 'scheduled', billingType: 'recurring',
+    }];
+    let tree: any;
+    await act(async () => { tree = create(<ClockInScreen />); });
+
+    expect(tree.root.findAllByProps({ testID: 'activity-option-job' }).length).toBeGreaterThan(0);
+    await chooseActivity(tree, 'job');
+    expect(tree.root.findAllByProps({ testID: 'visit-option-visit-1' }).length).toBeGreaterThan(0);
+    expect(tree.root.findAllByProps({ testID: 'job-option-job-1' })).toHaveLength(0);
+  });
+
+  it('shows project jobs but hides recurring Visits when Recurring Services is disabled', async () => {
+    mockCompanyFeatures = { projects: true, recurringServices: false, snowOperations: false };
+    mockServiceVisits = [{
+      id: 'visit-1', jobId: 'job-1', serviceId: 'service-1', jobName: 'Site A',
+      serviceName: 'Weekly Mowing', scheduledDate: '2026-09-07', scheduleAllDay: true,
+      status: 'scheduled', billingType: 'recurring',
+    }];
+    let tree: any;
+    await act(async () => { tree = create(<ClockInScreen />); });
+    await chooseActivity(tree, 'job');
+
+    expect(tree.root.findAllByProps({ testID: 'job-option-job-1' }).length).toBeGreaterThan(0);
+    expect(tree.root.findAllByProps({ testID: 'visit-option-visit-1' })).toHaveLength(0);
+  });
+
+  it('removes Job Work when both Projects and Recurring Services are disabled', async () => {
+    mockCompanyFeatures = { projects: false, recurringServices: false, snowOperations: false };
+    let tree: any;
+    await act(async () => { tree = create(<ClockInScreen />); });
+
+    expect(tree.root.findAllByProps({ testID: 'activity-option-job' })).toHaveLength(0);
+    expect(tree.root.findAllByProps({ testID: 'activity-option-drive_time' }).length).toBeGreaterThan(0);
+    expect(tree.root.findAllByProps({ testID: 'activity-option-non_billable' }).length).toBeGreaterThan(0);
+  });
+
   it('shows Start Time only with permission and submits the selected business-time intent', async () => {
     mockAdjustClockInTime = true;
     let tree: any;
@@ -475,6 +668,7 @@ describe('ClockInScreen', () => {
       title: 'Site A',
       status: 'scheduled',
       assignedEmployeeIds: ['emp-1'],
+      scheduledToday: true,
       hasOperationalWorkAreas: true,
       eligibleOperationalWorkAreas: [
         { id: 'area-1', name: 'Foundation', status: 'in_progress' },
@@ -508,6 +702,7 @@ describe('ClockInScreen', () => {
       title: 'Site A',
       status: 'scheduled',
       assignedEmployeeIds: ['emp-1'],
+      scheduledToday: true,
       hasOperationalWorkAreas: true,
       eligibleOperationalWorkAreas: [{ id: 'area-1', name: 'Foundation', status: 'in_progress' }],
     }];
@@ -890,6 +1085,7 @@ describe('ClockInScreen', () => {
   it('preserves the selected Job when navigating back through stages', async () => {
     mockJobs = [{
       id: 'job-1', title: 'Site A', status: 'scheduled', assignedEmployeeIds: ['emp-1'],
+      scheduledToday: true,
       hasOperationalWorkAreas: true,
       eligibleOperationalWorkAreas: [{ id: 'area-1', name: 'Foundation', status: 'in_progress' }],
     }];
@@ -908,6 +1104,7 @@ describe('ClockInScreen', () => {
   it('clears incompatible Job and Work Area selections when Activity changes', async () => {
     mockJobs = [{
       id: 'job-1', title: 'Site A', status: 'scheduled', assignedEmployeeIds: ['emp-1'],
+      scheduledToday: true,
       hasOperationalWorkAreas: true,
       eligibleOperationalWorkAreas: [{ id: 'area-1', name: 'Foundation', status: 'in_progress' }],
     }];
@@ -927,6 +1124,7 @@ describe('ClockInScreen', () => {
   it('shows an unavailable Work Area stage without inventing a selection', async () => {
     mockJobs = [{
       id: 'job-1', title: 'Site A', status: 'scheduled', assignedEmployeeIds: ['emp-1'],
+      scheduledToday: true,
       hasOperationalWorkAreas: true, eligibleOperationalWorkAreas: [],
     }];
     let tree: any;

@@ -4,7 +4,7 @@ This is a code-observed worksheet for completing App Store Connect privacy quest
 
 ## Summary
 
-The app is an authenticated employee timekeeping client. Account, work, time-entry, photo, form, and correction records are associated with user, employee, business, job, form, submission, or time-entry identifiers and therefore appear linked to identity. The code contains no advertising, cross-app tracking, product analytics, or location collection. Sentry is configured for production error and native crash diagnostics when `EXPO_PUBLIC_SENTRY_DSN` is set.
+The app is an authenticated employee operations and timekeeping client. Account, work, Snow Operations, time-entry, photo, form, and correction records are associated with user, employee, business, job, route, stop, occurrence, form, submission, or time-entry identifiers and therefore appear linked to identity. The code contains no advertising, cross-app tracking, or product analytics. Sentry is configured for production error and native crash diagnostics when `EXPO_PUBLIC_SENTRY_DSN` is set.
 
 ## Data Inventory
 
@@ -18,7 +18,11 @@ The app is an authenticated employee timekeeping client. Account, work, time-ent
 | Job identifiers, titles, status, and assignments | Loaded from bootstrap and selected during work actions | Job assignment display and workforce timekeeping | Yes | No | OliveOps production API |
 | Time-entry data | Employee ID, job IDs, work type, unbillable category, clock-in/out times, breaks, and notes | Record work activity and payroll/operations context | Yes | No | OliveOps production API |
 | Clock-out notes | Optional text entered by the employee | Work record context | Yes | No | OliveOps production API |
+| Service Visit notes | Operational text entered by the employee for an assigned Visit | Visit execution and completion evidence | Yes | No | OliveOps production API; pending operations are stored locally until acknowledged |
 | Job-site photos | Captured or selected by the employee, up to five per clock-out | Attach visual work evidence to a time entry | Yes, through time-entry and file IDs | No | Prepared through OliveOps API and uploaded using presigned object-storage URLs |
+| Service Visit photos | Captured or selected by the employee for an assigned Visit | Visit execution and completion evidence | Yes, through Visit and file IDs | No | App-owned local storage until acknowledged; then OliveOps API and presigned object storage |
+| Snow Operations photos | Before and After photos captured for an assigned Snow occurrence | Proof of service | Yes, through Event, Route, Stop, occurrence, employee, and file IDs | No | App-owned local storage until acknowledged; then OliveOps API and presigned object storage |
+| Precise location | User-initiated operational checkpoints for Snow route and service actions; unavailability reasons are recorded when no position is available | Snow route progress and proof of service | Yes, through Event, Route, Stop, occurrence, and employee IDs | No | Durable local queue until acknowledged; then OliveOps production API |
 | Photo metadata | File name, MIME type, byte size, category, entity type, and time-entry ID | Prepare, validate, associate, and clean up uploads | Yes | No | OliveOps API and object-storage service |
 | Time-correction data | Request type, requested times/job/activity, reason, status, submitter/reviewer IDs | Request and review corrections to work records | Yes | No | OliveOps production API |
 | Form responses and submission records | Employee-entered answers, form/context identifiers, submission status, and review status where provided | Complete employer-assigned and on-demand field workflows | Yes | No | OliveOps production API |
@@ -31,7 +35,6 @@ App Store Connect category mapping must be confirmed against Apple's current def
 
 The mobile code and declared dependencies do not show collection of:
 
-- Precise or coarse location
 - Contacts or address book
 - Health or fitness data
 - Payment or financial information
@@ -43,7 +46,7 @@ The mobile code and declared dependencies do not show collection of:
 - Performance traces, session replay, screenshots, view hierarchy, breadcrumbs, or failed-request capture
 - Advertising data
 
-Drive Time is a work-activity classification only. The app does not request location permission or use a geolocation API.
+Drive Time is a work-activity classification only and does not start tracking. Location is requested only while the app is in use for employee-initiated Snow Operations checkpoints.
 
 ## Device and Network Checks
 
@@ -79,12 +82,14 @@ For App Store Connect, distinguish service providers processing data on OliveOps
 - Camera: optional, used to capture job-site photos for time entries.
 - Photo library: optional, uses the operating-system picker to select job-site photos for time entries.
 - Microphone: not requested.
-- Location: not requested.
+- Foreground location: requested when an employee records a Snow checkpoint.
+- Background location: not requested or declared in the current release.
 
 Configured copy:
 
 - Camera: "Allow OliveOps to take job-site photos to attach to time entries."
 - Photos: "Allow OliveOps to select job-site photos to attach to time entries."
+- Location while in use: "Allow OliveOps to record Snow service checkpoints and route progress."
 
 ## Retention and User Requests
 

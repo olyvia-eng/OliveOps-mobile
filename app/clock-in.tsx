@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { OfflineNotice } from '@/components/OfflineNotice';
 import { AdvisoryFormsPrompt } from '@/components/AdvisoryFormsPrompt';
@@ -12,7 +12,9 @@ import { WorkAreaSelector } from '@/components/WorkAreaSelector';
 import { ActivitySelector } from '@/components/ActivitySelector';
 import { StartTimeField } from '@/components/StartTimeField';
 import { ListRow, ScreenHeader, SectionCard, SectionHeader } from '@/components/MobilePrimitives';
-import { scopeJobsForSession } from '@/features/clocking/scoping';
+import { isJobAvailableForClocking } from '@/features/clocking/scoping';
+import { otherClockInJobs, scheduledClockInJobs, searchClockInJobs } from '@/features/clocking/jobPicker';
+import { normalizeCompanyFeatures } from '@/features/companyFeatures';
 import { useClockingActions } from '@/hooks/useClockingActions';
 import { useEffectiveClockState } from '@/hooks/useEffectiveClockState';
 import { useFormsActions } from '@/hooks/useFormsActions';
@@ -26,6 +28,7 @@ import { usePendingClockInStore } from '@/store/pendingClockInStore';
 import { usePendingClockOutStore } from '@/store/pendingClockOutStore';
 import { colors } from '@/theme/colors';
 import type { TimeEntryWorkType } from '@/types/domain';
+import type { ServiceVisitClockContext } from '@/types/serviceVisit';
 import { businessDateKey, businessLocalDateTimeToIso } from '@/utils/businessTime';
 
 type ClockInStage = 'activity' | 'job' | 'work_area' | 'category';
@@ -39,7 +42,8 @@ type ActivityOption = {
 
 export default function ClockInScreen() {
   const { user } = useAuthStore();
-  const { businessTimeZone, clockingCapabilities, currentActiveEntryId, jobs, timeEntries } = useClockingStore();
+  const { businessTimeZone, clockingCapabilities, companyFeatures, currentActiveEntryId, jobs, timeEntries, todayServiceVisits, upcomingServiceVisits } = useClockingStore();
+  const effectiveCompanyFeatures = normalizeCompanyFeatures(companyFeatures);
   const offlineClock = useOptionalOfflineClockStore();
   const effectiveClock = useEffectiveClockState();
   const { clockIn, loading, refreshWorkContext } = useClockingActions();
@@ -58,6 +62,7 @@ export default function ClockInScreen() {
   const [activityChosen, setActivityChosen] = useState(false);
   const [stage, setStage] = useState<ClockInStage>('activity');
   const [selectedJobId, setSelectedJobId] = useState('');
+  const [selectedServiceVisitId, setSelectedServiceVisitId] = useState('');
   const [selectedWorkAreaId, setSelectedWorkAreaId] = useState('');
   const [selectedUnbillableCategoryId, setSelectedUnbillableCategoryId] = useState('');
   const [selectedStartTime, setSelectedStartTime] = useState<string | null>(null);
@@ -66,6 +71,10 @@ export default function ClockInScreen() {
   const [error, setError] = useState<string | null>(null);
   const [advisoryForms, setAdvisoryForms] = useState<import('@/types/forms').EmployeeForm[]>([]);
   const [checkingForms, setCheckingForms] = useState(false);
+  const [jobSearch, setJobSearch] = useState('');
+  const [refreshingJobs, setRefreshingJobs] = useState(false);
+  const [lastJobRefreshAt, setLastJobRefreshAt] = useState<string | null>(null);
+  const [hasAuthoritativeJobRefresh, setHasAuthoritativeJobRefresh] = useState(false);
   const advisoryAcceptedRef = useRef(false);
   const checkingFormsRef = useRef(false);
   const continuingWorkflowRef = useRef<string | null>(null);
@@ -81,6 +90,7 @@ export default function ClockInScreen() {
     setSelectedWorkType(intent.workType);
     setActivityChosen(true);
     setSelectedJobId(intent.jobIds[0] ?? '');
+    setSelectedServiceVisitId(intent.serviceVisitId ?? '');
     setSelectedWorkAreaId(intent.workAreaId ?? '');
     setSelectedUnbillableCategoryId(intent.unbillableCategoryId ?? '');
     setStage(intent.workType === 'job' ? (intent.workAreaId ? 'work_area' : 'job') : intent.workType === 'non_billable' ? 'category' : 'activity');
@@ -115,12 +125,41 @@ export default function ClockInScreen() {
   }, [authoritativeActiveShift, effectiveClock.activeEntry, effectiveClock.effectiveStatus, effectiveClock.hydrated, pendingClockIn.reconcileActiveShift, pendingClockIn.workflow]));
 
   const assignedJobs = useMemo(() => {
-    const employeeId = user?.employeeId;
-    const availableJobs = jobs.length > 0
+    if (!effectiveCompanyFeatures.projects) return [];
+    const availableJobs: import('@/types/domain').Job[] = jobs.length > 0 || hasAuthoritativeJobRefresh
       ? jobs
-      : (offlineClock?.cache?.jobs ?? []).map((job) => ({ ...job, assignedEmployeeIds: employeeId ? [employeeId] : [] }));
-    return scopeJobsForSession(availableJobs, user);
-  }, [jobs, offlineClock?.cache?.jobs, user]);
+      : offlineClock?.cache?.jobs ?? [];
+    return availableJobs.filter(isJobAvailableForClocking);
+  }, [effectiveCompanyFeatures.projects, hasAuthoritativeJobRefresh, jobs, offlineClock?.cache?.jobs]);
+  const scheduledJobs = useMemo(() => scheduledClockInJobs(assignedJobs), [assignedJobs]);
+  const otherJobs = useMemo(() => otherClockInJobs(assignedJobs), [assignedJobs]);
+  const searchedJobs = useMemo(() => searchClockInJobs(otherJobs, jobSearch), [jobSearch, otherJobs]);
+
+  const refreshJobs = useCallback(async () => {
+    setRefreshingJobs(true);
+    const result = await refreshWorkContext();
+    setLastJobRefreshAt(new Date().toISOString());
+    setRefreshingJobs(false);
+    if (result.ok) setHasAuthoritativeJobRefresh(true);
+    else setError(result.error ?? 'Could not refresh Jobs.');
+  }, [refreshWorkContext]);
+
+  useFocusEffect(useCallback(() => {
+    void refreshJobs();
+  }, [refreshJobs]));
+
+  useEffect(() => {
+    if (!__DEV__ || process.env.NODE_ENV === 'test') return;
+    console.info('[clock-in:jobs]', {
+      deviceNow: new Date().toISOString(),
+      businessToday: businessDateKey(new Date(), businessTimeZone),
+      lastRefreshAt: lastJobRefreshAt,
+      scheduledJobCount: scheduledJobs.length,
+      scheduledJobIds: scheduledJobs.map((job) => job.id),
+      employeeId: user?.employeeId,
+      source: jobs.length > 0 || hasAuthoritativeJobRefresh ? 'network' : 'cache',
+    });
+  }, [businessTimeZone, hasAuthoritativeJobRefresh, jobs.length, lastJobRefreshAt, scheduledJobs, user?.employeeId]);
 
   const activityOptions = useMemo<ActivityOption[]>(() => [
       {
@@ -151,10 +190,26 @@ export default function ClockInScreen() {
     () => assignedJobs.find((job) => job.id === selectedJobId),
     [assignedJobs, selectedJobId],
   );
+  const serviceVisits = useMemo(() => {
+    if (!effectiveCompanyFeatures.recurringServices) return [];
+    const today = (todayServiceVisits?.length ?? 0) > 0 ? todayServiceVisits : offlineClock?.cache?.todayServiceVisits ?? [];
+    const upcoming = (upcomingServiceVisits?.length ?? 0) > 0 ? upcomingServiceVisits : offlineClock?.cache?.upcomingServiceVisits ?? [];
+    return [...today, ...upcoming];
+  }, [effectiveCompanyFeatures.recurringServices, offlineClock?.cache?.todayServiceVisits, offlineClock?.cache?.upcomingServiceVisits, todayServiceVisits, upcomingServiceVisits]);
+  const scheduledTodayVisits = useMemo(
+    () => effectiveCompanyFeatures.recurringServices
+      ? todayServiceVisits.filter((visit) => ['scheduled', 'in_progress'].includes(visit.status))
+      : [],
+    [effectiveCompanyFeatures.recurringServices, todayServiceVisits],
+  );
+  const selectedServiceVisit = useMemo(
+    () => serviceVisits.find((visit) => visit.id === selectedServiceVisitId),
+    [selectedServiceVisitId, serviceVisits],
+  );
 
   const requiresJobSelection = activityChosen && selectedActivity?.requiresJob === true;
   const requiresUnbillableCategory = activityChosen && selectedWorkType === 'non_billable';
-  const requiresWorkArea = selectedWorkType === 'job' && selectedJob?.hasOperationalWorkAreas === true;
+  const requiresWorkArea = selectedWorkType === 'job' && !selectedServiceVisit && selectedJob?.hasOperationalWorkAreas === true;
 
   useEffect(() => {
     if (!requiresWorkArea || !selectedJob) {
@@ -284,6 +339,7 @@ export default function ClockInScreen() {
     setSelectedWorkType(intent.workType);
     setActivityChosen(true);
     setSelectedJobId(intent.jobIds[0] ?? '');
+    setSelectedServiceVisitId(intent.serviceVisitId ?? '');
     setSelectedWorkAreaId(intent.workAreaId ?? '');
     setSelectedUnbillableCategoryId(intent.unbillableCategoryId ?? '');
     setAdvisoryForms(clockInWorkflow.forms.slice(clockInWorkflow.completedCount));
@@ -306,6 +362,8 @@ export default function ClockInScreen() {
       : (selectedJobId ? [selectedJobId] : []));
     const unbillableCategoryId = intentOverride?.unbillableCategoryId ?? selectedUnbillableCategoryId;
     const workAreaId = intentOverride?.workAreaId ?? selectedWorkAreaId;
+    const serviceId = intentOverride?.serviceId ?? selectedServiceVisit?.serviceId;
+    const serviceVisitId = intentOverride?.serviceVisitId ?? selectedServiceVisit?.id;
     const requestedClockInAt = intentOverride?.requestedClockInAt ?? (clockingCapabilities.adjustClockInTime && selectedStartTime
       ? businessLocalDateTimeToIso(businessDateKey(new Date(), businessTimeZone), selectedStartTime, businessTimeZone)
       : undefined);
@@ -370,7 +428,7 @@ export default function ClockInScreen() {
       setCheckingForms(true);
       const checks = [getRequiredForms('before_clock_in')];
       if (selectedWorkType === 'job' && selectedJobId) {
-        checks.push(getRequiredForms('before_starting_job', { jobId: selectedJobId }));
+        checks.push(getRequiredForms('before_starting_job', { jobId: selectedJobId, serviceId, serviceVisitId }));
       }
       const results = await Promise.all(checks);
       checkingFormsRef.current = false;
@@ -389,6 +447,8 @@ export default function ClockInScreen() {
             employeeId,
             workType,
             jobIds,
+            serviceId,
+            serviceVisitId,
             workAreaId: workType === 'job' ? selectedWorkArea?.id : undefined,
             unbillableCategoryId: workType === 'non_billable' ? unbillableCategoryId : undefined,
             requestedClockInAt,
@@ -401,7 +461,7 @@ export default function ClockInScreen() {
       advisoryAcceptedRef.current = true;
     }
 
-    const fingerprint = JSON.stringify({ employeeId, workType, jobIds, workAreaId: workType === 'job' ? selectedWorkArea?.id : undefined, unbillableCategoryId: workType === 'non_billable' ? unbillableCategoryId : undefined, requestedClockInAt });
+    const fingerprint = JSON.stringify({ employeeId, workType, jobIds, serviceId, serviceVisitId, workAreaId: workType === 'job' ? selectedWorkArea?.id : undefined, unbillableCategoryId: workType === 'non_billable' ? unbillableCategoryId : undefined, requestedClockInAt });
     const reusableMeta = metaOverride?.fingerprint === fingerprint
       ? metaOverride
       : retryMeta?.fingerprint === fingerprint
@@ -409,8 +469,22 @@ export default function ClockInScreen() {
         : createRequestMeta(employeeId);
     const meta = { requestId: reusableMeta.requestId, idempotencyKey: reusableMeta.idempotencyKey };
     setRetryMeta({ ...meta, fingerprint });
+    const serviceVisitContext = serviceId && serviceVisitId
+      ? { jobId: jobIds[0], serviceId, serviceVisitId, serviceName: selectedServiceVisit?.serviceName, propertyName: selectedServiceVisit?.propertyName }
+      : undefined;
 
-    const result = selectedWorkArea
+    const result = serviceVisitContext
+      ? await clockIn(
+        employeeId,
+        workType,
+        jobIds,
+        undefined,
+        meta,
+        undefined,
+        requestedClockInAt,
+        serviceVisitContext,
+      )
+      : selectedWorkArea
       ? requestedClockInAt
         ? await clockIn(
           employeeId,
@@ -505,10 +579,14 @@ export default function ClockInScreen() {
             heading="What are you doing?"
             helper="Select your current activity."
             selectedType={activityChosen ? selectedWorkType : null}
+            allowedTypes={effectiveCompanyFeatures.projects || effectiveCompanyFeatures.recurringServices
+              ? undefined
+              : ['drive_time', 'non_billable']}
             onSelect={(type) => {
               setSelectedWorkType(type);
               setActivityChosen(true);
               setSelectedJobId('');
+              setSelectedServiceVisitId('');
               setSelectedWorkAreaId('');
               setSelectedUnbillableCategoryId('');
               setAdvisoryForms([]);
@@ -521,27 +599,50 @@ export default function ClockInScreen() {
         {stage === 'job' && advisoryForms.length === 0 ? (
           <View style={styles.progressiveSection}>
             <SectionHeader title="Select a Job" />
-            <Text style={styles.helper}>Choose the job you'll be working on.</Text>
-            {assignedJobs.length === 0 ? (
-              <StatusBanner
-                tone={requiresJobSelection ? 'error' : 'info'}
-                message={requiresJobSelection
-                  ? 'No assigned active jobs available.'
-                  : 'No assigned active jobs available. You can continue without a job context.'}
-              />
-            ) : (
-              <SectionCard>
-                {assignedJobs.map((job) => {
-                  const selected = selectedJobId === job.id;
+            <SecondaryButton
+              label={refreshingJobs ? 'Refreshing Jobs...' : 'Refresh Jobs'}
+              disabled={refreshingJobs}
+              onPress={() => void refreshJobs()}
+            />
+            {refreshingJobs ? <StatusBanner tone="info" message="Checking for schedule updates..." /> : null}
+            {!jobSearch.trim() ? (
+              <>
+              <SectionHeader title="Scheduled for Today" />
+              {scheduledTodayVisits.length > 0 ? (
+                <View style={styles.progressiveSection}>
+                  <SectionCard>
+                    {scheduledTodayVisits.map((visit) => (
+                      <ListRow
+                        key={visit.id}
+                        testID={`visit-option-${visit.id}`}
+                        title={visit.jobName || visit.propertyName || visit.customerName}
+                        subtitle={[visit.customerName, visit.propertyAddress, visit.serviceName].filter(Boolean).join(' · ')}
+                        selected={selectedServiceVisitId === visit.id}
+                        onPress={() => {
+                          setSelectedJobId(visit.jobId);
+                          setSelectedServiceVisitId(visit.id);
+                          setSelectedWorkAreaId('');
+                          setAdvisoryForms([]);
+                          advisoryAcceptedRef.current = false;
+                        }}
+                      />
+                    ))}
+                  </SectionCard>
+                </View>
+              ) : null}
+              {scheduledJobs.length > 0 ? <SectionCard>
+                {scheduledJobs.map((job) => {
+                  const selected = selectedJobId === job.id && !selectedServiceVisitId;
                   return (
                     <ListRow
                       key={job.id}
                       testID={`job-option-${job.id}`}
                       title={job.title || 'Untitled Job'}
-                      subtitle={job.status.replace('_', ' ')}
+                      subtitle={[job.customerName, job.propertyAddress].filter(Boolean).join(' · ')}
                       selected={selected}
                       onPress={() => {
                         setSelectedJobId(job.id);
+                        setSelectedServiceVisitId('');
                         setSelectedWorkAreaId('');
                         setAdvisoryForms([]);
                         advisoryAcceptedRef.current = false;
@@ -549,8 +650,50 @@ export default function ClockInScreen() {
                     />
                   );
                 })}
-              </SectionCard>
-            )}
+              </SectionCard> : null}
+              {scheduledJobs.length === 0
+                && scheduledTodayVisits.length === 0
+                ? <StatusBanner tone="info" message="No Jobs are scheduled for you today. Search active Jobs if your assignment changed." />
+                : null}
+              </>
+            ) : null}
+            <SectionHeader title="Other Jobs" />
+            <TextInput
+              testID="clock-in-job-search"
+              style={styles.searchInput}
+              value={jobSearch}
+              onChangeText={setJobSearch}
+              placeholder="Search jobs..."
+              placeholderTextColor={colors.textMuted}
+              autoCapitalize="none"
+              autoCorrect={false}
+              returnKeyType="search"
+            />
+            {jobSearch.trim() ? (
+              searchedJobs.length > 0 ? (
+                <SectionCard>
+                  {searchedJobs.map((job) => {
+                    const selected = selectedJobId === job.id && !selectedServiceVisitId;
+                    return (
+                      <ListRow
+                        key={job.id}
+                        testID={`job-option-${job.id}`}
+                        title={job.title || 'Untitled Job'}
+                        subtitle={[job.customerName, job.propertyAddress, job.jobNumber].filter(Boolean).join(' · ')}
+                        selected={selected}
+                        onPress={() => {
+                          setSelectedJobId(job.id);
+                          setSelectedServiceVisitId('');
+                          setSelectedWorkAreaId('');
+                          setAdvisoryForms([]);
+                          advisoryAcceptedRef.current = false;
+                        }}
+                      />
+                    );
+                  })}
+                </SectionCard>
+              ) : <StatusBanner tone="info" message="No authorized active Jobs match your search." />
+            ) : null}
           </View>
         ) : null}
 
@@ -647,6 +790,7 @@ export default function ClockInScreen() {
                   list: 'todo', formId: form.id, trigger: form.trigger,
                   jobId: form.context?.jobId, equipmentId: form.context?.equipmentId,
                   divisionId: form.context?.divisionId, workflowId: activeWorkflow.id,
+                  serviceId: form.context?.serviceId, serviceVisitId: form.context?.serviceVisitId,
                 },
               });
               return;
@@ -691,6 +835,16 @@ const styles = StyleSheet.create({
   progressiveSection: { gap: 8 },
   actions: { gap: 8 },
   helper: { color: colors.textSecondary, fontSize: 14, marginTop: -4 },
+  searchInput: {
+    minHeight: 46,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    color: colors.textPrimary,
+    backgroundColor: colors.surface,
+    fontSize: 16,
+  },
   progress: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
   progressItem: { flexDirection: 'row', alignItems: 'center', flexShrink: 1 },
   progressText: { color: colors.textMuted, fontSize: 12, fontWeight: '600' },

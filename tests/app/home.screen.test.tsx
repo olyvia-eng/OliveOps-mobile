@@ -3,10 +3,28 @@ import { act, create } from 'react-test-renderer';
 import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
 
 const mockRefresh = jest.fn().mockResolvedValue({ ok: true });
-const mockRefreshForms = jest.fn().mockResolvedValue({ ok: true });
+const mockRefreshTraining = jest.fn().mockResolvedValue({ ok: true });
+const mockLoadSnowAssignment = jest.fn();
 let mockPendingClockOut: any;
 let mockPendingClockIn: any;
 let mockOfflineClock: any;
+let mockTrainingAssignments: any[];
+
+function mockPendingClockOutFormTarget(workflow: any) {
+  const requirement = workflow?.requirements?.find((item: any) => !item.completed)
+    ?? workflow?.requiredForms?.find((item: any) => !item.completed);
+  const form = requirement?.form ?? requirement?.formPackage
+    ?? (requirement?.fields && (requirement.formId || requirement.id)
+      ? { ...requirement, id: requirement.formId ?? requirement.id }
+      : null);
+  return requirement && form?.id && form.name && Array.isArray(form.fields)
+    ? {
+        form,
+        workflowOccurrenceId: workflow.workflowOccurrenceId,
+        workflowRequirementId: requirement.workflowRequirementId,
+      }
+    : null;
+}
 
 const mockUseClockingActions = jest.fn(() => ({
   refreshWorkContext: mockRefresh,
@@ -24,7 +42,8 @@ const mockUseAuthStore = jest.fn(() => ({
   },
 }));
 
-const mockClockingState = {
+const mockClockingState: any = {
+  companyFeatures: { projects: true, recurringServices: true, snowOperations: true },
   currentActiveEntryId: 'entry-1',
   activeShiftWarnings: {
     possibleForgottenClockOut: false,
@@ -35,6 +54,12 @@ const mockClockingState = {
     { id: 'job-1', title: 'Front Walkway', status: 'scheduled', assignedEmployeeIds: ['emp-1'] },
     { id: 'job-2', title: 'Warehouse', status: 'scheduled', assignedEmployeeIds: ['emp-1'] },
   ],
+  todayServiceVisits: [{
+    id: 'visit-1', jobId: 'job-1', serviceId: 'service-1', jobName: 'Front Walkway',
+    serviceName: 'Weekly Lawn Care', scheduledDate: '2026-08-07', scheduleAllDay: true,
+    status: 'scheduled', billingType: 'recurring',
+  }],
+  upcomingServiceVisits: [],
   timeEntries: [
     {
       id: 'entry-2',
@@ -76,8 +101,12 @@ jest.mock('@/hooks/useClockingActions', () => ({
   useClockingActions: () => mockUseClockingActions(),
 }));
 
-jest.mock('@/hooks/useFormsActions', () => ({
-  useFormsActions: () => ({ refreshForms: mockRefreshForms }),
+jest.mock('@/api/snowOperationsApi', () => ({
+  loadMyActiveSnowRoute: (...args: unknown[]) => mockLoadSnowAssignment(...args),
+}));
+
+jest.mock('@/hooks/useTrainingActions', () => ({
+  useTrainingActions: () => ({ refreshAssignments: mockRefreshTraining }),
 }));
 
 jest.mock('@/store/authStore', () => ({
@@ -88,12 +117,13 @@ jest.mock('@/store/clockingStore', () => ({
   useClockingStore: () => mockUseClockingStore(),
 }));
 
-jest.mock('@/store/formsStore', () => ({
-  useFormsStore: () => mockFormsState,
+jest.mock('@/store/trainingStore', () => ({
+  useTrainingStore: () => ({ assignments: mockTrainingAssignments }),
 }));
 
 jest.mock('@/store/pendingClockOutStore', () => ({
   usePendingClockOutStore: () => mockPendingClockOut,
+  pendingClockOutFormTarget: (workflow: any) => mockPendingClockOutFormTarget(workflow),
 }));
 
 jest.mock('@/store/pendingClockInStore', () => ({
@@ -106,6 +136,9 @@ jest.mock('@/store/offlineClockContext', () => ({
 
 jest.mock('@/components/Screen', () => ({
   Screen: ({ children }: any) => require('react').createElement('screen', {}, children),
+  PrimaryScreen: ({ children, testID }: any) => require('react').createElement('primary-screen', {
+    edges: ['top', 'left', 'right'], testID,
+  }, children),
 }));
 
 jest.mock('@/components/OfflineNotice', () => ({
@@ -130,7 +163,11 @@ jest.mock('react-native', () => {
     TurboModuleRegistry: { get: () => null },
     View: ({ children }: any) => React.createElement('view', {}, children),
     Text: ({ children }: any) => React.createElement('text', {}, children),
-    Pressable: ({ children, onPress }: any) => React.createElement('pressable', { onPress }, children),
+    Pressable: ({ children, onPress, style, ...props }: any) => React.createElement('pressable', {
+      ...props,
+      onPress,
+      style: typeof style === 'function' ? style({ pressed: false }) : style,
+    }, children),
   };
 });
 
@@ -146,9 +183,25 @@ describe('HomeScreen', () => {
 
   beforeEach(() => {
     mockRefresh.mockClear();
-    mockRefreshForms.mockClear();
-    mockFormsState.toDo = [{ id: 'required-1' }, { id: 'required-2' }];
+    mockRefreshTraining.mockClear();
+    mockTrainingAssignments = [];
+    mockLoadSnowAssignment.mockReset().mockResolvedValue({ ok: true, event: null, route: null, stops: [] });
+    mockClockingState.companyFeatures = { projects: true, recurringServices: true, snowOperations: true };
+    mockClockingState.jobs = [
+      { id: 'job-1', title: 'Front Walkway', status: 'scheduled', assignedEmployeeIds: ['emp-1'], scheduledToday: true },
+      { id: 'job-2', title: 'Warehouse', status: 'scheduled', assignedEmployeeIds: ['emp-1'], scheduledToday: false },
+    ];
     mockClockingState.currentActiveEntryId = 'entry-1';
+    mockClockingState.timeEntries = [
+      {
+        id: 'entry-2', employeeId: 'emp-1', jobId: 'job-2', workType: 'job',
+        clockIn: '2026-08-07T10:10:00.000Z', breakMinutes: 0, notes: '', status: 'clocked_in',
+      },
+      {
+        id: 'entry-1', employeeId: 'emp-1', jobId: 'job-1', workType: 'job',
+        clockIn: '2026-08-07T10:00:00.000Z', breakMinutes: 0, notes: '', status: 'clocked_in',
+      },
+    ];
     mockOfflineClock = undefined;
     mockClockingState.activeShiftWarnings.possibleForgottenClockOut = false;
     mockPendingClockOut = {
@@ -157,6 +210,9 @@ describe('HomeScreen', () => {
       currentForm: null,
       completedCount: 0,
       totalCount: 0,
+      busy: false,
+      error: null,
+      recover: jest.fn().mockResolvedValue(null),
     };
     mockPendingClockIn = {
       workflow: null,
@@ -189,45 +245,141 @@ describe('HomeScreen', () => {
     const renderedText = tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ');
     expect(renderedText).toContain('Front Walkway');
     expect(renderedText).not.toContain('Current job: Warehouse');
+    expect(tree.root.findByType('primary-screen').props.edges).toEqual(['top', 'left', 'right']);
   });
 
-  it('opens Forms as a primary employee feature', async () => {
+  it('shows Clock In after authoritative clock-out clears the active entry and pending workflow', async () => {
+    mockClockingState.currentActiveEntryId = null;
+    mockClockingState.timeEntries = mockClockingState.timeEntries.map((entry: any) => ({
+      ...entry,
+      status: 'completed',
+      clockOut: '2026-09-10T21:00:00.000Z',
+    }));
+    mockPendingClockOut = { ...mockPendingClockOut, workflow: null, currentRequirement: null, currentForm: null };
+
+    await act(async () => { tree = create(<HomeScreen />); });
+
+    expect(textOf(tree.root)).toContain('Ready to start your shift?');
+    expect(textOf(tree.root)).not.toContain('Clock out pending');
+    expect(tree.root.findAllByType('primary-button').map((node: any) => node.props.label)).toContain('Clock In');
+  });
+
+  it('opens the employee Snow assignment when an active Route is assigned', async () => {
+    mockLoadSnowAssignment.mockResolvedValue({
+      ok: true,
+      event: { id: 'event-1', title: 'January Storm' },
+      route: { id: 'route-1', name: 'North Route' },
+      stops: [{ id: 'stop-1' }, { id: 'stop-2' }],
+      progress: { total: 2, completed: 1, needsAttention: 0, currentStopId: 'stop-2' },
+    });
+    await act(async () => { tree = create(React.createElement(HomeScreen)); });
+
+    await act(async () => tree.root.findByProps({ testID: 'snow-assignment-link' }).props.onPress());
+
+    expect(router.push).toHaveBeenCalledWith('/snow-assignment');
+  });
+
+  it('hides disabled Service Visits, Snow Operations, and Projects without loading Snow', async () => {
+    mockClockingState.companyFeatures = { projects: false, recurringServices: false, snowOperations: false };
+    mockClockingState.currentActiveEntryId = null;
+
+    await act(async () => { tree = create(<HomeScreen />); });
+
+    expect(textOf(tree.root)).not.toContain('Service Visits');
+    expect(textOf(tree.root)).not.toContain('Assigned Jobs');
+    expect(tree.root.findAllByProps({ testID: 'snow-assignment-card' })).toHaveLength(0);
+    expect(mockLoadSnowAssignment).not.toHaveBeenCalled();
+  });
+
+  it('uses legacy Projects and Recurring defaults while feature state is unhydrated', async () => {
+    mockClockingState.companyFeatures = null;
+    mockClockingState.currentActiveEntryId = null;
+    mockClockingState.timeEntries = [];
+
+    await act(async () => { tree = create(<HomeScreen />); });
+
+    expect(textOf(tree.root)).toContain('Service Visits');
+    expect(textOf(tree.root)).toContain('Today’s Jobs');
+    expect(mockLoadSnowAssignment).not.toHaveBeenCalled();
+  });
+
+  it('shows the same canonical scheduled-today set without unrelated or unavailable Jobs', async () => {
+    mockClockingState.currentActiveEntryId = null;
+    mockClockingState.timeEntries = [];
+    mockClockingState.jobs = [
+      { id: 'today-1', title: 'Today One', status: 'scheduled', assignedEmployeeIds: ['emp-1'], scheduledToday: true },
+      { id: 'today-2', title: 'Today Two', status: 'in_progress', assignedEmployeeIds: ['emp-1'], scheduledToday: true },
+      { id: 'today-3', title: 'Today Three', status: 'scheduled', assignedEmployeeIds: ['emp-1'], scheduledToday: true },
+      { id: 'today-4', title: 'Today Four', status: 'scheduled', assignedEmployeeIds: ['emp-1'], scheduledToday: true },
+      { id: 'yesterday', title: 'Yesterday Job', status: 'in_progress', assignedEmployeeIds: ['emp-1'], scheduledToday: false },
+      { id: 'completed', title: 'Completed Job', status: 'completed', assignedEmployeeIds: ['emp-1'], scheduledToday: true },
+      { id: 'cancelled', title: 'Cancelled Job', status: 'cancelled', assignedEmployeeIds: ['emp-1'], scheduledToday: true },
+      { id: 'on-hold', title: 'On Hold Job', status: 'on_hold', assignedEmployeeIds: ['emp-1'], scheduledToday: true },
+    ];
+
+    await act(async () => { tree = create(<HomeScreen />); });
+
+    expect(textOf(tree.root)).toContain('Today’s Jobs');
+    const todayJobRows = tree.root.findAllByType('pressable');
+    for (const id of ['today-1', 'today-2', 'today-3', 'today-4']) {
+      expect(todayJobRows.filter((node: any) => node.props.testID === `today-job-${id}`)).toHaveLength(1);
+    }
+    for (const id of ['yesterday', 'completed', 'cancelled', 'on-hold']) {
+      expect(todayJobRows.filter((node: any) => node.props.testID === `today-job-${id}`)).toHaveLength(0);
+    }
+    expect(textOf(tree.root)).not.toContain('Yesterday Job');
+    expect(textOf(tree.root)).not.toContain('Completed Job');
+    expect(textOf(tree.root)).not.toContain('Cancelled Job');
+    expect(textOf(tree.root)).not.toContain('On Hold Job');
+  });
+
+  it('shows the canonical empty state when no Jobs are scheduled today', async () => {
+    mockClockingState.currentActiveEntryId = null;
+    mockClockingState.timeEntries = [];
+    mockClockingState.jobs = [
+      { id: 'yesterday', title: 'Yesterday Job', status: 'in_progress', assignedEmployeeIds: ['emp-1'], scheduledToday: false },
+    ];
+
+    await act(async () => { tree = create(<HomeScreen />); });
+
+    expect(tree.root.findAllByType('status-banner').map((node: any) => node.props.message)).toContain('No jobs scheduled for today');
+    expect(textOf(tree.root)).not.toContain('Yesterday Job');
+  });
+
+  it('keeps an active Service Visit shift visible and clock-out available after the feature is disabled', async () => {
+    mockClockingState.companyFeatures = { projects: false, recurringServices: false, snowOperations: false };
+    mockClockingState.currentActiveEntryId = 'entry-1';
+    mockClockingState.timeEntries = [{
+      id: 'entry-1', employeeId: 'emp-1', jobId: 'job-1', jobIds: ['job-1'], workType: 'job',
+      serviceId: 'service-1', serviceVisitId: 'visit-1', serviceName: 'Weekly Lawn Care',
+      clockIn: '2026-08-07T10:00:00.000Z', breakMinutes: 0, notes: '', status: 'clocked_in',
+    }];
+
+    await act(async () => { tree = create(<HomeScreen />); });
+
+    expect(textOf(tree.root)).toContain("You're clocked in");
+    expect(tree.root.findAllByType('primary-button').map((node: any) => node.props.label)).toContain('Clock Out');
+    expect(textOf(tree.root)).not.toContain('Service Visits');
+  });
+
+  it('orders overdue before due-soon Training and caps attention at three rows', async () => {
+    mockTrainingAssignments = [
+      { id: 'soon-1', trainingTitle: 'First Aid', currentDueDate: '2026-09-12', presentationStatus: 'due_soon' },
+      { id: 'late-1', trainingTitle: 'WHMIS', currentDueDate: '2026-09-01', presentationStatus: 'overdue' },
+      { id: 'late-2', trainingTitle: 'Fall Protection', currentDueDate: '2026-09-02', presentationStatus: 'overdue' },
+      { id: 'soon-2', trainingTitle: 'Orientation', currentDueDate: '2026-09-15', presentationStatus: 'due_soon' },
+    ];
     await act(async () => {
       tree = create(React.createElement(HomeScreen));
     });
 
-    const formsRow = tree.root.findAllByType('pressable').find((node: any) => {
-      const text = node.findAllByType('text').map((child: any) => String(child.props.children)).join(' ');
-      return text.includes('Forms');
-    });
-    await act(async () => formsRow.props.onPress());
-    expect(router.push).toHaveBeenCalledWith('/forms');
-  });
-
-  it('opens Time Off from Quick Actions', async () => {
-    await act(async () => {
-      tree = create(React.createElement(HomeScreen));
-    });
-
-    const row = tree.root.findAllByType('pressable').find((node: any) => textOf(node).includes('Time Off'));
-    await act(async () => row.props.onPress());
-    expect(router.push).toHaveBeenCalledWith('/time-off');
-  });
-
-  it('shows only the outstanding To Do count for Forms', async () => {
-    await act(async () => { tree = create(<HomeScreen />); });
-    const renderedText = tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ');
-    expect(renderedText).toContain('2 due');
-    expect(renderedText).not.toContain('3 due');
-    expect(renderedText).not.toContain('6 due');
-  });
-
-  it('omits the due count when no required Forms are outstanding', async () => {
-    mockFormsState.toDo = [];
-    await act(async () => { tree = create(<HomeScreen />); });
-    const renderedText = tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ');
-    expect(renderedText).not.toContain('due');
-    expect(renderedText).toContain('Forms');
+    const attentionRows = tree.root.findByProps({ testID: 'attention-list' }).findAllByType('pressable');
+    expect(attentionRows).toHaveLength(3);
+    expect(textOf(attentionRows[0])).toContain('WHMIS');
+    expect(textOf(attentionRows[1])).toContain('Fall Protection');
+    expect(textOf(attentionRows[2])).toContain('First Aid');
+    expect(textOf(tree.root)).toContain('View all');
+    expect(textOf(tree.root)).not.toContain('Quick Actions');
   });
 
   it('shows long-shift warning actions when possible forgotten clock-out is flagged', async () => {
@@ -248,12 +400,21 @@ describe('HomeScreen', () => {
   });
 
   it('shows a distinct resume action and suppresses a second clock-out while forms are pending', async () => {
+    const form = { id: 'form-1', name: 'End of Shift Report', fields: [] };
+    const workflow = {
+      workflowOccurrenceId: 'occurrence-1',
+      requirements: [{ workflowRequirementId: 'requirement-1', completed: false, form }],
+    };
+    const recover = jest.fn().mockResolvedValue(workflow);
     mockPendingClockOut = {
-      workflow: { workflowOccurrenceId: 'occurrence-1' },
+      workflow,
       currentRequirement: { workflowRequirementId: 'requirement-1' },
-      currentForm: { id: 'form-1' },
+      currentForm: form,
       completedCount: 1,
       totalCount: 3,
+      busy: false,
+      error: null,
+      recover,
     };
     await act(async () => { tree = create(<HomeScreen />); });
 
@@ -263,6 +424,102 @@ describe('HomeScreen', () => {
     const renderedText = textOf(tree.root);
     expect(renderedText).toContain('Clock out pending');
     expect(renderedText).toContain('Required form 2 of 3');
+
+    await act(async () => tree.root.findAllByType('primary-button').find((node: any) => node.props.label === 'Resume Required Form').props.onPress());
+
+    expect(recover).toHaveBeenCalledTimes(1);
+    expect(router.push).toHaveBeenCalledWith({
+      pathname: '/form',
+      params: {
+        formId: 'form-1', trigger: 'after_clock_out', workflowOccurrenceId: 'occurrence-1',
+        workflowRequirementId: 'requirement-1',
+      },
+    });
+  });
+
+  it('replaces stale local clock-out state with a reconciled canonical response', async () => {
+    mockClockingState.currentActiveEntryId = null;
+    mockClockingState.timeEntries = [];
+    const recover = jest.fn().mockImplementation(async () => {
+      mockPendingClockOut = { ...mockPendingClockOut, workflow: null, currentRequirement: null, currentForm: null };
+      return null;
+    });
+    mockPendingClockOut = {
+      workflow: { workflowOccurrenceId: 'stale-occurrence' },
+      currentRequirement: { workflowRequirementId: 'stale-requirement' },
+      currentForm: { id: 'stale-form', name: 'Old Report', fields: [] },
+      completedCount: 0,
+      totalCount: 1,
+      busy: false,
+      error: null,
+      recover,
+    };
+    await act(async () => { tree = create(<HomeScreen />); });
+
+    await act(async () => tree.root.findByType('primary-button').props.onPress());
+    await act(async () => tree.update(<HomeScreen />));
+
+    expect(recover).toHaveBeenCalledTimes(1);
+    expect(router.push).not.toHaveBeenCalledWith(expect.objectContaining({ pathname: '/form' }));
+    expect(tree.root.findAllByType('primary-button').map((node: any) => node.props.label)).toContain('Clock In');
+    expect(textOf(tree.root)).not.toContain('Clock out pending');
+  });
+
+  it('keeps a missing required snapshot enforced and offers canonical Retry', async () => {
+    mockPendingClockOut = {
+      workflow: {
+        workflowOccurrenceId: 'occurrence-1',
+        requirements: [{ workflowRequirementId: 'requirement-1', completed: false, formId: 'form-1' }],
+      },
+      currentRequirement: { workflowRequirementId: 'requirement-1', formId: 'form-1' },
+      currentForm: null,
+      completedCount: 0,
+      totalCount: 1,
+      busy: false,
+      error: null,
+      recover: jest.fn().mockResolvedValue({
+        workflowOccurrenceId: 'occurrence-1',
+        requirements: [{ workflowRequirementId: 'requirement-1', completed: false, formId: 'form-1' }],
+      }),
+    };
+    await act(async () => { tree = create(<HomeScreen />); });
+
+    expect(tree.root.findByType('primary-button').props.label).toBe('Retry Required Form');
+    await act(async () => tree.root.findByType('primary-button').props.onPress());
+
+    expect(tree.root.findAllByType('status-banner').map((node: any) => node.props.message).join(' ')).toContain('contact your supervisor or administrator');
+    expect(router.push).not.toHaveBeenCalledWith(expect.objectContaining({ pathname: '/form' }));
+    expect(tree.root.findAllByType('primary-button').map((node: any) => node.props.label)).not.toContain('Clock In');
+  });
+
+  it('opens a persisted snapshot when Retry returns a repaired pending workflow', async () => {
+    const recoveredWorkflow = {
+      workflowOccurrenceId: 'occurrence-1',
+      requirements: [{
+        workflowRequirementId: 'requirement-1', completed: false,
+        formPackage: { id: 'form-1', name: 'Historical Report', fields: [] },
+      }],
+    };
+    const recover = jest.fn().mockResolvedValue(recoveredWorkflow);
+    mockPendingClockOut = {
+      workflow: { workflowOccurrenceId: 'occurrence-1' },
+      currentRequirement: { workflowRequirementId: 'requirement-1' },
+      currentForm: null,
+      completedCount: 0,
+      totalCount: 1,
+      busy: false,
+      error: null,
+      recover,
+    };
+    await act(async () => { tree = create(<HomeScreen />); });
+
+    await act(async () => tree.root.findByType('primary-button').props.onPress());
+
+    expect(recover).toHaveBeenCalledTimes(1);
+    expect(router.push).toHaveBeenCalledWith(expect.objectContaining({
+      pathname: '/form',
+      params: expect.objectContaining({ formId: 'form-1', workflowRequirementId: 'requirement-1' }),
+    }));
   });
 
   it('restores pending clock-in as a resume action without showing an active shift', async () => {

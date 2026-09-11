@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -15,6 +15,8 @@ import {
 import { useFormsActions } from '@/hooks/useFormsActions';
 import { useClockingStore } from '@/store/clockingStore';
 import { useFormsStore } from '@/store/formsStore';
+import { pendingClockInRequirementForm, pendingClockInRequirements, usePendingClockInStore } from '@/store/pendingClockInStore';
+import { requirementForm, usePendingClockOutStore, workflowRequirements } from '@/store/pendingClockOutStore';
 import { colors, radii, spacing, typography } from '@/theme/colors';
 import type { EmployeeForm, EmployeeFormSubmission } from '@/types/forms';
 
@@ -31,10 +33,51 @@ export default function FormsScreen() {
   const { businessTimeZone } = useClockingStore();
   const { toDo, available, completed, loadedAt, flashMessage, setFlashMessage } = useFormsStore();
   const { refreshForms, loadingWorkspace } = useFormsActions();
+  const pendingClockIn = usePendingClockInStore();
+  const pendingClockOut = usePendingClockOutStore();
   const [tab, setTab] = useState<FormsTab>('todo');
   const [error, setError] = useState<string | null>(null);
   const requestedRef = useRef(false);
   const selectedInitialTabRef = useRef(false);
+
+  const actionableToDo = useMemo(() => {
+    const items = new Map<string, EmployeeForm>();
+    const identity = (form: EmployeeForm) => form.workflowOccurrenceId && form.workflowRequirementId
+      ? `workflow:${form.workflowOccurrenceId}:${form.workflowRequirementId}`
+      : `form:${form.id}:${form.trigger}:${form.periodKey ?? ''}:${form.context?.jobId ?? ''}:${form.context?.equipmentId ?? ''}:${form.context?.divisionId ?? ''}:${form.context?.serviceId ?? ''}:${form.context?.serviceVisitId ?? ''}`;
+    for (const form of toDo) items.set(identity(form), form);
+
+    const clockInOccurrenceId = pendingClockIn.workflow?.workflowOccurrenceId;
+    if (clockInOccurrenceId) {
+      for (const requirement of pendingClockInRequirements(pendingClockIn.workflow).filter((item) => !item.completed)) {
+        const form = pendingClockInRequirementForm(requirement);
+        if (!form) continue;
+        const workflowForm: EmployeeForm = {
+          ...form,
+          workflowOccurrenceId: clockInOccurrenceId,
+          workflowRequirementId: requirement.requirementId,
+          requiredFor: 'clock_in',
+        };
+        items.set(identity(workflowForm), workflowForm);
+      }
+    }
+
+    const clockOutOccurrenceId = pendingClockOut.workflow?.workflowOccurrenceId;
+    if (clockOutOccurrenceId) {
+      for (const requirement of workflowRequirements(pendingClockOut.workflow).filter((item) => !item.completed)) {
+        const form = requirementForm(requirement);
+        if (!form) continue;
+        const workflowForm: EmployeeForm = {
+          ...form,
+          workflowOccurrenceId: clockOutOccurrenceId,
+          workflowRequirementId: requirement.workflowRequirementId,
+          requiredFor: 'clock_out',
+        };
+        items.set(identity(workflowForm), workflowForm);
+      }
+    }
+    return [...items.values()];
+  }, [pendingClockIn.workflow, pendingClockOut.workflow, toDo]);
 
   useEffect(() => {
     if (requestedRef.current) return;
@@ -45,17 +88,21 @@ export default function FormsScreen() {
   useEffect(() => {
     if (!loadedAt || selectedInitialTabRef.current) return;
     selectedInitialTabRef.current = true;
-    if (toDo.length === 0 && available.length > 0) setTab('available');
-  }, [available.length, loadedAt, toDo.length]);
+    if (actionableToDo.length === 0 && available.length > 0) setTab('available');
+  }, [actionableToDo.length, available.length, loadedAt]);
 
   const data: FormsListItem[] = tab === 'todo'
-    ? toDo.map((value) => ({ kind: 'form', value }))
+    ? actionableToDo.map((value) => ({ kind: 'form', value }))
     : tab === 'available'
       ? available.map((value) => ({ kind: 'form', value }))
       : completed.map((value) => ({ kind: 'submission', value }));
 
   async function onRefresh() {
-    const result = await refreshForms({ force: true });
+    const [result] = await Promise.all([
+      refreshForms({ force: true }),
+      pendingClockIn.recover(),
+      pendingClockOut.recover(),
+    ]);
     setError(result.ok ? null : (result.error ?? null));
   }
 
@@ -69,6 +116,10 @@ export default function FormsScreen() {
         jobId: form.context?.jobId,
         equipmentId: form.context?.equipmentId,
         divisionId: form.context?.divisionId,
+        serviceId: form.context?.serviceId,
+        serviceVisitId: form.context?.serviceVisitId,
+        workflowOccurrenceId: form.workflowOccurrenceId,
+        workflowRequirementId: form.workflowRequirementId,
       },
     });
   }
@@ -90,7 +141,9 @@ export default function FormsScreen() {
       <FlatList
         data={data}
         keyExtractor={(item) => item.kind === 'form'
-          ? `${item.value.id}:${item.value.trigger}:${item.value.context?.jobId ?? ''}:${item.value.context?.equipmentId ?? ''}:${item.value.context?.divisionId ?? ''}`
+          ? item.value.workflowOccurrenceId && item.value.workflowRequirementId
+            ? `${item.value.workflowOccurrenceId}:${item.value.workflowRequirementId}`
+            : `${item.value.id}:${item.value.trigger}:${item.value.context?.jobId ?? ''}:${item.value.context?.equipmentId ?? ''}:${item.value.context?.divisionId ?? ''}`
           : item.value.submissionId}
         contentContainerStyle={styles.content}
         refreshing={loadingWorkspace}
@@ -111,7 +164,7 @@ export default function FormsScreen() {
               onChange={setTab}
               options={tabs.map((item) => ({
                 value: item.id,
-                label: `${item.label} ${item.id === 'todo' ? toDo.length : item.id === 'available' ? available.length : completed.length}`,
+                label: `${item.label} ${item.id === 'todo' ? actionableToDo.length : item.id === 'available' ? available.length : completed.length}`,
               }))}
             />
           </View>
@@ -136,7 +189,11 @@ export default function FormsScreen() {
             </View>
             {item.value.category ? <Text style={styles.category}>{item.value.category}</Text> : null}
             <Text style={[styles.reason, item.value.trigger === 'on_demand' && styles.availableReason]}>
-              {getFormTriggerLabel(item.value.trigger)}
+              {item.value.requiredFor === 'clock_in'
+                ? 'Required for clock-in'
+                : item.value.requiredFor === 'clock_out'
+                  ? 'Required for clock-out'
+                  : getFormTriggerLabel(item.value.trigger)}
             </Text>
             <FormContextSummary context={item.value.context} />
           </Pressable>

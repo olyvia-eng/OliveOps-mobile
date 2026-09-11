@@ -14,7 +14,8 @@ import { createFormClientSubmissionId } from '@/services/requestGuards';
 import { markFormAttachmentsSubmitted, prepareFormSubmissionAttachments } from '@/services/formAttachmentStorage';
 import { useClockingActions } from '@/hooks/useClockingActions';
 import { useAuthStore } from '@/store/authStore';
-import type { PendingClockOutRequirement, PendingClockOutWorkflow } from '@/types/api';
+import { useClockingStore } from '@/store/clockingStore';
+import type { ClockOutResponse, PendingClockOutRequirement, PendingClockOutWorkflow } from '@/types/api';
 import { ApiError } from '@/types/errors';
 import type { EmployeeForm, QueuedFormSubmissionFailure, SubmitEmployeeFormRequest } from '@/types/forms';
 
@@ -36,6 +37,7 @@ type PendingClockOutState = {
   queuedSubmissionFor: (workflowRequirementId: string) => SubmitEmployeeFormRequest | null;
   completeQueuedSubmission: (clientSubmissionId: string) => Promise<void>;
   submissionFailure: QueuedFormSubmissionFailure | null;
+  completeFromSubmission: (clocking: ClockOutResponse) => Promise<void>;
   refreshAfterSubmission: () => Promise<PendingClockOutWorkflow | null>;
   finalize: () => Promise<FinalizeResult>;
 };
@@ -86,13 +88,17 @@ export function workflowRequirements(workflow: PendingClockOutWorkflow | null): 
   });
 }
 
+function isRenderableFormSnapshot(form: EmployeeForm | undefined): form is EmployeeForm {
+  return Boolean(form?.id && form.name && Array.isArray(form.fields));
+}
+
 export function requirementForm(requirement: PendingClockOutRequirement | null): EmployeeForm | null {
   if (!requirement) return null;
-  if (requirement.form) return {
+  if (isRenderableFormSnapshot(requirement.form)) return {
     ...requirement.form,
     context: requirement.context ?? requirement.form.context,
   };
-  if (requirement.formPackage) return {
+  if (isRenderableFormSnapshot(requirement.formPackage)) return {
     ...requirement.formPackage,
     context: requirement.context ?? requirement.formPackage.context,
   };
@@ -111,6 +117,18 @@ export function requirementForm(requirement: PendingClockOutRequirement | null):
   };
 }
 
+export function pendingClockOutFormTarget(workflow: PendingClockOutWorkflow | null) {
+  if (!workflow) return null;
+  const requirement = workflowRequirements(workflow).find((item) => !item.completed) ?? null;
+  const form = requirementForm(requirement);
+  if (!requirement || !form) return null;
+  return {
+    form,
+    workflowOccurrenceId: workflow.workflowOccurrenceId,
+    workflowRequirementId: requirement.workflowRequirementId,
+  };
+}
+
 function errorCode(error: unknown) {
   return error instanceof ApiError ? error.code?.toLowerCase() : undefined;
 }
@@ -118,6 +136,7 @@ function errorCode(error: unknown) {
 export function PendingClockOutProvider({ children }: { children: React.ReactNode }) {
   const { accessToken, status, user } = useAuthStore();
   const { refreshWorkContext } = useClockingActions();
+  const { setCurrentActiveEntryId, upsertTimeEntry } = useClockingStore();
   const identityKey = identityFor(user);
   const identityRef = useRef(identityKey);
   identityRef.current = identityKey;
@@ -125,6 +144,7 @@ export function PendingClockOutProvider({ children }: { children: React.ReactNod
   const recoveryPromiseRef = useRef<Promise<PendingClockOutWorkflow | null> | null>(null);
   const syncPromiseRef = useRef<Promise<void> | null>(null);
   const finalizePromiseRef = useRef<Promise<FinalizeResult> | null>(null);
+  const workflowMutationEpochRef = useRef(0);
   const [hydrated, setHydrated] = useState(false);
   const [workflow, setWorkflow] = useState<PendingClockOutWorkflow | null>(null);
   const [busy, setBusy] = useState(false);
@@ -139,6 +159,7 @@ export function PendingClockOutProvider({ children }: { children: React.ReactNod
   }, [identityKey]);
 
   const acceptWorkflow = useCallback(async (nextWorkflow: PendingClockOutWorkflow) => {
+    workflowMutationEpochRef.current += 1;
     const current = recordRef.current;
     await commit({
       workflow: nextWorkflow,
@@ -160,10 +181,14 @@ export function PendingClockOutProvider({ children }: { children: React.ReactNod
     const run = async () => {
       if (!identityKey || status !== 'authenticated') return null;
       if (!await isOnline()) return recordRef.current?.workflow ?? null;
+      const recoveryEpoch = workflowMutationEpochRef.current;
       try {
         const response = await clockingApi.loadPendingClockOut(accessToken);
-        if (identityRef.current !== identityKey) return null;
+        if (identityRef.current !== identityKey || workflowMutationEpochRef.current !== recoveryEpoch) {
+          return recordRef.current?.workflow ?? null;
+        }
         if (response.status === 'no_pending_clock_out') {
+          workflowMutationEpochRef.current += 1;
           await commit(null);
           return null;
         }
@@ -197,6 +222,7 @@ export function PendingClockOutProvider({ children }: { children: React.ReactNod
           await acceptWorkflow(response);
           return { ok: false, error: 'Complete the remaining required form.' };
         }
+        workflowMutationEpochRef.current += 1;
         await commit(null);
         return { ok: true };
       } catch (finalizeError) {
@@ -206,6 +232,7 @@ export function PendingClockOutProvider({ children }: { children: React.ReactNod
           return { ok: false, error: 'Complete the remaining required form.' };
         }
         if (code === 'clock_out_workflow_already_finalized') {
+          workflowMutationEpochRef.current += 1;
           await commit(null);
           return { ok: true };
         }
@@ -298,6 +325,7 @@ export function PendingClockOutProvider({ children }: { children: React.ReactNod
     setHydrated(false);
     setWorkflow(null);
     recordRef.current = null;
+    workflowMutationEpochRef.current += 1;
     if (!identityKey || status !== 'authenticated') {
       setHydrated(true);
       return () => { cancelled = true; };
@@ -394,6 +422,14 @@ export function PendingClockOutProvider({ children }: { children: React.ReactNod
     });
   }, [commit]);
 
+  const completeFromSubmission = useCallback(async (clocking: ClockOutResponse) => {
+    if (clocking.status !== 'clock_out_completed' && clocking.status !== 'clock_out_already_finalized') return;
+    if (clocking.timeEntry) upsertTimeEntry(clocking.timeEntry);
+    setCurrentActiveEntryId(null);
+    workflowMutationEpochRef.current += 1;
+    await commit(null);
+  }, [commit, setCurrentActiveEntryId, upsertTimeEntry]);
+
   const refreshAfterSubmission = useCallback(async () => recover(), [recover]);
   const requirements = workflowRequirements(workflow);
   const outstanding = requirements.filter((item) => !item.completed);
@@ -420,9 +456,10 @@ export function PendingClockOutProvider({ children }: { children: React.ReactNod
     queuedSubmissionFor,
     completeQueuedSubmission,
     submissionFailure: recordRef.current?.submissionFailure ?? null,
+    completeFromSubmission,
     refreshAfterSubmission,
     finalize,
-  }), [acceptWorkflow, busy, completeQueuedSubmission, completedCount, currentRequirement, error, finalize, hydrated, queueSubmission, queuedSubmissionFor, recover, refreshAfterSubmission, submissionIdFor, totalCount, workflow]);
+  }), [acceptWorkflow, busy, completeFromSubmission, completeQueuedSubmission, completedCount, currentRequirement, error, finalize, hydrated, queueSubmission, queuedSubmissionFor, recover, refreshAfterSubmission, submissionIdFor, totalCount, workflow]);
 
   return <PendingClockOutContext.Provider value={value}>{children}</PendingClockOutContext.Provider>;
 }
