@@ -419,6 +419,32 @@ describe('ClockInScreen', () => {
     expect(router.replace).toHaveBeenCalledWith('/active-shift');
   });
 
+  it('replaces to Active Shift only once when the clocking store updates before clockIn resolves', async () => {
+    // Mirrors useClockingActions.clockIn: it updates the shared clocking store (setCurrentActiveEntryId /
+    // upsertTimeEntry) before its promise resolves back to the screen. That can flip authoritativeActiveShift
+    // to true while ClockInScreen is still focused, letting the useFocusEffect redirect win the navigation
+    // race ahead of submitClockIn's own replace call. Both must not fire, or Active Shift mounts twice.
+    let tree: any;
+    await act(async () => {
+      tree = create(React.createElement(ClockInScreen));
+    });
+    mockClockIn.mockImplementation(async () => {
+      mockCurrentActiveEntryId = 'entry-1';
+      mockTimeEntries = [{ id: 'entry-1', status: 'clocked_in', employeeId: 'emp-1' }];
+      // Already inside the outer act() from continueFlow's onPress() — re-entering act() here
+      // would overlap and corrupt React's act-tracking for later tests, so just update directly.
+      tree.update(React.createElement(ClockInScreen));
+      return { ok: true };
+    });
+
+    await chooseActivity(tree, 'job');
+    await chooseJob(tree);
+    await continueFlow(tree);
+
+    expect(router.replace).toHaveBeenCalledWith('/active-shift');
+    expect(router.replace).toHaveBeenCalledTimes(1);
+  });
+
   it('shows Start Time only with permission and submits the selected business-time intent', async () => {
     mockAdjustClockInTime = true;
     let tree: any;
