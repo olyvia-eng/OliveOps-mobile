@@ -146,6 +146,51 @@ describe('PendingClockOutProvider', () => {
     );
   });
 
+  it('normalizes modern requirement IDs and authoritative remaining/completed lists', async () => {
+    const modernWorkflow = {
+      ...workflow(),
+      requiredFormCount: 1,
+      completedRequiredFormCount: 1,
+      remainingRequiredFormCount: 0,
+      requirements: undefined,
+      requiredForms: [{ requirementId: 'requirement-1', formId: 'form-1', form: requiredForm }],
+      completedForms: [{ requirementId: 'requirement-1', formId: 'form-1', form: requiredForm }],
+      remainingForms: [],
+    };
+    mockLoadBootstrap.mockResolvedValue({
+      ok: true,
+      capabilities: { requiredAfterClockOutForms: true },
+      pendingClockOutWorkflow: modernWorkflow,
+    });
+    await mount();
+
+    expect(pendingStore.currentRequirement).toBeNull();
+    expect(pendingStore.completedCount).toBe(1);
+    expect(pendingStore.totalCount).toBe(1);
+  });
+
+  it('treats an authoritative empty remainingForms as complete even without a completedForms list', async () => {
+    // Regression: an empty `remainingForms: []` array is itself proof nothing remains — it must
+    // not be mistaken for "no signal" just because a `completedForms` list wasn't also sent.
+    // Getting this wrong left the just-submitted clock-out form looking permanently outstanding,
+    // flashing "Resume Required Form" on Home right after it was completed.
+    const justCompletedWorkflow = {
+      ...workflow(),
+      requirements: undefined,
+      requiredForms: [{ requirementId: 'requirement-1', formId: 'form-1', form: requiredForm }],
+      completedForms: undefined,
+      remainingForms: [],
+    };
+    mockLoadBootstrap.mockResolvedValue({
+      ok: true,
+      capabilities: { requiredAfterClockOutForms: true },
+      pendingClockOutWorkflow: justCompletedWorkflow,
+    });
+    await mount();
+
+    expect(pendingStore.currentRequirement).toBeNull();
+  });
+
   it('restores the cached workflow while offline without clearing it', async () => {
     mockOnline = false;
     const stored: PendingClockOutRecord = { workflow: workflow(), submissionIds: {}, queuedSubmissions: [] };
