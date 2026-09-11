@@ -61,11 +61,14 @@ import {
   completeOfflineCommand,
   completeOfflineShiftCommands,
   insertOfflineCommand,
+  loadOfflineClockCache,
   loadOfflineCommands,
   loadShiftMapping,
   resetOfflineClockStorageForTests,
+  saveOfflineClockCache,
   updateOfflineCommand,
 } from './offlineClockStorage';
+import { OFFLINE_CLOCK_CACHE_SCHEMA_VERSION } from '@/features/offlineClocking/types';
 
 function command(id: string, localShiftId = 'shift-1', identityKey = 'biz:user:employee'): OfflineClockCommand {
   const minute = Number(id.replace(/\D/g, '')) || 0;
@@ -123,6 +126,68 @@ describe('offline clock SQLite persistence', () => {
     await insertOfflineCommand(legacyVisit);
 
     expect(await loadOfflineCommands('biz:user:employee')).toEqual([legacyVisit]);
+  });
+
+  it('round-trips the versioned Job cache with schedule, search, assignment, and work-area metadata', async () => {
+    const cache = {
+      schemaVersion: OFFLINE_CLOCK_CACHE_SCHEMA_VERSION,
+      identityKey: 'biz:user:employee',
+      updatedAt: '2026-09-11T12:00:00.000Z',
+      jobs: [{
+        id: 'job-1', title: 'Flagstone Patio', status: 'scheduled' as const,
+        assignedEmployeeIds: ['employee'], assignedForemanId: 'foreman-1', assignedCrewEmployeeIds: ['crew-1'],
+        scheduledToday: true, customerName: 'Morgan Lee', propertyAddress: '8 Lake Road', jobNumber: 'J-1042',
+        hasOperationalWorkAreas: true,
+        eligibleOperationalWorkAreas: [{ id: 'area-1', name: 'North Patio', status: 'in_progress' as const }],
+      }],
+      unbillableCategories: [],
+      driveTimeAvailable: true,
+      jobWorkAvailable: true,
+      unbillableAvailable: false,
+    };
+
+    await saveOfflineClockCache(cache);
+
+    expect(await loadOfflineClockCache('biz:user:employee')).toEqual(expect.objectContaining({
+      ...cache,
+      requiredBeforeClockInForms: undefined,
+      requiredAfterClockOutForms: undefined,
+      todayServiceVisits: [],
+      upcomingServiceVisits: [],
+    }));
+  });
+
+  it('safely migrates a legacy cache and treats missing schedule metadata as not scheduled', async () => {
+    mockCaches.set('biz:user:employee', JSON.stringify({
+      schemaVersion: 3,
+      identityKey: 'biz:user:employee',
+      updatedAt: '2026-08-20T10:00:00.000Z',
+      jobs: [{ id: 'legacy-job', title: 'Legacy Job', status: 'scheduled' }],
+      unbillableCategories: [],
+      driveTimeAvailable: true,
+      jobWorkAvailable: true,
+      unbillableAvailable: false,
+    }));
+
+    const migrated = await loadOfflineClockCache('biz:user:employee');
+
+    expect(migrated).toEqual(expect.objectContaining({
+      schemaVersion: OFFLINE_CLOCK_CACHE_SCHEMA_VERSION,
+      jobs: [expect.objectContaining({
+        id: 'legacy-job', scheduledToday: false, assignedEmployeeIds: [], assignedCrewEmployeeIds: [],
+      })],
+    }));
+    expect(JSON.parse(mockCaches.get('biz:user:employee') ?? '{}').schemaVersion).toBe(OFFLINE_CLOCK_CACHE_SCHEMA_VERSION);
+  });
+
+  it.each([
+    '{malformed',
+    JSON.stringify({ schemaVersion: 99, identityKey: 'biz:user:employee', jobs: [], unbillableCategories: [] }),
+    JSON.stringify({ schemaVersion: 3, identityKey: 'other:user:employee', jobs: [], unbillableCategories: [] }),
+  ])('resets malformed or unsupported cached eligibility without throwing', async (cacheJson) => {
+    mockCaches.set('biz:user:employee', cacheJson);
+
+    await expect(loadOfflineClockCache('biz:user:employee')).resolves.toBeNull();
   });
 
   it('excludes server-confirmed synced rows from every active queue load', async () => {

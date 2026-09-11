@@ -1,6 +1,6 @@
 import { describe, expect, it } from '@jest/globals';
 import type { Job } from '@/types/domain';
-import { scheduledClockInJobs, searchClockInJobs } from './jobPicker';
+import { otherClockInJobs, scheduledClockInJobs, searchClockInJobs } from './jobPicker';
 
 const job = (overrides: Partial<Job>): Job => ({
   id: 'job-a',
@@ -26,6 +26,27 @@ describe('clock-in job picker', () => {
     expect(scheduledClockInJobs([job({ scheduledToday: true })])).toHaveLength(1);
     expect(scheduledClockInJobs([job({ scheduledToday: true })])).toHaveLength(1);
   });
+
+  it('partitions yesterday-only Jobs into Other Jobs', () => {
+    const jobs = [
+      job({ id: 'job-yesterday', scheduledToday: false }),
+      job({ id: 'job-today', scheduledToday: true }),
+    ];
+
+    expect(scheduledClockInJobs(jobs).map((item) => item.id)).toEqual(['job-today']);
+    expect(otherClockInJobs(jobs).map((item) => item.id)).toEqual(['job-yesterday']);
+  });
+
+  it.each(['completed', 'cancelled', 'on_hold'] as const)(
+    'excludes %s Jobs from scheduled, other, and search results',
+    (status) => {
+      const unavailable = job({ status, scheduledToday: true });
+
+      expect(scheduledClockInJobs([unavailable])).toEqual([]);
+      expect(otherClockInJobs([{ ...unavailable, scheduledToday: false }])).toEqual([]);
+      expect(searchClockInJobs([unavailable], 'Flagstone')).toEqual([]);
+    },
+  );
 
   it.each([
     ['title', 'flagstone'],

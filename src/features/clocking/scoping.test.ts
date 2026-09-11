@@ -24,16 +24,17 @@ describe('clocking scoping', () => {
     })).toBe(expected);
   });
 
-  it('loads assigned jobs only for employee and active statuses', () => {
+  it('preserves backend-authorized direct, foreman, and crew Jobs while filtering unavailable statuses', () => {
     const jobs = [
       { id: 'j-1', title: 'A', status: 'scheduled' as const, assignedEmployeeIds: ['emp-1'] },
-      { id: 'j-2', title: 'B', status: 'in_progress' as const, assignedEmployeeIds: ['emp-2'] },
+      { id: 'j-2', title: 'B', status: 'in_progress' as const, assignedEmployeeIds: ['emp-2'], assignedForemanId: 'emp-1' },
+      { id: 'j-crew', title: 'Crew', status: 'scheduled' as const, assignedEmployeeIds: ['emp-2'], assignedCrewEmployeeIds: ['emp-1'] },
       { id: 'j-3', title: 'C', status: 'completed' as const, assignedEmployeeIds: ['emp-1'] },
       { id: 'j-4', title: 'D', status: 'scheduled' as const, assignedEmployeeIds: [] },
     ];
 
     const scoped = scopeJobsForSession(jobs, session);
-    expect(scoped.map((j) => j.id)).toEqual(['j-1', 'j-4']);
+    expect(scoped.map((j) => j.id)).toEqual(['j-1', 'j-2', 'j-crew', 'j-4']);
   });
 
   it.each([

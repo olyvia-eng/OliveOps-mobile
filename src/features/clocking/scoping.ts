@@ -8,21 +8,7 @@ export function isJobAvailableForClocking(job: Job): boolean {
 
 export function scopeJobsForSession(jobs: Job[], sessionUser: SessionUser | null): Job[] {
   if (!sessionUser) return [];
-
-  return jobs.filter((job) => {
-    if (!isJobAvailableForClocking(job)) return false;
-
-    const assigned = Array.isArray(job.assignedEmployeeIds) ? job.assignedEmployeeIds : [];
-    if (assigned.length === 0) {
-      return true;
-    }
-
-    if (!sessionUser.employeeId) {
-      return false;
-    }
-
-    return assigned.includes(sessionUser.employeeId);
-  });
+  return jobs.filter(isJobAvailableForClocking);
 }
 
 export function scopeTimeEntriesForSession(entries: TimeEntry[], sessionUser: SessionUser | null): TimeEntry[] {

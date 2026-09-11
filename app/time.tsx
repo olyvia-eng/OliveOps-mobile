@@ -55,7 +55,7 @@ export default function TimeScreen() {
   const activeEntry = pendingClockInVisible ? null : authoritativeActiveEntry ?? effectiveClock.activeEntry;
   const effectiveJobs = useMemo(() => jobs.length > 0
     ? jobs
-    : (offlineClock?.cache?.jobs ?? []).map((job) => ({ ...job, assignedEmployeeIds: [] })),
+    : offlineClock?.cache?.jobs ?? [],
   [jobs, offlineClock?.cache?.jobs]);
   const effectiveEntries = useMemo(
     () => buildEffectiveTimeEntries(effectiveClock.timeEntries, timeCorrections),

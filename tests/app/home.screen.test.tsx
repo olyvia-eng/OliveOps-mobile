@@ -163,7 +163,11 @@ jest.mock('react-native', () => {
     TurboModuleRegistry: { get: () => null },
     View: ({ children }: any) => React.createElement('view', {}, children),
     Text: ({ children }: any) => React.createElement('text', {}, children),
-    Pressable: ({ children, onPress }: any) => React.createElement('pressable', { onPress }, children),
+    Pressable: ({ children, onPress, style, ...props }: any) => React.createElement('pressable', {
+      ...props,
+      onPress,
+      style: typeof style === 'function' ? style({ pressed: false }) : style,
+    }, children),
   };
 });
 
@@ -183,6 +187,10 @@ describe('HomeScreen', () => {
     mockTrainingAssignments = [];
     mockLoadSnowAssignment.mockReset().mockResolvedValue({ ok: true, event: null, route: null, stops: [] });
     mockClockingState.companyFeatures = { projects: true, recurringServices: true, snowOperations: true };
+    mockClockingState.jobs = [
+      { id: 'job-1', title: 'Front Walkway', status: 'scheduled', assignedEmployeeIds: ['emp-1'], scheduledToday: true },
+      { id: 'job-2', title: 'Warehouse', status: 'scheduled', assignedEmployeeIds: ['emp-1'], scheduledToday: false },
+    ];
     mockClockingState.currentActiveEntryId = 'entry-1';
     mockClockingState.timeEntries = [
       {
@@ -291,8 +299,51 @@ describe('HomeScreen', () => {
     await act(async () => { tree = create(<HomeScreen />); });
 
     expect(textOf(tree.root)).toContain('Service Visits');
-    expect(textOf(tree.root)).toContain('Assigned Jobs');
+    expect(textOf(tree.root)).toContain('Today’s Jobs');
     expect(mockLoadSnowAssignment).not.toHaveBeenCalled();
+  });
+
+  it('shows the same canonical scheduled-today set without unrelated or unavailable Jobs', async () => {
+    mockClockingState.currentActiveEntryId = null;
+    mockClockingState.timeEntries = [];
+    mockClockingState.jobs = [
+      { id: 'today-1', title: 'Today One', status: 'scheduled', assignedEmployeeIds: ['emp-1'], scheduledToday: true },
+      { id: 'today-2', title: 'Today Two', status: 'in_progress', assignedEmployeeIds: ['emp-1'], scheduledToday: true },
+      { id: 'today-3', title: 'Today Three', status: 'scheduled', assignedEmployeeIds: ['emp-1'], scheduledToday: true },
+      { id: 'today-4', title: 'Today Four', status: 'scheduled', assignedEmployeeIds: ['emp-1'], scheduledToday: true },
+      { id: 'yesterday', title: 'Yesterday Job', status: 'in_progress', assignedEmployeeIds: ['emp-1'], scheduledToday: false },
+      { id: 'completed', title: 'Completed Job', status: 'completed', assignedEmployeeIds: ['emp-1'], scheduledToday: true },
+      { id: 'cancelled', title: 'Cancelled Job', status: 'cancelled', assignedEmployeeIds: ['emp-1'], scheduledToday: true },
+      { id: 'on-hold', title: 'On Hold Job', status: 'on_hold', assignedEmployeeIds: ['emp-1'], scheduledToday: true },
+    ];
+
+    await act(async () => { tree = create(<HomeScreen />); });
+
+    expect(textOf(tree.root)).toContain('Today’s Jobs');
+    const todayJobRows = tree.root.findAllByType('pressable');
+    for (const id of ['today-1', 'today-2', 'today-3', 'today-4']) {
+      expect(todayJobRows.filter((node: any) => node.props.testID === `today-job-${id}`)).toHaveLength(1);
+    }
+    for (const id of ['yesterday', 'completed', 'cancelled', 'on-hold']) {
+      expect(todayJobRows.filter((node: any) => node.props.testID === `today-job-${id}`)).toHaveLength(0);
+    }
+    expect(textOf(tree.root)).not.toContain('Yesterday Job');
+    expect(textOf(tree.root)).not.toContain('Completed Job');
+    expect(textOf(tree.root)).not.toContain('Cancelled Job');
+    expect(textOf(tree.root)).not.toContain('On Hold Job');
+  });
+
+  it('shows the canonical empty state when no Jobs are scheduled today', async () => {
+    mockClockingState.currentActiveEntryId = null;
+    mockClockingState.timeEntries = [];
+    mockClockingState.jobs = [
+      { id: 'yesterday', title: 'Yesterday Job', status: 'in_progress', assignedEmployeeIds: ['emp-1'], scheduledToday: false },
+    ];
+
+    await act(async () => { tree = create(<HomeScreen />); });
+
+    expect(tree.root.findAllByType('status-banner').map((node: any) => node.props.message)).toContain('No jobs scheduled for today');
+    expect(textOf(tree.root)).not.toContain('Yesterday Job');
   });
 
   it('keeps an active Service Visit shift visible and clock-out available after the feature is disabled', async () => {

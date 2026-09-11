@@ -3,6 +3,7 @@ import type { Job, TimeEntry, UnbillableCategory } from '@/types/domain';
 import type { ServiceVisitSummary } from '@/types/serviceVisit';
 
 export const OFFLINE_CLOCK_SCHEMA_VERSION = 3 as const;
+export const OFFLINE_CLOCK_CACHE_SCHEMA_VERSION = 4 as const;
 export const SUPPORTED_OFFLINE_CLOCK_SCHEMA_VERSIONS = new Set([1, 2, OFFLINE_CLOCK_SCHEMA_VERSION]);
 
 export type OfflineClockStatus = 'pending' | 'syncing' | 'needs_attention' | 'synced';
@@ -56,10 +57,24 @@ export type OfflineShiftMapping = {
 };
 
 export type OfflineClockCache = {
-  schemaVersion: typeof OFFLINE_CLOCK_SCHEMA_VERSION;
+  schemaVersion: typeof OFFLINE_CLOCK_CACHE_SCHEMA_VERSION;
   identityKey: string;
   updatedAt: string;
-  jobs: Array<Pick<Job, 'id' | 'title' | 'status' | 'hasOperationalWorkAreas' | 'eligibleOperationalWorkAreas'>>;
+  jobs: Array<Pick<
+    Job,
+    | 'id'
+    | 'title'
+    | 'status'
+    | 'assignedEmployeeIds'
+    | 'assignedForemanId'
+    | 'assignedCrewEmployeeIds'
+    | 'scheduledToday'
+    | 'customerName'
+    | 'propertyAddress'
+    | 'jobNumber'
+    | 'hasOperationalWorkAreas'
+    | 'eligibleOperationalWorkAreas'
+  >>;
   unbillableCategories: Array<Pick<UnbillableCategory, 'id' | 'name' | 'active'>>;
   driveTimeAvailable: boolean;
   jobWorkAvailable: boolean;

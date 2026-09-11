@@ -53,7 +53,7 @@ Queued notes and photos count toward local completion readiness while offline. T
 
 ## Offline Schema
 
-Offline clock schema version 3 adds cached Today and Upcoming Visit summaries. Versions 1 and 2 remain replayable. Unsupported future versions continue to enter the existing needs-attention flow.
+Offline command schema version 3 adds Service Visit context, and command versions 1 and 2 remain replayable. Eligibility cache schema version 4 preserves canonical Project Job schedule, assignment, and search metadata alongside Today and Upcoming Visit summaries. Legacy cache versions migrate conservatively; unsupported or malformed caches reset without affecting queued commands.
 
 Cached Visit summaries support offline Visit selection and preserve Service/property context. Offline clock commands retain Service IDs only for Job Work. Synthetic active entries carry Service and property snapshots through restart and replay.
 

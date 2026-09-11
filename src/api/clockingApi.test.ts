@@ -20,16 +20,22 @@ describe('clockingApi', () => {
   });
 
   it('loads assigned jobs and scoped entries', async () => {
+    const enrichedJob = {
+      id: 'j1', title: 'Job 1', status: 'scheduled', assignedEmployeeIds: ['emp-1'],
+      assignedForemanId: 'foreman-1', assignedCrewEmployeeIds: ['crew-1'], scheduledToday: true,
+      customerName: 'Morgan Lee', propertyAddress: '8 Lake Road', jobNumber: 'J-1042',
+    };
     (global as any).fetch = jest.fn().mockResolvedValue(
       mockResponse(200, {
         ok: true,
-        jobs: [{ id: 'j1', title: 'Job 1', status: 'scheduled', assignedEmployeeIds: ['emp-1'] }],
+        jobs: [enrichedJob],
         timeEntries: [{ id: 't1', employeeId: 'emp-1', workType: 'job', clockIn: '2026-08-06T10:00:00.000Z', breakMinutes: 0, notes: '', status: 'clocked_in' }],
       })
     );
 
     const payload = await loadBootstrap('token-1');
     expect(payload.jobs?.length).toBe(1);
+    expect(payload.jobs?.[0]).toEqual(enrichedJob);
     expect(payload.timeEntries?.[0]?.employeeId).toBe('emp-1');
   });
 

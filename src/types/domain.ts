@@ -77,6 +77,8 @@ export interface Job {
   title: string;
   status: 'scheduled' | 'in_progress' | 'on_hold' | 'completed' | 'cancelled';
   assignedEmployeeIds: string[];
+  assignedForemanId?: string | null;
+  assignedCrewEmployeeIds?: string[];
   customerName?: string;
   propertyAddress?: string;
   jobNumber?: string;

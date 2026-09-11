@@ -10,6 +10,7 @@ const mockClockOut = jest.fn();
 const mockSwitchActivity = jest.fn();
 const mockLoadBootstrap = jest.fn();
 const mockCaptureMessage = jest.fn();
+const mockSaveOfflineClockCache = jest.fn().mockResolvedValue(undefined);
 const mockStoredCommands: OfflineClockCommand[] = [];
 const mockShiftMappings = new Map<string, string>();
 
@@ -99,7 +100,7 @@ jest.mock('@/services/offlineClockStorage', () => ({
     mockShiftMappings.get(`${identityKey}:${localShiftId}`)
   ),
   loadOfflineClockCache: jest.fn().mockResolvedValue(null),
-  saveOfflineClockCache: jest.fn().mockResolvedValue(undefined),
+  saveOfflineClockCache: (...args: unknown[]) => mockSaveOfflineClockCache(...args),
 }));
 
 import { OfflineClockProvider, useOfflineClockStore } from '@/store/offlineClockStore';
@@ -186,6 +187,7 @@ describe('OfflineClockProvider', () => {
       activityConfigs: [],
     });
     mockCaptureMessage.mockReset();
+    mockSaveOfflineClockCache.mockClear();
     tree = undefined;
   });
 
@@ -215,6 +217,29 @@ describe('OfflineClockProvider', () => {
     expect(offlineClock.commands[0].employeeId).toBe('employee-1');
     expect(offlineClock.effectiveState.activeEntry?.employeeId).toBe('employee-1');
     expect(offlineClock.effectiveState.pendingCount).toBe(1);
+  });
+
+  it('preserves foreman, crew, schedule, search, and work-area Job fields in eligibility cache', async () => {
+    tree = await renderProvider();
+
+    await act(async () => offlineClock.updateEligibilityCache({
+      jobs: [{
+        id: 'job-1', title: 'Flagstone Patio', status: 'scheduled',
+        assignedEmployeeIds: ['employee-1'], assignedForemanId: 'foreman-1', assignedCrewEmployeeIds: ['crew-1'],
+        scheduledToday: true, customerName: 'Morgan Lee', propertyAddress: '8 Lake Road', jobNumber: 'J-1042',
+        hasOperationalWorkAreas: true,
+        eligibleOperationalWorkAreas: [{ id: 'area-1', name: 'North Patio', status: 'not_started' }],
+      }],
+    }));
+
+    expect(mockSaveOfflineClockCache).toHaveBeenCalledWith(expect.objectContaining({
+      schemaVersion: 4,
+      jobs: [expect.objectContaining({
+        assignedEmployeeIds: ['employee-1'], assignedForemanId: 'foreman-1', assignedCrewEmployeeIds: ['crew-1'],
+        scheduledToday: true, customerName: 'Morgan Lee', propertyAddress: '8 Lake Road', jobNumber: 'J-1042',
+        eligibleOperationalWorkAreas: [{ id: 'area-1', name: 'North Patio', status: 'not_started' }],
+      })],
+    }));
   });
 
   it('removes a provisional shift without needs-attention when replay returns required forms', async () => {

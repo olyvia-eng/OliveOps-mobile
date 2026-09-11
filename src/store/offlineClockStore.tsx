@@ -5,6 +5,7 @@ import * as Sentry from '@sentry/react-native';
 import * as clockingApi from '@/api/clockingApi';
 import { buildEffectiveClockState, nextReplayableCommand } from '@/features/offlineClocking/model';
 import {
+  OFFLINE_CLOCK_CACHE_SCHEMA_VERSION,
   OFFLINE_CLOCK_SCHEMA_VERSION,
   SUPPORTED_OFFLINE_CLOCK_SCHEMA_VERSIONS,
   type OfflineClockCache,
@@ -154,13 +155,20 @@ export function OfflineClockProvider({ children }: { children: React.ReactNode }
     if (!identityKey || status !== 'authenticated') return;
     const previous = cacheRef.current?.identityKey === identityKey ? cacheRef.current : null;
     const next: OfflineClockCache = {
-      schemaVersion: OFFLINE_CLOCK_SCHEMA_VERSION,
+      schemaVersion: OFFLINE_CLOCK_CACHE_SCHEMA_VERSION,
       identityKey,
       updatedAt: new Date().toISOString(),
-      jobs: update.jobs?.map(({ id, title, status: jobStatus, hasOperationalWorkAreas, eligibleOperationalWorkAreas }) => ({
+      jobs: update.jobs?.map(({ id, title, status: jobStatus, assignedEmployeeIds, assignedForemanId, assignedCrewEmployeeIds, scheduledToday, customerName, propertyAddress, jobNumber, hasOperationalWorkAreas, eligibleOperationalWorkAreas }) => ({
         id,
         title,
         status: jobStatus,
+        assignedEmployeeIds,
+        assignedForemanId,
+        assignedCrewEmployeeIds,
+        scheduledToday,
+        customerName,
+        propertyAddress,
+        jobNumber,
         hasOperationalWorkAreas,
         eligibleOperationalWorkAreas: eligibleOperationalWorkAreas?.map(({ id: workAreaId, name, status: workAreaStatus }) => ({
           id: workAreaId,

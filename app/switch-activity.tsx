@@ -79,10 +79,9 @@ export default function SwitchActivityScreen() {
 
   const assignedJobs = useMemo(() => {
     if (!effectiveCompanyFeatures.projects) return [];
-    const employeeId = user?.employeeId;
     const availableJobs = jobs.length > 0
       ? jobs
-      : (offlineClock?.cache?.jobs ?? []).map((job) => ({ ...job, assignedEmployeeIds: employeeId ? [employeeId] : [] }));
+      : offlineClock?.cache?.jobs ?? [];
     return scopeJobsForSession(availableJobs, user);
   }, [effectiveCompanyFeatures.projects, jobs, offlineClock?.cache?.jobs, user]);
 

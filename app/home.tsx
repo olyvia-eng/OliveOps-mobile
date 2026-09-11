@@ -16,6 +16,7 @@ import {
   resolveJobTitle,
   resolveWorkAreaName,
 } from '@/features/clocking/presentation';
+import { scheduledClockInJobs } from '@/features/clocking/jobPicker';
 import { formatTrainingDate } from '@/features/training/presentation';
 import { serviceVisitPlaceLabel, serviceVisitStatusLabel, serviceVisitTimeLabel } from '@/features/serviceVisits/presentation';
 import { normalizeCompanyFeatures } from '@/features/companyFeatures';
@@ -57,6 +58,7 @@ export default function HomeScreen() {
   const pendingClockOut = usePendingClockOutStore();
   const pendingClockInReady = pendingClockIn.phase.kind === 'ready_to_finalize';
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [hasAuthoritativeJobRefresh, setHasAuthoritativeJobRefresh] = useState(false);
   const [pendingFormError, setPendingFormError] = useState<string | null>(null);
   const [recoveringRequiredForm, setRecoveringRequiredForm] = useState(false);
   const [now, setNow] = useState(Date.now());
@@ -65,6 +67,7 @@ export default function HomeScreen() {
     let mounted = true;
     void refreshWorkContext().then((result) => {
       if (!mounted) return;
+      if (result.ok) setHasAuthoritativeJobRefresh(true);
       setLoadError(result.ok ? null : result.error || 'Could not load assigned jobs and shifts.');
     });
 
@@ -93,10 +96,11 @@ export default function HomeScreen() {
   const activeShift = authoritativeActiveShift ?? effectiveClock.activeEntry;
   const localPendingClockIn = effectiveClock.activeSource === 'offline_pending';
   const showPendingClockIn = Boolean(pendingClockIn.workflow && !authoritativeActiveShift);
-  const effectiveJobs = useMemo(() => jobs.length > 0
+  const effectiveJobs = useMemo(() => jobs.length > 0 || hasAuthoritativeJobRefresh
     ? jobs
-    : (offlineClock?.cache?.jobs ?? []).map((job) => ({ ...job, assignedEmployeeIds: [] })),
-  [jobs, offlineClock?.cache?.jobs]);
+    : offlineClock?.cache?.jobs ?? [],
+  [hasAuthoritativeJobRefresh, jobs, offlineClock?.cache?.jobs]);
+  const todayJobs = useMemo(() => scheduledClockInJobs(effectiveJobs), [effectiveJobs]);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 30_000);
@@ -351,17 +355,18 @@ export default function HomeScreen() {
         </ActionCard>
       )}
 
-      {effectiveCompanyFeatures.projects && !activeShift && !showPendingClockIn && !pendingClockOut.workflow && effectiveJobs.length > 0 ? (
+      {effectiveCompanyFeatures.projects && !activeShift && !showPendingClockIn && !pendingClockOut.workflow ? (
         <View style={styles.assignedSection}>
-          <SectionHeader title="Assigned Jobs" />
-          <SectionCard>
-            {effectiveJobs.slice(0, 3).map((job) => (
+          <SectionHeader title="Today’s Jobs" />
+          {todayJobs.length > 0 ? <SectionCard testID="today-jobs-list">
+            {todayJobs.map((job) => (
               <ListRow
                 key={job.id}
+                testID={`today-job-${job.id}`}
                 title={job.title || 'Untitled Job'}
               />
             ))}
-          </SectionCard>
+          </SectionCard> : <StatusBanner tone="info" message="No jobs scheduled for today" />}
         </View>
       ) : null}
 

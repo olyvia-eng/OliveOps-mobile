@@ -36,7 +36,7 @@ export default function ActiveShiftScreen() {
   const entry = effectiveClock.activeEntry;
   const effectiveJobs = useMemo(() => jobs.length > 0
     ? jobs
-    : (offlineClock?.cache?.jobs ?? []).map((job) => ({ ...job, assignedEmployeeIds: [] })),
+    : offlineClock?.cache?.jobs ?? [],
   [jobs, offlineClock?.cache?.jobs]);
 
   useEffect(() => {

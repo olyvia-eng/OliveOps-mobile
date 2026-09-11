@@ -13,7 +13,7 @@ import { ActivitySelector } from '@/components/ActivitySelector';
 import { StartTimeField } from '@/components/StartTimeField';
 import { ListRow, ScreenHeader, SectionCard, SectionHeader } from '@/components/MobilePrimitives';
 import { isJobAvailableForClocking } from '@/features/clocking/scoping';
-import { scheduledClockInJobs, searchClockInJobs } from '@/features/clocking/jobPicker';
+import { otherClockInJobs, scheduledClockInJobs, searchClockInJobs } from '@/features/clocking/jobPicker';
 import { normalizeCompanyFeatures } from '@/features/companyFeatures';
 import { useClockingActions } from '@/hooks/useClockingActions';
 import { useEffectiveClockState } from '@/hooks/useEffectiveClockState';
@@ -128,11 +128,12 @@ export default function ClockInScreen() {
     if (!effectiveCompanyFeatures.projects) return [];
     const availableJobs: import('@/types/domain').Job[] = jobs.length > 0 || hasAuthoritativeJobRefresh
       ? jobs
-      : (offlineClock?.cache?.jobs ?? []).map((job) => ({ ...job, assignedEmployeeIds: [] }));
+      : offlineClock?.cache?.jobs ?? [];
     return availableJobs.filter(isJobAvailableForClocking);
   }, [effectiveCompanyFeatures.projects, hasAuthoritativeJobRefresh, jobs, offlineClock?.cache?.jobs]);
   const scheduledJobs = useMemo(() => scheduledClockInJobs(assignedJobs), [assignedJobs]);
-  const searchedJobs = useMemo(() => searchClockInJobs(assignedJobs, jobSearch), [assignedJobs, jobSearch]);
+  const otherJobs = useMemo(() => otherClockInJobs(assignedJobs), [assignedJobs]);
+  const searchedJobs = useMemo(() => searchClockInJobs(otherJobs, jobSearch), [jobSearch, otherJobs]);
 
   const refreshJobs = useCallback(async () => {
     setRefreshingJobs(true);
@@ -599,51 +600,13 @@ export default function ClockInScreen() {
         {stage === 'job' && advisoryForms.length === 0 ? (
           <View style={styles.progressiveSection}>
             <SectionHeader title="Select a Job" />
-            <TextInput
-              testID="clock-in-job-search"
-              style={styles.searchInput}
-              value={jobSearch}
-              onChangeText={setJobSearch}
-              placeholder="Search jobs..."
-              placeholderTextColor={colors.textMuted}
-              autoCapitalize="none"
-              autoCorrect={false}
-              returnKeyType="search"
-            />
             <SecondaryButton
               label={refreshingJobs ? 'Refreshing Jobs...' : 'Refresh Jobs'}
               disabled={refreshingJobs}
               onPress={() => void refreshJobs()}
             />
             {refreshingJobs ? <StatusBanner tone="info" message="Checking for schedule updates..." /> : null}
-            {jobSearch.trim() ? (
-              <>
-                <SectionHeader title="Search Results" />
-                {searchedJobs.length > 0 ? (
-                  <SectionCard>
-                    {searchedJobs.map((job) => {
-                      const selected = selectedJobId === job.id && !selectedServiceVisitId;
-                      return (
-                        <ListRow
-                          key={job.id}
-                          testID={`job-option-${job.id}`}
-                          title={job.title || 'Untitled Job'}
-                          subtitle={[job.customerName, job.propertyAddress, job.jobNumber].filter(Boolean).join(' · ')}
-                          selected={selected}
-                          onPress={() => {
-                            setSelectedJobId(job.id);
-                            setSelectedServiceVisitId('');
-                            setSelectedWorkAreaId('');
-                            setAdvisoryForms([]);
-                            advisoryAcceptedRef.current = false;
-                          }}
-                        />
-                      );
-                    })}
-                  </SectionCard>
-                ) : <StatusBanner tone="info" message="No authorized active Jobs match your search." />}
-              </>
-            ) : (
+            {!jobSearch.trim() ? (
               <>
               <SectionHeader title="Scheduled for Today" />
               {scheduledTodayVisits.length > 0 ? (
@@ -694,7 +657,44 @@ export default function ClockInScreen() {
                 ? <StatusBanner tone="info" message="No Jobs are scheduled for you today. Search active Jobs if your assignment changed." />
                 : null}
               </>
-            )}
+            ) : null}
+            <SectionHeader title="Other Jobs" />
+            <TextInput
+              testID="clock-in-job-search"
+              style={styles.searchInput}
+              value={jobSearch}
+              onChangeText={setJobSearch}
+              placeholder="Search jobs..."
+              placeholderTextColor={colors.textMuted}
+              autoCapitalize="none"
+              autoCorrect={false}
+              returnKeyType="search"
+            />
+            {jobSearch.trim() ? (
+              searchedJobs.length > 0 ? (
+                <SectionCard>
+                  {searchedJobs.map((job) => {
+                    const selected = selectedJobId === job.id && !selectedServiceVisitId;
+                    return (
+                      <ListRow
+                        key={job.id}
+                        testID={`job-option-${job.id}`}
+                        title={job.title || 'Untitled Job'}
+                        subtitle={[job.customerName, job.propertyAddress, job.jobNumber].filter(Boolean).join(' · ')}
+                        selected={selected}
+                        onPress={() => {
+                          setSelectedJobId(job.id);
+                          setSelectedServiceVisitId('');
+                          setSelectedWorkAreaId('');
+                          setAdvisoryForms([]);
+                          advisoryAcceptedRef.current = false;
+                        }}
+                      />
+                    );
+                  })}
+                </SectionCard>
+              ) : <StatusBanner tone="info" message="No authorized active Jobs match your search." />
+            ) : null}
           </View>
         ) : null}
 

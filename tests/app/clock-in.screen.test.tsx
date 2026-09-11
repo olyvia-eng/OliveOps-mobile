@@ -500,6 +500,44 @@ describe('ClockInScreen', () => {
     );
   });
 
+  it('preserves Scheduled Today and searchable Other Jobs from the offline cache', async () => {
+    mockJobs = [];
+    mockRefresh.mockResolvedValue({ ok: false, error: 'Offline' });
+    mockOfflineClock = {
+      cache: {
+        schemaVersion: 4,
+        identityKey: 'business-1:user-1:emp-1',
+        updatedAt: '2026-09-11T12:00:00.000Z',
+        jobs: [
+          {
+            id: 'cached-today', title: 'Today Patio', status: 'scheduled', scheduledToday: true,
+            assignedEmployeeIds: ['emp-1'], assignedForemanId: 'emp-1', assignedCrewEmployeeIds: ['emp-2'],
+            customerName: 'Morgan Lee', propertyAddress: '8 Lake Road', jobNumber: 'J-100',
+          },
+          {
+            id: 'cached-other', title: 'Yesterday Cleanup', status: 'in_progress', scheduledToday: false,
+            assignedEmployeeIds: ['emp-1'], assignedForemanId: null, assignedCrewEmployeeIds: ['emp-1'],
+            customerName: 'Olivia Brown', propertyAddress: '4 Main Street', jobNumber: 'J-1042',
+          },
+        ],
+      },
+    };
+
+    let tree: any;
+    await act(async () => { tree = create(<ClockInScreen />); });
+    await chooseActivity(tree, 'job');
+
+    expect(tree.root.findAllByProps({ testID: 'job-option-cached-today' }).length).toBeGreaterThan(0);
+    expect(tree.root.findAllByProps({ testID: 'job-option-cached-other' })).toHaveLength(0);
+    expect(tree.root.findAllByType('text').map((node: any) => String(node.props.children)).join(' ')).toContain('Other Jobs');
+
+    for (const query of ['Olivia Brown', '4 Main Street', 'J-1042']) {
+      await act(async () => tree.root.findByProps({ testID: 'clock-in-job-search' }).props.onChangeText(query));
+      expect(tree.root.findAllByProps({ testID: 'job-option-cached-other' }).length).toBeGreaterThan(0);
+      expect(tree.root.findAllByProps({ testID: 'job-option-cached-today' })).toHaveLength(0);
+    }
+  });
+
   it('keeps Job Work and assigned jobs available while company features are unhydrated', async () => {
     mockCompanyFeatures = null;
     let tree: any;
