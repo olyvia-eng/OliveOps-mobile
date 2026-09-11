@@ -107,8 +107,8 @@ Production branding paths are configured in `app.json`. The approved iOS source 
 - Transient network, backend, or SecureStore verification failures show a retryable startup state rather than deleting a potentially valid session.
 - A top-level error boundary prevents unexpected render failures from leaving a blank screen; user-facing fallback text never includes exception details.
 - Login and time-correction submission fail closed while offline. Clocking and Service Visit operations use tenant- and employee-scoped durable queues with server-authoritative replay and conflict handling.
-- Snow field commands, Before/After evidence, and breadcrumb batches use a tenant- and employee-scoped durable queue with stable idempotency IDs. Breadcrumb batches contain at most 100 points.
-- Snow background location requires native iOS and Android permission testing. Tracking starts only after employee education and consent for an active service and stops when service finishes or authoritative state is no longer active.
+- Snow field commands and Before/After evidence use a tenant- and employee-scoped durable queue with stable idempotency IDs.
+- The current release uses foreground, user-initiated Snow checkpoints only. It does not declare iOS background location or request Always location permission.
 - Failed prepared photo uploads are cleaned up best-effort, and clock-out remains blocked while any retained attachment is uploading or failed.
 
 ### Web Favicon
@@ -122,7 +122,7 @@ Production branding paths are configured in `app.json`. The approved iOS source 
 - [ ] Confirm the OliveOps Apple Developer Program membership is active and agreements are accepted.
 - [ ] Confirm the release operator has permission to manage identifiers, certificates, App Store Connect records, and TestFlight builds.
 - [ ] Confirm the existing App ID for `ca.oliveops.app` remains registered under the correct OliveOps team.
-- [ ] Verify the App ID and generated profile support the Background Modes location capability required by Snow Operations. Camera and photo-library access are privacy permissions, not App ID capabilities.
+- [ ] Verify the App ID and generated profile do not enable an unused Background Modes location capability for the current release. Camera, photo-library, and When In Use location access are privacy permissions, not App ID capabilities.
 - [ ] During the first production build, allow EAS to create or select the iOS distribution certificate and App Store provisioning profile, or deliberately select existing valid remote credentials.
 - [ ] Verify generated signing assets use `ca.oliveops.app` and the intended Apple team.
 

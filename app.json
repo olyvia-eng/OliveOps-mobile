@@ -11,9 +11,6 @@
       "icon": "./assets/icon.png",
       "bundleIdentifier": "ca.oliveops.app",
       "supportsTablet": false,
-      "infoPlist": {
-        "UIBackgroundModes": ["location"]
-      },
       "config": {
         "usesNonExemptEncryption": false
       }
@@ -67,10 +64,8 @@
         "expo-location",
         {
           "locationWhenInUsePermission": "Allow OliveOps to record Snow service checkpoints and route progress.",
-          "locationAlwaysAndWhenInUsePermission": "Allow OliveOps to record location while an active Snow service continues in the background.",
-          "isIosBackgroundLocationEnabled": true,
-          "isAndroidBackgroundLocationEnabled": true,
-          "isAndroidForegroundServiceEnabled": true
+          "locationAlwaysAndWhenInUsePermission": false,
+          "locationAlwaysPermission": false
         }
       ]
     ],

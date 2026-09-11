@@ -6,7 +6,7 @@ import { PrimaryActionButton } from '@/components/PrimaryActionButton';
 import { SecondaryButton } from '@/components/SecondaryButton';
 import { PrimaryScreen } from '@/components/Screen';
 import { StatusBanner } from '@/components/StatusBanner';
-import { captureSnowPosition, startSnowBackgroundTracking, stopSnowBackgroundTracking } from '@/services/snowLocation';
+import { captureSnowPosition } from '@/services/snowLocation';
 import { loadSnowOutbox, queueSnowCommand, queueSnowPhoto, replaySnowOutbox, snowSubmissionId, type SnowOutboxOperation } from '@/services/snowOperationsOutbox';
 import { pickSinglePhoto } from '@/services/photoPicker';
 import { normalizeCompanyFeatures } from '@/features/companyFeatures';
@@ -59,10 +59,6 @@ export default function SnowAssignmentScreen() {
     : null, [assignment?.event, assignment?.route, currentStop, occurrence]);
   const failed = pending.find((item) => item.status === 'failed');
 
-  useEffect(() => {
-    if (assignment && occurrence?.status !== 'active') void stopSnowBackgroundTracking();
-  }, [assignment, occurrence?.status]);
-
   const queueAndSync = useCallback(async (action: SnowFieldAction | 'start-route' | 'complete-route', extra: Record<string, unknown> = {}, captureLocation = true) => {
     if (!identityKey || !context) return;
     setBusy(true);
@@ -104,26 +100,6 @@ export default function SnowAssignmentScreen() {
       setBusy(false);
     }
   }, [accessToken, context, identityKey, load]);
-
-  const beginService = () => Alert.alert(
-    'Location during Snow service',
-    'OliveOps records location while this service is active, including when the app is in the background. Tracking stops when you finish service.',
-    [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Continue', onPress: () => void (async () => {
-        if (identityKey && context) {
-          const tracking = await startSnowBackgroundTracking(identityKey, context);
-          if (!tracking.ok) setMessage('Background location is unavailable. Checkpoint updates will record that location permission was denied.');
-          await queueAndSync('start-service');
-        }
-      })() },
-    ],
-  );
-
-  const finishService = async () => {
-    await stopSnowBackgroundTracking();
-    await queueAndSync('finish-service');
-  };
 
   const navigate = async () => {
     if (!currentStop?.address) return;
@@ -174,8 +150,8 @@ export default function SnowAssignmentScreen() {
             </>
           ) : null}
           {occurrence?.status === 'not_started' ? <PrimaryActionButton label="Take Before Photo" disabled={busy} onPress={() => void addPhoto('before-photo')} /> : null}
-          {occurrence?.status === 'before_evidence_complete' ? <PrimaryActionButton label="Start Service" disabled={busy} onPress={beginService} /> : null}
-          {occurrence?.status === 'active' ? <SectionCard><StatusBadge label="Service active · location recording" tone="success" /><InfoRow label="Service" value={occurrence.serviceTypeName} /><PrimaryActionButton label="Finish Service" disabled={busy} onPress={() => void finishService()} /></SectionCard> : null}
+          {occurrence?.status === 'before_evidence_complete' ? <PrimaryActionButton label="Start Service" disabled={busy} onPress={() => void queueAndSync('start-service')} /> : null}
+          {occurrence?.status === 'active' ? <SectionCard><StatusBadge label="Service active" tone="success" /><InfoRow label="Service" value={occurrence.serviceTypeName} /><PrimaryActionButton label="Finish Service" disabled={busy} onPress={() => void queueAndSync('finish-service')} /></SectionCard> : null}
           {occurrence?.status === 'awaiting_after_evidence' && !occurrence.afterPhotoFileIds.length ? <PrimaryActionButton label="Take After Photo" disabled={busy} onPress={() => void addPhoto('after-photo')} /> : null}
           {occurrence?.status === 'awaiting_after_evidence' && occurrence.afterPhotoFileIds.length ? <PrimaryActionButton label="Complete Stop" disabled={busy} onPress={() => void queueAndSync('complete-service')} /> : null}
           <SecondaryButton label="Flag for Attention" disabled={busy || ['completed', 'skipped'].includes(currentStop.status)} onPress={() => void queueAndSync('flag-stop', { reason: 'Employee requested assistance' })} />

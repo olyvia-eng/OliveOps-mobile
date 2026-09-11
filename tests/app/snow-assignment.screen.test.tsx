@@ -7,7 +7,6 @@ const mockLoadServiceTypes = jest.fn();
 const mockLoadOutbox = jest.fn();
 const mockQueueCommand = jest.fn();
 const mockReplayOutbox = jest.fn();
-const mockStopTracking = jest.fn();
 let mockCompanyFeatures: { projects: boolean; recurringServices: boolean; snowOperations: boolean } | null = {
   projects: true, recurringServices: true, snowOperations: true,
 };
@@ -25,8 +24,6 @@ jest.mock('@/services/snowOperationsOutbox', () => ({
 }));
 jest.mock('@/services/snowLocation', () => ({
   captureSnowPosition: jest.fn(async () => ({ gpsUnavailableReason: 'permission_denied', deviceCapturedAt: '2026-09-08T00:00:00.000Z' })),
-  startSnowBackgroundTracking: jest.fn(async () => ({ ok: true })),
-  stopSnowBackgroundTracking: (...args: unknown[]) => mockStopTracking(...args),
 }));
 jest.mock('@/services/photoPicker', () => ({ pickSinglePhoto: jest.fn() }));
 jest.mock('@/store/authStore', () => ({
@@ -96,7 +93,6 @@ describe('SnowAssignmentScreen', () => {
     mockLoadOutbox.mockReset().mockResolvedValue([]);
     mockQueueCommand.mockReset().mockResolvedValue({});
     mockReplayOutbox.mockReset().mockResolvedValue([]);
-    mockStopTracking.mockReset().mockResolvedValue(undefined);
   });
 
   it('queues Start Route with immutable route context and a stable submission ID', async () => {
