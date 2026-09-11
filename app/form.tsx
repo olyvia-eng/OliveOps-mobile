@@ -627,10 +627,18 @@ export default function FormScreen() {
     }
 
     if (mandatoryKind) {
-      await markFormAttachmentsSubmitted(attachmentIdentityKey, clientSubmissionId);
-      await mandatoryStore.completeQueuedSubmission?.(clientSubmissionId);
       submittedRef.current = true;
       setMandatorySubmissionAccepted(true);
+      await markFormAttachmentsSubmitted(attachmentIdentityKey, clientSubmissionId);
+      await mandatoryStore.completeQueuedSubmission?.(clientSubmissionId);
+      if (mandatoryKind === 'clock_out' && result.ok
+        && (result.clocking?.status === 'clock_out_completed'
+          || result.clocking?.status === 'clock_out_already_finalized')) {
+        await pendingClockOut.completeFromSubmission(result.clocking);
+        submissionInProgressRef.current = false;
+        router.replace('/home');
+        return;
+      }
       const refreshedClockIn = mandatoryKind === 'clock_in'
         ? recoveredClockIn === undefined ? await pendingClockIn.refreshAfterSubmission() : recoveredClockIn
         : null;

@@ -14,7 +14,8 @@ import { createFormClientSubmissionId } from '@/services/requestGuards';
 import { markFormAttachmentsSubmitted, prepareFormSubmissionAttachments } from '@/services/formAttachmentStorage';
 import { useClockingActions } from '@/hooks/useClockingActions';
 import { useAuthStore } from '@/store/authStore';
-import type { PendingClockOutRequirement, PendingClockOutWorkflow } from '@/types/api';
+import { useClockingStore } from '@/store/clockingStore';
+import type { ClockOutResponse, PendingClockOutRequirement, PendingClockOutWorkflow } from '@/types/api';
 import { ApiError } from '@/types/errors';
 import type { EmployeeForm, QueuedFormSubmissionFailure, SubmitEmployeeFormRequest } from '@/types/forms';
 
@@ -36,6 +37,7 @@ type PendingClockOutState = {
   queuedSubmissionFor: (workflowRequirementId: string) => SubmitEmployeeFormRequest | null;
   completeQueuedSubmission: (clientSubmissionId: string) => Promise<void>;
   submissionFailure: QueuedFormSubmissionFailure | null;
+  completeFromSubmission: (clocking: ClockOutResponse) => Promise<void>;
   refreshAfterSubmission: () => Promise<PendingClockOutWorkflow | null>;
   finalize: () => Promise<FinalizeResult>;
 };
@@ -108,6 +110,7 @@ function errorCode(error: unknown) {
 export function PendingClockOutProvider({ children }: { children: React.ReactNode }) {
   const { accessToken, status, user } = useAuthStore();
   const { refreshWorkContext } = useClockingActions();
+  const { setCurrentActiveEntryId, upsertTimeEntry } = useClockingStore();
   const identityKey = identityFor(user);
   const identityRef = useRef(identityKey);
   identityRef.current = identityKey;
@@ -384,6 +387,13 @@ export function PendingClockOutProvider({ children }: { children: React.ReactNod
     });
   }, [commit]);
 
+  const completeFromSubmission = useCallback(async (clocking: ClockOutResponse) => {
+    if (clocking.status !== 'clock_out_completed' && clocking.status !== 'clock_out_already_finalized') return;
+    if (clocking.timeEntry) upsertTimeEntry(clocking.timeEntry);
+    setCurrentActiveEntryId(null);
+    await commit(null);
+  }, [commit, setCurrentActiveEntryId, upsertTimeEntry]);
+
   const refreshAfterSubmission = useCallback(async () => recover(), [recover]);
   const requirements = workflowRequirements(workflow);
   const outstanding = requirements.filter((item) => !item.completed);
@@ -409,9 +419,10 @@ export function PendingClockOutProvider({ children }: { children: React.ReactNod
     queuedSubmissionFor,
     completeQueuedSubmission,
     submissionFailure: recordRef.current?.submissionFailure ?? null,
+    completeFromSubmission,
     refreshAfterSubmission,
     finalize,
-  }), [acceptWorkflow, busy, completeQueuedSubmission, completedCount, currentRequirement, error, finalize, hydrated, queueSubmission, queuedSubmissionFor, recover, refreshAfterSubmission, submissionIdFor, totalCount, workflow]);
+  }), [acceptWorkflow, busy, completeFromSubmission, completeQueuedSubmission, completedCount, currentRequirement, error, finalize, hydrated, queueSubmission, queuedSubmissionFor, recover, refreshAfterSubmission, submissionIdFor, totalCount, workflow]);
 
   return <PendingClockOutContext.Provider value={value}>{children}</PendingClockOutContext.Provider>;
 }

@@ -138,6 +138,34 @@ describe('useFormsActions', () => {
     expect(currentStore.flashMessage).toBe('Form submitted successfully.');
   });
 
+  it.each(['clock_out_completed', 'clock_out_already_finalized'] as const)(
+    'returns authoritative %s state without refreshing the resolved Forms workspace',
+    async (clockingStatus) => {
+    const clocking = {
+      ok: true,
+      status: clockingStatus,
+      timeEntry: { id: 'entry-1', employeeId: 'emp-1', status: 'completed', clockOut: '2026-09-10T21:00:00.000Z' },
+    };
+    mockSubmitEmployeeForm.mockResolvedValue({
+      ok: true,
+      submission: { id: 'sub-1', formId: 'form-1', trigger: 'after_clock_out', submittedAt: '2026-09-10T21:00:00.000Z', status: 'submitted' },
+      clocking,
+    });
+    await mount();
+
+    let result: unknown;
+    await act(async () => {
+      result = await currentActions.submitForm({
+        clientSubmissionId: 'attempt-required', formId: 'form-1', trigger: 'after_clock_out',
+        workflowOccurrenceId: 'occurrence-1', workflowRequirementId: 'requirement-1', responses: [],
+      });
+    });
+
+    expect(result).toMatchObject({ ok: true, clocking });
+    expect(mockLoadEmployeeForms).not.toHaveBeenCalled();
+    },
+  );
+
   it('clears employee-scoped Forms state when authenticated identity changes', async () => {
     mockLoadEmployeeForms.mockResolvedValue({
       ...workspace(),

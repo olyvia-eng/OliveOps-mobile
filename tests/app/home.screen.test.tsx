@@ -240,6 +240,22 @@ describe('HomeScreen', () => {
     expect(tree.root.findByType('primary-screen').props.edges).toEqual(['top', 'left', 'right']);
   });
 
+  it('shows Clock In after authoritative clock-out clears the active entry and pending workflow', async () => {
+    mockClockingState.currentActiveEntryId = null;
+    mockClockingState.timeEntries = mockClockingState.timeEntries.map((entry: any) => ({
+      ...entry,
+      status: 'completed',
+      clockOut: '2026-09-10T21:00:00.000Z',
+    }));
+    mockPendingClockOut = { ...mockPendingClockOut, workflow: null, currentRequirement: null, currentForm: null };
+
+    await act(async () => { tree = create(<HomeScreen />); });
+
+    expect(textOf(tree.root)).toContain('Ready to start your shift?');
+    expect(textOf(tree.root)).not.toContain('Clock out pending');
+    expect(tree.root.findAllByType('primary-button').map((node: any) => node.props.label)).toContain('Clock In');
+  });
+
   it('opens the employee Snow assignment when an active Route is assigned', async () => {
     mockLoadSnowAssignment.mockResolvedValue({
       ok: true,

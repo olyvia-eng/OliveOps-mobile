@@ -13,6 +13,8 @@ const mockSaveRecord = jest.fn();
 const mockClearRecord = jest.fn();
 const mockRefreshWorkContext = jest.fn();
 let mockRefreshWorkContextAction = mockRefreshWorkContext;
+const mockSetCurrentActiveEntryId = jest.fn();
+const mockUpsertTimeEntry = jest.fn();
 const mockPrepareFormSubmissionAttachments = jest.fn();
 const mockMarkFormAttachmentsSubmitted = jest.fn();
 let mockOnline = true;
@@ -72,6 +74,12 @@ jest.mock('@/store/authStore', () => ({
 jest.mock('@/hooks/useClockingActions', () => ({
   useClockingActions: () => ({ refreshWorkContext: mockRefreshWorkContextAction }),
 }));
+jest.mock('@/store/clockingStore', () => ({
+  useClockingStore: () => ({
+    setCurrentActiveEntryId: mockSetCurrentActiveEntryId,
+    upsertTimeEntry: mockUpsertTimeEntry,
+  }),
+}));
 jest.mock('@react-native-community/netinfo', () => ({
   __esModule: true,
   default: { addEventListener: jest.fn((listener) => {
@@ -111,6 +119,8 @@ describe('PendingClockOutProvider', () => {
     mockSaveRecord.mockReset().mockResolvedValue(undefined);
     mockClearRecord.mockReset().mockResolvedValue(undefined);
     mockRefreshWorkContext.mockReset().mockResolvedValue({ ok: true });
+    mockSetCurrentActiveEntryId.mockReset();
+    mockUpsertTimeEntry.mockReset();
     mockRefreshWorkContextAction = mockRefreshWorkContext;
     mockLoadBootstrap.mockReset().mockResolvedValue({
       ok: true,
@@ -239,6 +249,24 @@ describe('PendingClockOutProvider', () => {
     expect(mockClearRecord).toHaveBeenCalledWith('business-1:user-1:employee-1');
     expect(pendingStore.workflow).toBeNull();
     expect(mockRefreshWorkContext).not.toHaveBeenCalled();
+  });
+
+  it('applies authoritative submission clock-out and clears pending state without refetching', async () => {
+    await mount();
+    const timeEntry = { id: 'entry-1', employeeId: 'employee-1', status: 'completed', clockOut: '2026-09-10T21:00:00.000Z' };
+
+    await act(async () => pendingStore.completeFromSubmission({
+      ok: true,
+      status: 'clock_out_completed',
+      timeEntry,
+    }));
+
+    expect(mockUpsertTimeEntry).toHaveBeenCalledWith(timeEntry);
+    expect(mockSetCurrentActiveEntryId).toHaveBeenCalledWith(null);
+    expect(mockClearRecord).toHaveBeenCalledWith('business-1:user-1:employee-1');
+    expect(pendingStore.workflow).toBeNull();
+    expect(mockLoadPendingClockOut).not.toHaveBeenCalled();
+    expect(mockFinalizeClockOut).not.toHaveBeenCalled();
   });
 
   it('does not auto-finalize a completed bootstrap workflow without queued submissions', async () => {

@@ -198,6 +198,7 @@ export interface SubmittedEmployeeForm {
 export interface SubmitEmployeeFormResponse {
   ok: true;
   submission: SubmittedEmployeeForm;
+  clocking?: import('./api').ClockInResponse | import('./api').ClockOutResponse;
 }
 
 export interface EmployeeFormAnswer {

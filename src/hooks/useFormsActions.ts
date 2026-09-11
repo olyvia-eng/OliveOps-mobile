@@ -179,17 +179,23 @@ export function useFormsActions() {
 
       const response = await submitEmployeeForm(payload, accessToken);
       if (currentAuthIdentityRef.current !== requestIdentity) return { ok: false as const, stale: true as const };
+      if (response.clocking?.status === 'clock_out_completed'
+        || response.clocking?.status === 'clock_out_already_finalized'
+        || response.clocking?.status === 'clock_in_completed') {
+        setFlashMessage('Form submitted successfully.');
+        return { ok: true as const, submission: response.submission, clocking: response.clocking };
+      }
 
       try {
         await commitWorkspace(requestIdentity);
       } catch (refreshError) {
         captureUnexpectedFormsError(refreshError, 'post-submit-refresh');
         setFlashMessage('Form submitted. Pull to refresh if it does not appear in Completed yet.');
-        return { ok: true as const, submission: response.submission, warning: true as const };
+        return { ok: true as const, submission: response.submission, clocking: response.clocking, warning: true as const };
       }
 
       setFlashMessage('Form submitted successfully.');
-      return { ok: true as const, submission: response.submission };
+      return { ok: true as const, submission: response.submission, clocking: response.clocking };
     } catch (error) {
       const code = apiErrorCode(error);
       const shouldReconcile = (error instanceof ApiError && (error.status === 408 || error.status === 409))
